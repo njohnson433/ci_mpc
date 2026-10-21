@@ -1,0 +1,10 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.vscode/
+# large simulation assets – keep outside the repo or use git-lfs
+*.usd
+*.usda
+*.usdc
