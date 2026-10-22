@@ -5,7 +5,8 @@
 #   2. rotations: 0.3 rad about the world x, y, z axes at the home position
 #   3. circle:    r = 5 cm in the y-z plane, period 5 s, 2 laps
 #   4. stiffness: external force/torque on the hand (sim only), deflection vs the controller's K
-#   5. mode 2:    control_mode 2 (low stiffness) under the same push, then back to mode 0
+#   5. windup:    hold a 15 N push (blocked motion), release: jump past home from the integral
+#   6. mode 2:    control_mode 2 (low stiffness) under the same push, then back to mode 0
 # The controller low-pass filters reference_pose (first order, tau = 0.5 s at filter_params 0.002/ms);
 # tracking errors are reported against the commanded and against the filtered reference.
 import argparse
@@ -30,7 +31,7 @@ p.add_argument("--ee", default="fr3_hand_tcp")
 p.add_argument("--sync-dir", default="")
 p.add_argument("--out", default="", help="save samples and per-test windows to this .npz")
 p.add_argument("--filter-tau", type=float, default=0.5, help="controller reference filter time constant [s]")
-p.add_argument("--tests", default="steps,rotations,circle,stiffness,mode2")
+p.add_argument("--tests", default="steps,rotations,circle,stiffness,windup,mode2")
 p.add_argument("--step-hold", type=float, default=4.0, help="sim seconds per step before the final error")
 args = p.parse_args()
 tests = args.tests.split(",")
@@ -295,6 +296,37 @@ if "stiffness" in tests and args.sync_dir:
     results["stiffness"] = all(0.75 < r < 1.33 for r in ratio)
     print(f"  measured/predicted end deflection {np.round(ratio, 2)} -> "
           f"{'PASS' if results['stiffness'] else 'FAIL'} (within 0.75..1.33)", flush=True)
+
+# --- 4b. integral windup: hold a 15 N push for 3 s (blocks the motion, the integral winds up), release,
+#         and measure how far the arm jumps past home and how long it takes to come back
+if "windup" in tests and args.sync_dir:
+    print("WINDUP - 15 N push held 3 s, then released (jump past home, error 1 s / 3 s after release)")
+    rows = []
+    for label, force, axis in (("Fx +15 N", [15, 0, 0], 0), ("Fz -15 N", [0, 0, -15], 2)):
+        t0 = now()
+        set_wrench(force)
+        spin_sim(3.0)
+        clear_wrench()
+        t_rel = now()
+        spin_sim(3.0)
+        w = window(t0, now())
+        ts = np.array([t for t, _ in w])
+        d = np.array([T.translation - p_home for _, T in w])
+        sgn = np.sign(force[axis])
+        push_defl = d[ts <= t_rel][-1, axis] * sgn
+        after = d[ts > t_rel]
+        jump = max(0.0, -(after[:, axis] * sgn).min())  # travel past home, opposite to the push
+        e1 = np.linalg.norm(d[np.argmin(np.abs(ts - t_rel - 1.0))])
+        e3 = np.linalg.norm(d[-1])
+        rows.append((label, push_defl, jump, e1, e3))
+        saved[f"windup_{label}"] = np.array([t0, now()])
+        send(p_home, R_home)
+        spin_sim(1.0)
+    for r in rows:
+        print(f"  {r[0]}: deflection during push {r[1] * 1000:6.2f} mm, jump past home after release "
+              f"{r[2] * 1000:5.2f} mm, error 1 s after {r[3] * 1000:5.2f} mm, 3 s after {r[4] * 1000:5.2f} mm")
+    results["windup"] = max(r[2] for r in rows) < 1.0e-3
+    print(f"  -> {'PASS' if results['windup'] else 'FAIL'} (jump past home < 1 mm)", flush=True)
 
 # --- 5. control mode 2 (low stiffness), then back to 0
 if "mode2" in tests and args.sync_dir:

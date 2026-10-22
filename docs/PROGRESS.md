@@ -92,6 +92,24 @@ Read this before starting work (and before re-investigating something "new").
   slow loads up to the clamp), so accuracy at rest and compliance at rest cannot come from one fixed set of
   gains → **gate the integral**: on in free space (velocity comp. + weight ~3000), off in contact
   (`integrator_limits` 0, velocity comp. stays). The MPC knows the phase → part of the task 3 interface.
+- **Windup** (user question): yes. Cases: large moves saturate the integral (masked by the reset on every new
+  reference_pose, which also means streamed MPC references never build an integral), blocked motion/contact
+  winds it to the clamp → jump on release, stick-slip = small-scale windup. Added conditional integration
+  params (`integrator_windows`, `integrator_velocity_window`, `integrator_freeze_on_saturation`,
+  `integrator_leak`, `integrator_reset_on_target`; defaults = old behavior) and a suite `windup` test
+  (hold 15 N 3 s, release). Batch 5 (velocity comp., integral 3000 / 8 N, steps held 8 s):
+
+  | config | worst step | windup jump x / z | pushes Fx/Fy/Fz/Tz | circle |
+  |---|---|---|---|---|
+  | B0 original | 5.39 mm | 0 / 0 | 1.62 / 2.68 / 6.24 / 15.9 | 10.7 |
+  | W0 unconditional | 0.89 | **2.90 / 7.01** | 1.20 / 1.14 / 2.71 / 19.6 | 7.1 |
+  | W1 conditional (3 mm, 1 cm/s, freeze, leak 2/s) | 0.55 | 0.33 / 0.00 | 3.92 / 3.22 / 11.5 / 17.2 | 7.3 |
+  | **W2 = W1 + no reset on target** | **0.38** | **0.09 / 0.00** | 3.92 / 3.96 / 11.3 / 19.5 | 7.3 |
+
+  W2 costs: t90 1.05 → 1.3 s, step overshoot 1.3–3.1 %, settling still by stick-slip (4–5 bursts per step,
+  one 1.9 mm transient); small contacts (< 3 mm deflection) still stiffened → gating in contact still useful.
+- **Isaac config now W2** (`isaac_sim_controllers.yaml`); real-robot config unchanged. Regression hold/reach:
+  hold 0.00 mm, reach **0.11 mm** (was 2.2 mm), rot err 0.0082 rad (was 0.0035).
 
 ### 2026-10-22 (evening): identification package, impedance test suite, controller audit
 - **Published friction values compared** (details + sources in `docs/SYSID.md`): Franka publishes none

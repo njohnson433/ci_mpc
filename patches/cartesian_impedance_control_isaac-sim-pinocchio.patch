@@ -1,7 +1,7 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH 1/3] Pinocchio model source so the controller runs in Isaac
+Subject: [PATCH 1/4] Pinocchio model source so the controller runs in Isaac
  Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
@@ -686,7 +686,7 @@ index 0000000..54b211a
 From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 12:34:36 +0200
-Subject: [PATCH 2/3] Optional nullspace damping; Isaac config documents it as
+Subject: [PATCH 2/4] Optional nullspace damping; Isaac config documents it as
  off
 
 - New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
@@ -770,7 +770,7 @@ index 2b2ee40..a97308b 100644
 From 0fe0271f4e82d4e5ebedbf35a5be34478d56a83a Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 14:37:06 +0200
-Subject: [PATCH 3/3] Friction compensation and integrator as parameters
+Subject: [PATCH 3/4] Friction compensation and integrator as parameters
  (defaults unchanged)
 
 - integrator_weights / integrator_limits replace the hard-coded integral
@@ -949,6 +949,150 @@ index a97308b..1c6d626 100644
    }
    
    if (outcounter % 2500/update_frequency == 0){
+-- 
+2.34.1
+
+
+From acc11b205e5d2750350b03179055f5ea90e1a846 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Thu, 22 Oct 2026 15:04:02 +0200
+Subject: [PATCH 4/4] Conditional integration (anti-windup) as parameters;
+ Isaac config uses it
+
+- integrator_windows, integrator_velocity_window, integrator_freeze_on_saturation,
+  integrator_leak, integrator_reset_on_target. Defaults reproduce the previous
+  behavior (always integrate, reset on new reference_pose).
+- isaac_sim_controllers.yaml: velocity friction compensation + integral 3000
+  (limit 8 N) that only integrates near the target. Sim with identified friction:
+  steps settle 0.06-0.38 mm, windup jump after a held 15 N push 0.09 mm
+  (unconditional: 7 mm), hold/reach test reach error 0.11 mm (was 2.2 mm).
+- real_robot_controllers.yaml unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ config/isaac_sim_controllers.yaml             | 13 +++++++
+ .../cartesian_impedance_controller.hpp        | 10 +++++
+ src/cartesian_impedance_controller.cpp        | 37 +++++++++++++++++--
+ 3 files changed, 57 insertions(+), 3 deletions(-)
+
+diff --git a/config/isaac_sim_controllers.yaml b/config/isaac_sim_controllers.yaml
+index 516eabb..12c7b33 100644
+--- a/config/isaac_sim_controllers.yaml
++++ b/config/isaac_sim_controllers.yaml
+@@ -19,3 +19,16 @@ cartesian_impedance_controller:
+     # nullspace_damping (Nms/rad) is available but not needed once the scene has FR3 joint armature
+     # (ci_mpc scripts/isaac/prepare_scene.py); 0 keeps the controller identical to the real robot.
+     nullspace_damping: 0.0
++    # Friction handling (ci_mpc docs/PROGRESS.md, 2026-10-22 ablations in the friction scene):
++    # velocity-based friction compensation (nothing at rest, stiffness stays as set) + a fast integral that
++    # only acts near the target (|e| < 3 mm / 0.02, EE < 1 cm/s, not while the output is clamped) and
++    # otherwise decays, so blocked motion or pushes do not wind it up. Steps settle to 0.06-0.38 mm (8 s),
++    # windup jump after a held 15 N push 0.09 mm (unconditional integral: 7 mm). Real robot: not yet.
++    friction_compensation: velocity
++    integrator_weights: [3000.0, 3000.0, 3000.0, 50.0, 50.0, 50.0]
++    integrator_limits: [8.0, 8.0, 8.0, 1.5, 1.5, 0.5]
++    integrator_windows: [0.003, 0.003, 0.003, 0.02, 0.02, 0.02]
++    integrator_velocity_window: 0.01
++    integrator_freeze_on_saturation: true
++    integrator_leak: 2.0
++    integrator_reset_on_target: false
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index 0d45934..aaf1856 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -184,6 +184,16 @@ public:
+     Eigen::Matrix<double, 6, 6> Lambda = IDENTITY;                                           // operational space mass matrix
+     Eigen::Matrix<double, 6, 1> integrator_weights = (Eigen::VectorXd(6) << 350, 350, 0, 50, 50, 50).finished(); 
+     Eigen::Matrix<double, 6, 1> integrator_limits = (Eigen::VectorXd(6) << 2.5, 2.5, 2.5, 1.5, 1.5, 0.5).finished();  // anti-windup [N, Nm]
++    // Conditional integration (defaults = always integrate, as upstream). A component integrates only while
++    // |error_i| < integrator_windows(i) (0 = no window), the EE speed is below integrator_velocity_window
++    // [m/s] (0 = off) and, with integrator_freeze_on_saturation, its output was not clamped last cycle.
++    // Otherwise it decays with rate integrator_leak [1/s] (0 = holds its value).
++    Eigen::Matrix<double, 6, 1> integrator_windows = Eigen::Matrix<double, 6, 1>::Zero();
++    double integrator_velocity_window_{0.0};
++    double integrator_leak_{0.0};
++    bool integrator_freeze_on_saturation_{false};
++    bool integrator_reset_on_target_{true};  // upstream: new reference_pose zeroes the integral
++    Eigen::Matrix<double, 6, 1> F_saturated_ = Eigen::Matrix<double, 6, 1>::Zero();  // 1 where clamped last cycle
+     Eigen::Matrix<double, 6, 6> Sm = IDENTITY;                                               // task space selection matrix for positions and rotation
+     Eigen::Matrix<double, 6, 6> Sf = Eigen::MatrixXd::Zero(6, 6);                            // task space selection matrix for forces
+    
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index 1c6d626..639f311 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -91,7 +91,9 @@ void CartesianImpedanceController::reference_pose_callback(const geometry_msgs::
+     std::cout << "received reference posistion as " <<  msg->position.x << ", " << msg->position.y << ", " << msg->position.z << std::endl;
+     position_d_target_ << msg->position.x, msg->position.y, msg->position.z;
+     orientation_d_target_.coeffs() << msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w;
+-    I_error.setZero(); //reset integral error when a new target is received 
++    if (integrator_reset_on_target_) {
++      I_error.setZero(); //reset integral error when a new target is received
++    }
+     //control_mode = 0; // Set to normal mode when a new pose is received
+     
+   
+@@ -222,6 +224,11 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<double>("nullspace_damping", 0.0);
+      auto_declare<std::vector<double>>("integrator_weights", {350, 350, 0, 50, 50, 50});
+      auto_declare<std::vector<double>>("integrator_limits", {2.5, 2.5, 2.5, 1.5, 1.5, 0.5});
++     auto_declare<std::vector<double>>("integrator_windows", {0, 0, 0, 0, 0, 0});
++     auto_declare<double>("integrator_velocity_window", 0.0);
++     auto_declare<double>("integrator_leak", 0.0);
++     auto_declare<bool>("integrator_freeze_on_saturation", false);
++     auto_declare<bool>("integrator_reset_on_target", true);
+      auto_declare<std::string>("friction_compensation", "none");
+      auto_declare<bool>("friction_offsets", true);
+      auto_declare<bool>("friction_abs_threshold", false);
+@@ -258,6 +265,16 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     }
+     integrator_weights = Eigen::Map<const Eigen::Matrix<double, 6, 1>>(weights.data());
+     integrator_limits = Eigen::Map<const Eigen::Matrix<double, 6, 1>>(limits.data());
++    const auto windows = get_node()->get_parameter("integrator_windows").as_double_array();
++    if (windows.size() != 6) {
++      RCLCPP_ERROR(get_node()->get_logger(), "integrator_windows needs 6 entries");
++      return CallbackReturn::ERROR;
++    }
++    integrator_windows = Eigen::Map<const Eigen::Matrix<double, 6, 1>>(windows.data());
++    integrator_velocity_window_ = get_node()->get_parameter("integrator_velocity_window").as_double();
++    integrator_leak_ = get_node()->get_parameter("integrator_leak").as_double();
++    integrator_freeze_on_saturation_ = get_node()->get_parameter("integrator_freeze_on_saturation").as_bool();
++    integrator_reset_on_target_ = get_node()->get_parameter("integrator_reset_on_target").as_bool();
+     friction_compensation_ = get_node()->get_parameter("friction_compensation").as_string();
+     friction_offsets_ = get_node()->get_parameter("friction_offsets").as_bool();
+     friction_abs_threshold_ = get_node()->get_parameter("friction_abs_threshold").as_bool();
+@@ -460,15 +477,29 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+   D.topRightCorner(3,3).setZero();
+   D.bottomLeftCorner(3,3).setZero();
+   
+-  I_error = I_error + integrator_weights.cwiseProduct(error) * dt_; //weighted integral action
++  {
++    const double ee_speed = (J * dq_).head(3).norm();
++    const bool slow = integrator_velocity_window_ <= 0.0 || ee_speed < integrator_velocity_window_;
++    const double decay = std::exp(-integrator_leak_ * dt_);
++    for (int i = 0; i < 6; ++i) {
++      const bool in_window = integrator_windows(i) <= 0.0 || std::abs(error(i)) < integrator_windows(i);
++      const bool frozen = integrator_freeze_on_saturation_ && F_saturated_(i) > 0.5;
++      if (slow && in_window && !frozen) {
++        I_error(i) += integrator_weights(i) * error(i) * dt_; //weighted integral action
++      } else {
++        I_error(i) *= decay;
++      }
++    }
++  }
+   //I_error.tail(4).setZero(); //only integrate position error in x and y, not rotation error
+   I_error = I_error.cwiseMin(integrator_limits).cwiseMax(-integrator_limits); //anti-windup
+  
+   F_impedance = -1 * (D * (J * dq_) + K * error + I_error);
++  const Eigen::Matrix<double, 6, 1> F_unclamped = F_impedance;
+   F_impedance.head(3) = F_impedance.head(3).cwiseMin(18.0).cwiseMax(-18.0); //clamping forces to avoid instabilities
+   F_impedance.tail(3) = F_impedance.tail(3).cwiseMin(9.0).cwiseMax(-9.0); //clamping torques to avoid
+-  double value = F_impedance(5);
+   F_impedance(5) = std::max(-2.0, std::min(2.0, F_impedance(5))); //clamping torques to avoid
++  F_saturated_ = ((F_unclamped - F_impedance).array().abs() > 1e-9).cast<double>();
+ 
+   Eigen::VectorXd tau_task(7), tau_nullspace(7), tau_d(7);
+   //pseudoInverse(J.transpose(), jacobian_transpose_pinv);
 -- 
 2.34.1
 
