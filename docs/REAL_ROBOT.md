@@ -33,6 +33,21 @@ Everything below is prepared in sim; none of it has run on the robot. Agreed pro
       - Better: identify one or two joints first (`ci_mpc_sysid`, SYSID.md) to know whether our friction is
         above or below these values.
 
+## 4b. Gripper: sim commands → franka_gripper
+In sim the fingers are driven by the stand-in `ci_mpc_sim_gripper` (`/gripper/width`); `franka_gripper` cannot run
+in sim because it is a wrapper around libfranka's `franka::Gripper`, which connects to the robot's control box.
+On the robot, replace the demo's gripper calls (`scripts/pick_place_demo.py`) by:
+
+| step | sim | real FR3 (`franka_gripper`) |
+|---|---|---|
+| once after start | — | action `/franka_gripper/homing` (calibrates the fingers) |
+| open | `/gripper/width` ← 0.08 | action `/franka_gripper/move`: `width 0.08, speed 0.1` |
+| grasp the 4 cm cube | `/gripper/width` ← 0.0 (drive max 40 N per finger) | action `/franka_gripper/grasp`: `width 0.04, speed 0.05, force 20.0, epsilon inner/outer 0.005` |
+| grasp check | opening from `/joint_states` ≈ 40 mm | result `success` (final width within width ± epsilon) |
+| finger state | `/joint_states` (`fr3_finger_joint1/2`) | `/franka_gripper/joint_states` |
+
+Real actions block until done: wait for the result instead of the sim's fixed settle times.
+
 ## 5. Identification and tests
 - [ ] `JointIdController`: one joint, small amplitude, warm robot; then all joints, 2–3 poses (SYSID.md).
 - [ ] Fitted values → sim scene (`prepare_scene.py --params`) and controller.
