@@ -16,11 +16,17 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Isaac Sim 6.2 + Isaac Lab 3.0 | ✅ running, ROS 2 bridge works |
 | FR3 in Isaac Sim (`fr3_scene.usd`) | ✅ imported, gravity off on robot links, effort mode |
 | In-sim controller (physics callback) | ✅ joint PD holds home pose at 240 Hz |
-| PdZ Cartesian impedance controller | 🟡 builds; needs Pinocchio model source to run in sim |
+| PdZ Cartesian impedance controller in Isaac (ros2_control in-process, Pinocchio model) | ✅ hold 0.00 mm, reach 0.11 mm, steps 0.06–0.38 mm with identified friction |
+| Sim realism: FR3 joint armature + identified friction | ✅ `scripts/isaac/prepare_scene.py` |
+| Joint identification (`ci_mpc_sysid`) | ✅ validated in sim (Coulomb 0–0.4 %, viscous 0.1–2 %, armature 2–4 %); real robot pending |
+| Impedance test suite (steps, rotations, circle, pushes, windup) | ✅ `scripts/impedance_suite.py` |
+| MPC tracking interface (task 3) | ⏳ next |
 | MPC | ⏳ not started |
 | Real robot connection test | ⏳ not done yet |
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the next tasks.
+See [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in
+sim, [docs/SYSID.md](docs/SYSID.md) for the identification, [docs/ROADMAP.md](docs/ROADMAP.md) for the next
+tasks and [docs/PROGRESS.md](docs/PROGRESS.md) for the dated log.
 
 ## Architecture
 

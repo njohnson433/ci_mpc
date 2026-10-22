@@ -24,17 +24,22 @@
 - [x] Use only generic interfaces: `fr3_jointN/position`, `/velocity` (state), `/effort` (command).
       These exist in both `franka_hardware` and Isaac's in-process ros2_control.
 - [x] Keep gravity out of the command (the FR3 compensates it internally; the sim has robot gravity off).
-- [ ] Keep: torque rate limit (100 Nm/s) ✓ (rate-scaled); nullspace term: only optional damping (`nullspace_damping`, off);
-      friction compensation: still commented out upstream (check that it makes sense in sim).
+- [x] Keep: torque rate limit (100 Nm/s) ✓ (rate-scaled); nullspace term: only optional damping (`nullspace_damping`, off);
+      friction compensation: upstream LuGre fixed and evaluated, replaced in sim by velocity-based compensation +
+      conditional integral (docs/CONTROLLER_FINDINGS.md).
 - [x] Optional parameter: real robot uses `FrankaRobotModel`, sim uses Pinocchio.
       Pinocchio everywhere is simpler and fine to start with.
 
 ### 3. MPC-ready controller interface
 - [ ] New mode 3 = "MPC tracking": subscribe to a setpoint topic via `realtime_tools::RealtimeBuffer`.
-- [ ] Message `MpcCommand`: desired pose (quaternion), twist, feedforward wrench, K, D, stamp.
-- [ ] Damping on velocity error: `D·(ẋ_des − ẋ)`.
-- [ ] Bypass the desired-pose exponential filter in mode 3.
+      (The existing control_mode 3 is the upstream "lift" stiffness set; pick a non-clashing mode/topic.)
+- [ ] Message `MpcCommand`: desired pose (quaternion), twist, feedforward wrench, K, D, stamp,
+      integral on/off (free space vs contact).
+- [ ] Damping on velocity error: `D·(ẋ_des − ẋ)` (now on absolute velocity: 6.8 mm RMS lag on a 5 cm circle).
+- [ ] Bypass the desired-pose exponential filter in mode 3 (τ = 0.5 s: ~27 mm lag on the same circle).
+- [ ] Integral: no reset on every setpoint (done: `integrator_reset_on_target`), gating from the command.
 - [ ] Timeout (≈ 50 ms without a new setpoint) → hold current pose.
+- [ ] Test in sim with the suite: circle / trajectory tracking vs the commanded reference.
 
 ### 4. Run the controller in Isaac Sim via `isaacsim.ros2.control`
 - [x] Add `On Playback Tick → ROS2ControlManager` (targetPrim `/fr3`, articulation root `/fr3/Geometry/base/fr3_link0`) + `ROS2 Publish Clock`.
@@ -54,6 +59,13 @@
 - [ ] RT kernel (Ubuntu Pro `realtime-kernel`). Check that the NVIDIA driver still loads,
       or keep generic and RT kernels side by side and choose in GRUB.
 - [ ] Run the ported controller on `franka_hardware` with conservative gains, hold pose first.
+
+### 4b. Done along the way (2026-10-22)
+- [x] Joint identification package `ci_mpc_sysid`, validated in sim (docs/SYSID.md).
+- [x] Sim armature + identified friction; impedance test suite; friction handling (docs/CONTROLLER_FINDINGS.md).
+- [ ] Identify our FR3 (after task 6), feed values into the scene, re-run suite in sim and on the robot.
+- [ ] Faster headless sim (physics steps without rendering every step).
+- [ ] External wrench estimate in sim (`o_f_ext_hat_k` equivalent) for the controller's mode 1.
 
 ### Later
 - [ ] Object(s) in the sim scene and object state estimation (perception package).
