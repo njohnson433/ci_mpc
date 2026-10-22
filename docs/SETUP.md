@@ -137,8 +137,30 @@ source install/setup.bash
 colcon build --packages-select cartesian_impedance_control --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
-It builds against franka_ros2 v2.x. To run in the sim it needs the Pinocchio model source
-(ROADMAP.md, task 2).
+It builds against franka_ros2 v2.x. Branch `isaac-sim-pinocchio` (from `main`) adds a
+Pinocchio model source so the same controller runs in Isaac Sim (needs `sudo apt install ros-humble-pinocchio`):
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `model_source` | `franka` | `franka`: M, C, J, pose from `franka_robot_model` (real robot). `pinocchio`: computed from `urdf_path` (sim). |
+| `urdf_path` | `""` | URDF for `pinocchio` (`/home/njohnson/ci_mpc_assets/fr3.urdf`) |
+| `ee_frame` | `fr3_hand_tcp` | EE frame for `pinocchio` (= libfranka `kEndEffector` with the Franka Hand) |
+| `arm_id` | `fr3` | joint prefix |
+| `enable_input_server` | `true` | `user_input_service` thread; must be `false` inside Isaac (it calls `rclcpp::shutdown()`) |
+
+Configs: `config/isaac_sim_controllers.yaml`, `config/real_robot_controllers.yaml` (installed to
+`share/cartesian_impedance_control/config`). Timing is rate-independent (integrator, filters and
+torque-rate limit scale with the control period; identical to before at 1 kHz).
+
+Sanity check of the Pinocchio model against libfranka values (home TCP = 0.3069, 0, 0.4869):
+```bash
+ros2 run cartesian_impedance_control pinocchio_model_check
+```
+
+**libfranka embeds its own Pinocchio** and exports its template instances (`ModelTpl()`, `DataTpl()`, …)
+with a different memory layout. The controller library therefore links Pinocchio 4 *before* libfranka
+(see `CMakeLists.txt`); otherwise `PinocchioModel` binds to libfranka's copies and crashes
+(`std::length_error: vector::reserve`).
 
 ## 6. Isaac Sim 6.2 + Isaac Lab 3.0
 

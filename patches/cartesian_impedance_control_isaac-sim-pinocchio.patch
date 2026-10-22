@@ -1,0 +1,683 @@
+From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Thu, 22 Oct 2026 11:27:20 +0200
+Subject: [PATCH] Pinocchio model source so the controller runs in Isaac Sim
+
+model_source param (franka | pinocchio), optional input server, rate-independent
+timing, Isaac/real-robot configs, pinocchio_model_check sanity test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt                                |  23 +++-
+ config/isaac_sim_controllers.yaml             |  18 +++
+ config/real_robot_controllers.yaml            |  12 ++
+ .../cartesian_impedance_controller.hpp        |  17 ++-
+ .../pinocchio_model.hpp                       |  60 +++++++++
+ package.xml                                   |   1 +
+ src/cartesian_impedance_controller.cpp        | 122 ++++++++++++++----
+ src/pinocchio_model.cpp                       | 117 +++++++++++++++++
+ test/pinocchio_model_check.cpp                |  86 ++++++++++++
+ 9 files changed, 429 insertions(+), 27 deletions(-)
+ create mode 100644 config/isaac_sim_controllers.yaml
+ create mode 100644 config/real_robot_controllers.yaml
+ create mode 100644 include/cartesian_impedance_control/pinocchio_model.hpp
+ create mode 100644 src/pinocchio_model.cpp
+ create mode 100644 test/pinocchio_model_check.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3f07dfe..d7088e1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -27,12 +27,14 @@ find_package(generate_parameter_library)
+ find_package(std_msgs REQUIRED)
+ find_package(messages_fr3 REQUIRED)
+ find_package(rclcpp_action REQUIRED)
++find_package(pinocchio REQUIRED)
+ 
+ 
+ add_library(
+         ${PROJECT_NAME}
+         SHARED
+         src/cartesian_impedance_controller.cpp
++        src/pinocchio_model.cpp
+         src/user_input_server.cpp
+         )
+ target_include_directories(
+@@ -41,6 +43,20 @@ target_include_directories(
+         include
+         ${EIGEN3_INCLUDE_DIRS}
+ )
++# Pinocchio must come BEFORE libfranka in DT_NEEDED: libfranka (>= 0.14) embeds its own Pinocchio
++# build and exports those template instances (ModelTpl(), DataTpl(), ...) with a different memory
++# layout. The loader binds to the first definition in DT_NEEDED order, so with libfranka first
++# PinocchioModel calls libfranka's copies and crashes. CMake reorders target_link_libraries, so the
++# Pinocchio libs are also passed as link options, which land in front of all libraries.
++target_link_libraries(${PROJECT_NAME} pinocchio::pinocchio)  # plain signature, like ament_target_dependencies
++target_link_options(${PROJECT_NAME} PRIVATE
++        "LINKER:--push-state,--no-as-needed"
++        "$<TARGET_FILE:pinocchio::pinocchio_parsers>"
++        "$<TARGET_FILE:pinocchio::pinocchio_default>"
++        "LINKER:--pop-state")
++# Keep our own Pinocchio template instances private to this library (only PinocchioModel is exported).
++set_source_files_properties(src/pinocchio_model.cpp PROPERTIES
++        COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+ ament_target_dependencies(
+         ${PROJECT_NAME}
+         controller_interface
+@@ -61,11 +77,16 @@ pluginlib_export_plugin_description_file(
+ add_executable(user_input_client src/user_input_client.cpp)
+ target_link_libraries(user_input_client ${PROJECT_NAME})
+ 
++# Standalone sanity check of PinocchioModel against libfranka reference values
++add_executable(pinocchio_model_check test/pinocchio_model_check.cpp)
++target_link_libraries(pinocchio_model_check ${PROJECT_NAME})
++
+ 
+ 
+ 
+ install(TARGETS
+         user_input_client
++        pinocchio_model_check
+         DESTINATION lib/${PROJECT_NAME})
+ 
+ install(
+@@ -81,7 +102,7 @@ install(
+ )
+ 
+ install(
+-  DIRECTORY launch
++  DIRECTORY launch config
+   DESTINATION share/${PROJECT_NAME}
+ )
+ 
+diff --git a/config/isaac_sim_controllers.yaml b/config/isaac_sim_controllers.yaml
+new file mode 100644
+index 0000000..ec4f9ec
+--- /dev/null
++++ b/config/isaac_sim_controllers.yaml
+@@ -0,0 +1,18 @@
++# Isaac Sim (isaacsim.ros2.control): joint position/velocity state + effort command only,
++# so the robot model comes from Pinocchio. Robot gravity is disabled in the scene (like the
++# real FR3, which compensates it internally), so the controller adds no gravity term.
++controller_manager:
++  ros__parameters:
++    update_rate: 240        # <= PhysicsScene time steps per second
++    joint_state_broadcaster:
++      type: joint_state_broadcaster/JointStateBroadcaster
++    cartesian_impedance_controller:
++      type: cartesian_impedance_control/CartesianImpedanceController
++
++cartesian_impedance_controller:
++  ros__parameters:
++    arm_id: fr3
++    model_source: pinocchio
++    urdf_path: /home/njohnson/ci_mpc_assets/fr3.urdf
++    ee_frame: fr3_hand_tcp
++    enable_input_server: false
+diff --git a/config/real_robot_controllers.yaml b/config/real_robot_controllers.yaml
+new file mode 100644
+index 0000000..fd766c0
+--- /dev/null
++++ b/config/real_robot_controllers.yaml
+@@ -0,0 +1,12 @@
++# Real FR3 via franka_hardware (libfranka): robot model from the franka_robot_model interfaces.
++controller_manager:
++  ros__parameters:
++    update_rate: 1000  # Hz
++    cartesian_impedance_controller:
++      type: cartesian_impedance_control/CartesianImpedanceController
++
++cartesian_impedance_controller:
++  ros__parameters:
++    arm_id: fr3
++    model_source: franka
++    enable_input_server: true
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index b593c16..92114db 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -26,6 +26,7 @@
+ #include <thread>
+ #include <chrono>         
+ 
++#include "cartesian_impedance_control/pinocchio_model.hpp"
+ #include "cartesian_impedance_control/user_input_server.hpp"
+ 
+ #include <rclcpp/rclcpp.hpp>
+@@ -124,6 +125,9 @@ public:
+     //Functions
+     void topic_callback(const std::shared_ptr<franka_msgs::msg::FrankaRobotState> msg);
+     void updateJointStates();
++    // Fills M, coriolis (no gravity), the EE pose and member J from the selected model source.
++    void computeModel(Eigen::Matrix<double, 7, 7>& M, Eigen::Matrix<double, 7, 1>& coriolis,
++                      Eigen::Affine3d& transform);
+     void calculate_tau_friction();
+     void update_stiffness_and_references();
+     void reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
+@@ -153,8 +157,15 @@ public:
+     const std::string k_robot_state_interface_name{"robot_state"};
+     const std::string k_robot_model_interface_name{"robot_model"};
+     std::unique_ptr<franka_semantic_components::FrankaRobotModel> franka_robot_model_;
+-    const double delta_tau_max_{1.0};
+-    const double dt = 0.001;
++    // Model source: "franka" (libfranka via franka_hardware) or "pinocchio" (URDF, e.g. Isaac Sim)
++    std::string model_source_{"franka"};
++    std::string urdf_path_;
++    std::string ee_frame_{"fr3_hand_tcp"};
++    bool enable_input_server_{true};
++    std::unique_ptr<PinocchioModel> pinocchio_model_;
++    bool usePinocchio() const { return model_source_ == "pinocchio"; }
++    const double delta_tau_max_{1.0};  // per 1 ms step, scaled with dt_
++    double dt_ = 0.001;                // control period [s], set from update()'s period
+                 
+     //Impedance control variables              
+     Eigen::Matrix<double, 6, 6> Lambda = IDENTITY;                                           // operational space mass matrix
+@@ -232,7 +243,7 @@ public:
+     bool do_logging = false;               // set if we do log values
+ 
+     //Filter-parameters
+-    double filter_params_{0.002};
++    double filter_params_{0.002};  // per 1 ms step, rescaled to dt_ in update_stiffness_and_references()
+     int mode_ = 1;
+ };
+ }  // namespace cartesian_impedance_control
+\ No newline at end of file
+diff --git a/include/cartesian_impedance_control/pinocchio_model.hpp b/include/cartesian_impedance_control/pinocchio_model.hpp
+new file mode 100644
+index 0000000..c931272
+--- /dev/null
++++ b/include/cartesian_impedance_control/pinocchio_model.hpp
+@@ -0,0 +1,60 @@
++#pragma once
++
++// Robot model computed with Pinocchio from a URDF.
++//
++// Drop-in replacement for the values the controller otherwise reads from
++// franka_semantic_components::FrankaRobotModel (libfranka), so the same
++// controller can run on hardware that only exposes joint position / velocity
++// state and joint effort commands (e.g. Isaac Sim's in-process ros2_control).
++//
++// Conventions match libfranka:
++//   mass()      M(q), 7x7
++//   coriolis()  C(q, dq) * dq, 7x1, gravity NOT included
++//   jacobian()  6x7, rows [linear; angular], expressed in the base frame,
++//               reference point = end-effector frame origin  (= getZeroJacobian)
++//   pose()      end-effector pose in the base frame          (= getPoseMatrix)
++//
++// Pinocchio headers are kept out of this header on purpose (pimpl), so the
++// controller does not pull them in.
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include <Eigen/Dense>
++#include <Eigen/Geometry>
++
++namespace cartesian_impedance_control {
++
++// Exported explicitly: src/pinocchio_model.cpp is compiled with -fvisibility=hidden.
++class __attribute__((visibility("default"))) PinocchioModel {
++ public:
++  // arm_joints: the 7 joints the controller commands, in controller order.
++  // All other joints in the URDF (e.g. gripper fingers) are locked at their
++  // neutral position. ee_frame: URDF frame used as end-effector.
++  PinocchioModel(const std::string& urdf_path,
++                 const std::vector<std::string>& arm_joints,
++                 const std::string& ee_frame);
++  ~PinocchioModel();
++
++  PinocchioModel(const PinocchioModel&) = delete;
++  PinocchioModel& operator=(const PinocchioModel&) = delete;
++
++  void compute(const Eigen::Matrix<double, 7, 1>& q, const Eigen::Matrix<double, 7, 1>& dq);
++
++  const Eigen::Matrix<double, 7, 7>& mass() const { return M_; }
++  const Eigen::Matrix<double, 7, 1>& coriolis() const { return coriolis_; }
++  const Eigen::Matrix<double, 6, 7>& jacobian() const { return J_; }
++  const Eigen::Affine3d& pose() const { return pose_; }
++
++ private:
++  struct Impl;
++  std::unique_ptr<Impl> impl_;
++
++  Eigen::Matrix<double, 7, 7> M_ = Eigen::Matrix<double, 7, 7>::Identity();
++  Eigen::Matrix<double, 7, 1> coriolis_ = Eigen::Matrix<double, 7, 1>::Zero();
++  Eigen::Matrix<double, 6, 7> J_ = Eigen::Matrix<double, 6, 7>::Zero();
++  Eigen::Affine3d pose_ = Eigen::Affine3d::Identity();
++};
++
++}  // namespace cartesian_impedance_control
+diff --git a/package.xml b/package.xml
+index 92b6ad6..7ec3daf 100644
+--- a/package.xml
++++ b/package.xml
+@@ -16,6 +16,7 @@
+   <depend>franka_msgs</depend>
+   <depend>franka_semantic_components</depend>
+   <depend>messages_fr3</depend>
++  <depend>pinocchio</depend>
+ 
+ 
+   <exec_depend>franka_description</exec_depend>
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index 5524215..2b2ee40 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -136,10 +136,12 @@ void CartesianImpedanceController::update_stiffness_and_references(){
+   /** at the moment we do not use dynamic reconfigure and control the robot via D, K and T **/
+   //K = filter_params_ * cartesian_stiffness_target_ + (1.0 - filter_params_) * K;
+   //D = filter_params_ * cartesian_damping_target_ + (1.0 - filter_params_) * D;
+-  nullspace_stiffness_ = filter_params_ * nullspace_stiffness_target_ + (1.0 - filter_params_) * nullspace_stiffness_;
++  // filter_params_ is defined per 1 ms step; rescale so the time constant does not depend on the rate
++  const double a = 1.0 - std::pow(1.0 - filter_params_, dt_ / 0.001);
++  nullspace_stiffness_ = a * nullspace_stiffness_target_ + (1.0 - a) * nullspace_stiffness_;
+   //std::lock_guard<std::mutex> position_d_target_mutex_lock(position_and_orientation_d_target_mutex_);
+-  position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
+-  orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
++  position_d_ = a * position_d_target_ + (1.0 - a) * position_d_;
++  orientation_d_ = orientation_d_.slerp(a, orientation_d_target_);
+ }
+ 
+ 
+@@ -161,10 +163,11 @@ Eigen::Matrix<double, 7, 1> CartesianImpedanceController::saturateTorqueRate(
+   const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
+   const Eigen::Matrix<double, 7, 1>& tau_J_d_M) {  
+   Eigen::Matrix<double, 7, 1> tau_d_saturated{};
++  const double max_step = delta_tau_max_ * dt_ / 0.001;  // delta_tau_max_ is per 1 ms step
+   for (size_t i = 0; i < 7; i++) {
+   double difference = tau_d_calculated[i] - tau_J_d_M[i];
+   tau_d_saturated[i] =
+-         tau_J_d_M[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
++         tau_J_d_M[i] + std::max(std::min(difference, max_step), -max_step);
+   }
+   return tau_d_saturated;
+ }
+@@ -191,9 +194,11 @@ controller_interface::InterfaceConfiguration CartesianImpedanceController::state
+     //state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/effort");
+   }
+ 
+-  for (const auto& franka_robot_model_name : franka_robot_model_->get_state_interface_names()) {
+-    state_interfaces_config.names.push_back(franka_robot_model_name);
+-    std::cout << franka_robot_model_name << std::endl;
++  if (!usePinocchio()) {
++    for (const auto& franka_robot_model_name : franka_robot_model_->get_state_interface_names()) {
++      state_interfaces_config.names.push_back(franka_robot_model_name);
++      std::cout << franka_robot_model_name << std::endl;
++    }
+   }
+ 
+   const std::string full_interface_name = arm_id_ + "/" + state_interface_name_;
+@@ -203,18 +208,57 @@ controller_interface::InterfaceConfiguration CartesianImpedanceController::state
+ 
+ 
+ CallbackReturn CartesianImpedanceController::on_init() {
+-   UserInputServer input_server_obj(&position_d_target_, &rotation_d_target_, &K, &D, &T);
+-   std::thread input_thread(&UserInputServer::main, input_server_obj, 0, nullptr);
+-   input_thread.detach();
++   try {
++     auto_declare<std::string>("arm_id", "fr3");
++     auto_declare<std::string>("model_source", "franka");
++     auto_declare<std::string>("urdf_path", "");
++     auto_declare<std::string>("ee_frame", "fr3_hand_tcp");
++     auto_declare<bool>("enable_input_server", true);
++   } catch (const std::exception& e) {
++     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s", e.what());
++     return CallbackReturn::ERROR;
++   }
++   // The input server spins its own node and calls rclcpp::shutdown() when done, so it must be
++   // disabled when the controller runs inside another process (e.g. Isaac Sim).
++   if (get_node()->get_parameter("enable_input_server").as_bool()) {
++     UserInputServer input_server_obj(&position_d_target_, &rotation_d_target_, &K, &D, &T);
++     std::thread input_thread(&UserInputServer::main, input_server_obj, 0, nullptr);
++     input_thread.detach();
++   }
+    return CallbackReturn::SUCCESS;
+ }
+ 
+ 
+ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle::State& /*previous_state*/) {
+     arm_id_ = get_node()->get_parameter("arm_id").as_string();
+-    franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
+-    franka_semantic_components::FrankaRobotModel(arm_id_ + "/" + k_robot_model_interface_name,
+-                                                 arm_id_ + "/" + k_robot_state_interface_name));
++    model_source_ = get_node()->get_parameter("model_source").as_string();
++    urdf_path_ = get_node()->get_parameter("urdf_path").as_string();
++    ee_frame_ = get_node()->get_parameter("ee_frame").as_string();
++    enable_input_server_ = get_node()->get_parameter("enable_input_server").as_bool();
++
++    if (model_source_ == "pinocchio") {
++      std::vector<std::string> arm_joints;
++      for (int i = 1; i <= num_joints; ++i) {
++        arm_joints.push_back(arm_id_ + "_joint" + std::to_string(i));
++      }
++      try {
++        pinocchio_model_ = std::make_unique<PinocchioModel>(urdf_path_, arm_joints, ee_frame_);
++      } catch (const std::exception& e) {
++        RCLCPP_ERROR(get_node()->get_logger(), "Failed to build Pinocchio model from '%s': %s",
++                     urdf_path_.c_str(), e.what());
++        return CallbackReturn::ERROR;
++      }
++      RCLCPP_INFO(get_node()->get_logger(), "Model source: pinocchio (%s, ee frame %s)",
++                  urdf_path_.c_str(), ee_frame_.c_str());
++    } else if (model_source_ == "franka") {
++      franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
++      franka_semantic_components::FrankaRobotModel(arm_id_ + "/" + k_robot_model_interface_name,
++                                                   arm_id_ + "/" + k_robot_state_interface_name));
++    } else {
++      RCLCPP_ERROR(get_node()->get_logger(), "Unknown model_source '%s' (expected 'franka' or 'pinocchio')",
++                   model_source_.c_str());
++      return CallbackReturn::ERROR;
++    }
+                                                
+   try {
+     rclcpp::QoS qos_profile(1); // Depth of the message queue
+@@ -238,10 +282,18 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+ 
+ CallbackReturn CartesianImpedanceController::on_activate(
+   const rclcpp_lifecycle::State& /*previous_state*/) {
+-  franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_);
++  if (!usePinocchio()) {
++    franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_);
++  }
+ 
+-  std::array<double, 16> initial_pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
+-  Eigen::Affine3d initial_transform(Eigen::Matrix4d::Map(initial_pose.data()));
++  // Hold the current pose and start from a clean torque / integrator state.
++  updateJointStates();
++  Eigen::Matrix<double, 7, 7> M;
++  Eigen::Matrix<double, 7, 1> coriolis;
++  Eigen::Affine3d initial_transform;
++  computeModel(M, coriolis, initial_transform);
++  tau_J_d_M.setZero();
++  I_error.setZero();
+   position_d_ = initial_transform.translation();
+   orientation_d_ = Eigen::Quaterniond(initial_transform.rotation());
+   position_d_target_ = position_d_;
+@@ -267,7 +319,9 @@ CallbackReturn CartesianImpedanceController::on_activate(
+ 
+ controller_interface::CallbackReturn CartesianImpedanceController::on_deactivate(
+   const rclcpp_lifecycle::State& /*previous_state*/) {
+-  franka_robot_model_->release_interfaces();
++  if (!usePinocchio()) {
++    franka_robot_model_->release_interfaces();
++  }
+   return CallbackReturn::SUCCESS;
+ }
+ 
+@@ -312,21 +366,43 @@ void CartesianImpedanceController::updateJointStates() {
+   }
+ }
+ 
+-controller_interface::return_type CartesianImpedanceController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/) {  
++void CartesianImpedanceController::computeModel(Eigen::Matrix<double, 7, 7>& M,
++                                               Eigen::Matrix<double, 7, 1>& coriolis,
++                                               Eigen::Affine3d& transform) {
++  if (usePinocchio()) {
++    // needs q_, dq_ from updateJointStates()
++    pinocchio_model_->compute(q_, dq_);
++    M = pinocchio_model_->mass();
++    coriolis = pinocchio_model_->coriolis();
++    J = pinocchio_model_->jacobian();
++    transform = pinocchio_model_->pose();
++    return;
++  }
+   std::array<double, 49> mass = franka_robot_model_->getMassMatrix();
+   std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
+   std::array<double, 42> jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
+   std::array<double, 16> pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
+-  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
++  coriolis = Eigen::Map<Eigen::Matrix<double, 7, 1>>(coriolis_array.data());
+   J = Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array.data());
+-  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass.data());
+-  Eigen::Affine3d transform(Eigen::Matrix4d::Map(pose.data()));
++  M = Eigen::Map<Eigen::Matrix<double, 7, 7>>(mass.data());
++  transform = Eigen::Affine3d(Eigen::Matrix4d::Map(pose.data()));
++}
++
++controller_interface::return_type CartesianImpedanceController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& period) {  
++  dt_ = period.seconds();
++  if (dt_ <= 0.0 || dt_ > 0.1) {
++    dt_ = 0.001;
++  }
++  updateJointStates();  // first: the Pinocchio model needs q_, dq_
++  Eigen::Matrix<double, 7, 7> M;
++  Eigen::Matrix<double, 7, 1> coriolis;
++  Eigen::Affine3d transform;
++  computeModel(M, coriolis, transform);
+   Eigen::Vector3d position(transform.translation());
+   Eigen::Quaterniond orientation(transform.rotation());
+   //orientation_d_target_ = Eigen::AngleAxisd(rotation_d_target_[0], Eigen::Vector3d::UnitX())
+   //                      * Eigen::AngleAxisd(rotation_d_target_[1], Eigen::Vector3d::UnitY())
+   //                      * Eigen::AngleAxisd(rotation_d_target_[2], Eigen::Vector3d::UnitZ());
+-  updateJointStates(); 
+ 
+   
+   error.head(3) << position - position_d_;
+@@ -350,7 +426,7 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+   D.topRightCorner(3,3).setZero();
+   D.bottomLeftCorner(3,3).setZero();
+   
+-  I_error = I_error + integrator_weights.cwiseProduct(error) * 0.001; //weighted integral action
++  I_error = I_error + integrator_weights.cwiseProduct(error) * dt_; //weighted integral action
+   //I_error.tail(4).setZero(); //only integrate position error in x and y, not rotation error
+   I_error.head(3) = I_error.head(3).cwiseMin(2.5).cwiseMax(-2.5); //anti-windup
+   I_error.tail(3) = I_error.tail(3).cwiseMin(1.5).cwiseMax(-1.5); //anti-windup
+diff --git a/src/pinocchio_model.cpp b/src/pinocchio_model.cpp
+new file mode 100644
+index 0000000..8839acf
+--- /dev/null
++++ b/src/pinocchio_model.cpp
+@@ -0,0 +1,117 @@
++// Pinocchio headers first (Boost.MPL limits must be set before other Boost users).
++#include <pinocchio/algorithm/crba.hpp>
++#include <pinocchio/algorithm/frames.hpp>
++#include <pinocchio/algorithm/jacobian.hpp>
++#include <pinocchio/algorithm/joint-configuration.hpp>
++#include <pinocchio/algorithm/model.hpp>
++#include <pinocchio/algorithm/rnea.hpp>
++#include <pinocchio/multibody/data.hpp>
++#include <pinocchio/multibody/model.hpp>
++#include <pinocchio/parsers/urdf.hpp>
++
++#include "cartesian_impedance_control/pinocchio_model.hpp"
++
++#include <algorithm>
++#include <stdexcept>
++
++namespace cartesian_impedance_control {
++
++struct PinocchioModel::Impl {
++  pinocchio::Model model;
++  pinocchio::Data data;
++  pinocchio::FrameIndex ee_frame_id{0};
++  std::vector<int> q_idx;  // controller joint i -> index in model q
++  std::vector<int> v_idx;  // controller joint i -> index in model v
++  Eigen::VectorXd q, v;
++  Eigen::Matrix<double, 6, Eigen::Dynamic> J_full;
++};
++
++PinocchioModel::PinocchioModel(const std::string& urdf_path,
++                               const std::vector<std::string>& arm_joints,
++                               const std::string& ee_frame)
++    : impl_(std::make_unique<Impl>()) {
++  if (arm_joints.size() != 7) {
++    throw std::invalid_argument("PinocchioModel: expected 7 arm joints");
++  }
++
++  pinocchio::Model full;
++  pinocchio::urdf::buildModel(urdf_path, full);  // fixed base
++
++  for (const auto& name : arm_joints) {
++    if (!full.existJointName(name)) {
++      throw std::invalid_argument("PinocchioModel: joint '" + name + "' not in " + urdf_path);
++    }
++  }
++
++  // Lock every joint that is not commanded by the controller (fingers, ...).
++  std::vector<pinocchio::JointIndex> to_lock;
++  for (pinocchio::JointIndex j = 1; j < static_cast<pinocchio::JointIndex>(full.njoints); ++j) {
++    if (std::find(arm_joints.begin(), arm_joints.end(), full.names[j]) == arm_joints.end()) {
++      to_lock.push_back(j);
++    }
++  }
++  const Eigen::VectorXd q_ref = pinocchio::neutral(full);
++  impl_->model = pinocchio::buildReducedModel(full, to_lock, q_ref);
++  impl_->data = pinocchio::Data(impl_->model);
++
++  auto& m = impl_->model;
++  if (m.nv != 7 || m.nq != 7) {
++    throw std::runtime_error("PinocchioModel: reduced model does not have 7 DOF");
++  }
++  if (!m.existFrame(ee_frame)) {
++    throw std::invalid_argument("PinocchioModel: frame '" + ee_frame + "' not in " + urdf_path);
++  }
++  impl_->ee_frame_id = m.getFrameId(ee_frame);
++
++  for (const auto& name : arm_joints) {
++    const auto jid = m.getJointId(name);
++    impl_->q_idx.push_back(m.joints[jid].idx_q());
++    impl_->v_idx.push_back(m.joints[jid].idx_v());
++  }
++  impl_->q = Eigen::VectorXd::Zero(m.nq);
++  impl_->v = Eigen::VectorXd::Zero(m.nv);
++  impl_->J_full = Eigen::Matrix<double, 6, Eigen::Dynamic>::Zero(6, m.nv);
++}
++
++PinocchioModel::~PinocchioModel() = default;
++
++void PinocchioModel::compute(const Eigen::Matrix<double, 7, 1>& q,
++                             const Eigen::Matrix<double, 7, 1>& dq) {
++  auto& m = impl_->model;
++  auto& d = impl_->data;
++  for (int i = 0; i < 7; ++i) {
++    impl_->q[impl_->q_idx[i]] = q[i];
++    impl_->v[impl_->v_idx[i]] = dq[i];
++  }
++
++  // Mass matrix (crba fills the upper triangle only).
++  pinocchio::crba(m, d, impl_->q);
++  d.M.triangularView<Eigen::StrictlyLower>() = d.M.transpose().triangularView<Eigen::StrictlyLower>();
++
++  // Coriolis/centrifugal vector C(q, dq) dq, without gravity.
++  pinocchio::computeCoriolisMatrix(m, d, impl_->q, impl_->v);
++  const Eigen::VectorXd c = d.C * impl_->v;
++
++  // Kinematics, end-effector pose and Jacobian.
++  pinocchio::computeJointJacobians(m, d, impl_->q);  // also runs forward kinematics
++  pinocchio::updateFramePlacements(m, d);
++  impl_->J_full.setZero();
++  pinocchio::getFrameJacobian(m, d, impl_->ee_frame_id, pinocchio::LOCAL_WORLD_ALIGNED,
++                              impl_->J_full);
++
++  for (int i = 0; i < 7; ++i) {
++    const int vi = impl_->v_idx[i];
++    coriolis_[i] = c[vi];
++    J_.col(i) = impl_->J_full.col(vi);
++    for (int k = 0; k < 7; ++k) {
++      M_(i, k) = d.M(vi, impl_->v_idx[k]);
++    }
++  }
++
++  const auto& oMf = d.oMf[impl_->ee_frame_id];
++  pose_.setIdentity();
++  pose_.linear() = oMf.rotation();
++  pose_.translation() = oMf.translation();
++}
++
++}  // namespace cartesian_impedance_control
+diff --git a/test/pinocchio_model_check.cpp b/test/pinocchio_model_check.cpp
+new file mode 100644
+index 0000000..54b211a
+--- /dev/null
++++ b/test/pinocchio_model_check.cpp
+@@ -0,0 +1,86 @@
++// Sanity check of PinocchioModel against libfranka reference values.
++// Usage: pinocchio_model_check [urdf_path] [ee_frame]
++// Exits with 0 if all checks pass.
++
++#include <cmath>
++#include <cstdio>
++#include <string>
++#include <vector>
++
++#include <Eigen/Dense>
++
++#include "cartesian_impedance_control/pinocchio_model.hpp"
++
++namespace {
++
++int failures = 0;
++
++void check(bool ok, const std::string& what, double value) {
++  std::printf("[%s] %-40s %.3e\n", ok ? " OK " : "FAIL", what.c_str(), value);
++  if (!ok) {
++    ++failures;
++  }
++}
++
++}  // namespace
++
++int main(int argc, char** argv) {
++  const std::string urdf = argc > 1 ? argv[1] : "/home/njohnson/ci_mpc_assets/fr3.urdf";
++  const std::string ee_frame = argc > 2 ? argv[2] : "fr3_hand_tcp";
++  std::vector<std::string> joints;
++  for (int i = 1; i <= 7; ++i) {
++    joints.push_back("fr3_joint" + std::to_string(i));
++  }
++  cartesian_impedance_control::PinocchioModel model(urdf, joints, ee_frame);
++
++  // libfranka home pose
++  Eigen::Matrix<double, 7, 1> q;
++  q << 0.0, -M_PI_4, 0.0, -3.0 * M_PI_4, 0.0, M_PI_2, M_PI_4;
++  Eigen::Matrix<double, 7, 1> dq = Eigen::Matrix<double, 7, 1>::Zero();
++  model.compute(q, dq);
++
++  const Eigen::Vector3d p_ref(0.3069, 0.0, 0.4869);
++  const Eigen::Matrix3d R_ref = Eigen::Vector3d(1.0, -1.0, -1.0).asDiagonal();
++  const Eigen::Vector3d p = model.pose().translation();
++  std::printf("home TCP position: %.4f %.4f %.4f\n", p.x(), p.y(), p.z());
++  check((p - p_ref).norm() < 1e-3, "home TCP position vs libfranka", (p - p_ref).norm());
++  check((model.pose().linear() - R_ref).norm() < 1e-6, "home TCP rotation = diag(1,-1,-1)",
++        (model.pose().linear() - R_ref).norm());
++  check(model.coriolis().norm() < 1e-12, "coriolis(dq = 0) = 0", model.coriolis().norm());
++
++  // Random state
++  q << 0.3, -0.5, 0.2, -2.0, 0.4, 1.8, -0.3;
++  dq << 0.5, -0.4, 0.3, 0.6, -0.7, 0.2, 0.9;
++  model.compute(q, dq);
++  const Eigen::Matrix<double, 7, 7> M = model.mass();
++  check((M - M.transpose()).norm() < 1e-12, "M symmetric", (M - M.transpose()).norm());
++  const double min_eig = Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 7, 7>>(M)
++                             .eigenvalues().minCoeff();
++  check(min_eig > 0.0, "M positive definite (min eigenvalue)", min_eig);
++  // C(q, dq) dq is quadratic in dq
++  const Eigen::Matrix<double, 7, 1> c1 = model.coriolis();
++  model.compute(q, 2.0 * dq);
++  check((model.coriolis() - 4.0 * c1).norm() < 1e-9, "coriolis quadratic in dq",
++        (model.coriolis() - 4.0 * c1).norm());
++
++  // Jacobian vs finite differences of the pose
++  model.compute(q, dq);
++  const Eigen::Matrix<double, 6, 7> J = model.jacobian();
++  const Eigen::Affine3d T0 = model.pose();
++  Eigen::Matrix<double, 6, 7> J_fd;
++  const double h = 1e-7;
++  for (int i = 0; i < 7; ++i) {
++    Eigen::Matrix<double, 7, 1> qp = q;
++    qp[i] += h;
++    model.compute(qp, dq);
++    const Eigen::Affine3d T1 = model.pose();
++    J_fd.block<3, 1>(0, i) = (T1.translation() - T0.translation()) / h;
++    const Eigen::AngleAxisd aa(T1.linear() * T0.linear().transpose());
++    J_fd.block<3, 1>(3, i) = aa.axis() * aa.angle() / h;
++  }
++  check((J - J_fd).cwiseAbs().maxCoeff() < 1e-5, "jacobian vs finite differences",
++        (J - J_fd).cwiseAbs().maxCoeff());
++
++  std::printf("%s\n", failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
++  return failures == 0 ? 0 : 1;
++}
+-- 
+2.34.1
+

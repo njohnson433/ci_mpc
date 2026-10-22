@@ -1,0 +1,14 @@
+diff --git a/franka_bringup/config/controllers.yaml b/franka_bringup/config/controllers.yaml
+index 653192f..77f64fc 100644
+--- a/franka_bringup/config/controllers.yaml
++++ b/franka_bringup/config/controllers.yaml
+@@ -61,7 +61,8 @@
+       
+       swerve_drive_controller:
+         type: franka_mobile/SwerveDriveController
+-
++      cartesian_impedance_controller:
++        type: cartesian_impedance_control/CartesianImpedanceController
+ 
+ /**:
+   joint_impedance_example_controller:
