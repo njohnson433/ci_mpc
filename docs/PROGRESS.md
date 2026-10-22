@@ -8,8 +8,10 @@ Read this before starting work (and before re-investigating something "new").
 - **Current task:** ROADMAP task 3 (MPC tracking mode in the controller). Task 4 (controller in Isaac)
   **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
   <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
+  With identified joint friction (now the default scene): hold 0.00 mm, reach **2.2 mm** / 0.0035 rad,
+  <1 cm in 1.58 s (2 of 2 runs, deterministic).
 - **Open follow-ups for task 4:** physics/control at 1 kHz (now 240 Hz); RTF is ~0.35 with the GPU shared;
-  joint friction (URDF has `friction`, `mu_viscous`) not modelled yet.
+  the ~2 mm friction offset does not converge out (integrator too weak?); friction compensation still off.
 - **Code that is not in this repo:**
   - `~/franka_ros2_ws/src/cartesian_impedance_control` (upstream `LucasG2001/cartesian_impedance_control`,
     no push access). Our work is on local branch `isaac-sim-pinocchio` (2 commits on top of `main` f8d5fe2).
@@ -23,6 +25,20 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-22 (later): identified joint friction in the sim
+- User decision: use the **identified** friction (controller header `static_friction`, `coulomb_friction`,
+  `beta`; upstream author's FR3), not Franka's URDF `<dynamics>` (`friction 0.2` for every joint = placeholder,
+  units undocumented). Earlier claim "~1 Nm on joints 5 and 7" was wrong: identified j5 1.29, j7 0.53 Nm.
+- `prepare_scene.py` applies `PhysxJointAxisAPI:angular`: staticFrictionEffort = static, dynamicFrictionEffort =
+  Coulomb, viscousFrictionCoefficient = beta·π/180 (PhysX unit Nm·s/deg). Not representable, left out:
+  `offset_friction` (asymmetric bias, j2 −0.70 Nm) and the LuGre states. `--no-friction` removes it.
+  Scene backup before friction: `fr3_scene.usd.bak-armature`.
+- Open-loop check, joint 7 at home: 0.30 / 0.45 Nm → no motion, 0.60 Nm → 0.144 rad/s after 0.5 s
+  (hand calc with armature 0.206 kg m²: 0.157 minus viscous) → friction active and in the right units.
+- Test (no friction compensation in the controller): hold 0.00 mm / 0.0000 rad (stiction), reach final
+  **2.2 mm** / 0.0035 rad (was 0.47 mm frictionless), <1 cm in 1.58 s (was 1.47). The error creeps
+  1.8 → 2.2 mm from t = 5 to 10 s instead of converging: the integral term does not beat stiction here.
 
 ### 2026-10-22 (later): task 4 passes, the fix was FR3 joint armature in the sim
 - Ablation (single runs; hold rot drift / reach rot err / reach pos err):

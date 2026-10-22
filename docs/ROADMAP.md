@@ -65,5 +65,6 @@
 
 - ~~Does the in-process Controller Manager in Isaac load C++ plugins built against the system
   Humble without problems?~~ Yes (2026-10-22).
-- Joint friction/damping in the sim: armature is modelled (needed for stability); friction not yet.
+- Joint friction/damping in the sim: armature + identified static/Coulomb/viscous friction modelled
+  (2026-10-22); offset and LuGre terms are not representable in PhysX.
 - Which contact task for stages 2–3 (planar pushing, pivoting, …)?

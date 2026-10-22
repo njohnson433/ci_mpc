@@ -22,5 +22,6 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
 - Use an isolated `ROS_DOMAIN_ID` (e.g. 42) for tests. Kill processes by exact PID (never `pgrep -f`/`pkill -f`
   from a one-line shell: it matches the shell itself).
 - Isaac ros2_control: Controller Manager targetPrim is `/fr3` (joints live in `/fr3/Physics`); the scene needs
-  `scripts/isaac/prepare_scene.py` (physx variant + FR3 joint armature, else the wrist chatters at 240 Hz).
+  `scripts/isaac/prepare_scene.py` (physx variant + FR3 joint armature, else the wrist chatters at 240 Hz,
+  + identified joint friction from the controller header; `--no-friction` to remove).
 - Test: `scripts/isaac/run_impedance_test.sh` (headless, ~1 min); `--dump x.npz`, `CONTROLLER_CONFIG=...`.
