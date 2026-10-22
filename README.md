@@ -24,7 +24,7 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
 | Real robot connection test | ⏳ not done yet |
 
-See [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in
+See [docs/REAL_ROBOT.md](docs/REAL_ROBOT.md) for the real-robot bring-up checklist, [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in
 sim, [docs/SYSID.md](docs/SYSID.md) for the identification, [docs/ROADMAP.md](docs/ROADMAP.md) for the next
 tasks and [docs/PROGRESS.md](docs/PROGRESS.md) for the dated log.
 
