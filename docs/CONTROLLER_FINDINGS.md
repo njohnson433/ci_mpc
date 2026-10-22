@@ -91,6 +91,10 @@ Lessons:
    friction, 1.29 mm with (old reference_pose path: 33 mm). See PROGRESS.md 2026-10-23.
    **Safety:** velocity friction compensation without (or with much less) real friction is negative damping;
    start the real robot with `friction_scale` < 1.
+3b. **Stage-1 MPC (task 5): done in sim** (2026-10-23): reach 0.3–0.4 mm, circle 1.0 mm RMS. Key lesson: an MPC
+   on top of the impedance controller must replan from its previous plan, not from the measured state —
+   otherwise the setpoint sits where the arm is and the impedance feedback is switched off (10–15 mm short,
+   circle did not move at all).
 4. **Contact detection in sim:** an `o_f_ext_hat_k` equivalent for mode 1.
 5. **Sim speed:** headless runs at ~0.55× real time because every physics step renders.
 

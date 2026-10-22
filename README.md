@@ -20,8 +20,8 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Sim realism: FR3 joint armature + identified friction | ✅ `scripts/isaac/prepare_scene.py` |
 | Joint identification (`ci_mpc_sysid`) | ✅ validated in sim (Coulomb 0–0.4 %, viscous 0.1–2 %, armature 2–4 %); real robot pending |
 | Impedance test suite (steps, rotations, circle, pushes, windup) | ✅ `scripts/impedance_suite.py` |
-| MPC tracking interface (task 3) | ⏳ next |
-| MPC | ⏳ not started |
+| MPC tracking interface (task 3, `ci_mpc_msgs/MpcCommand`) | ✅ circle 0.65 mm RMS without friction |
+| Stage-1 MPC (`ci_mpc_planner`, OSQP) | ✅ sim: reach 0.3–0.4 mm, circle 1.0 mm RMS, 1 ms solves |
 | Real robot connection test | ⏳ not done yet |
 
 See [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in

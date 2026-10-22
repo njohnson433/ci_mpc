@@ -1,7 +1,7 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH 1/5] Pinocchio model source so the controller runs in Isaac
+Subject: [PATCH 1/6] Pinocchio model source so the controller runs in Isaac
  Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
@@ -686,7 +686,7 @@ index 0000000..54b211a
 From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 12:34:36 +0200
-Subject: [PATCH 2/5] Optional nullspace damping; Isaac config documents it as
+Subject: [PATCH 2/6] Optional nullspace damping; Isaac config documents it as
  off
 
 - New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
@@ -770,7 +770,7 @@ index 2b2ee40..a97308b 100644
 From 0fe0271f4e82d4e5ebedbf35a5be34478d56a83a Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 14:37:06 +0200
-Subject: [PATCH 3/5] Friction compensation and integrator as parameters
+Subject: [PATCH 3/6] Friction compensation and integrator as parameters
  (defaults unchanged)
 
 - integrator_weights / integrator_limits replace the hard-coded integral
@@ -956,7 +956,7 @@ index a97308b..1c6d626 100644
 From acc11b205e5d2750350b03179055f5ea90e1a846 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:04:02 +0200
-Subject: [PATCH 4/5] Conditional integration (anti-windup) as parameters;
+Subject: [PATCH 4/6] Conditional integration (anti-windup) as parameters;
  Isaac config uses it
 
 - integrator_windows, integrator_velocity_window, integrator_freeze_on_saturation,
@@ -1100,7 +1100,7 @@ index 1c6d626..639f311 100644
 From e6d5f8de57c0f76457c60dd36a908dd26270758d Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:23:21 +0200
-Subject: [PATCH 5/5] MPC tracking interface (ci_mpc_msgs/MpcCommand)
+Subject: [PATCH 5/6] MPC tracking interface (ci_mpc_msgs/MpcCommand)
 
 - Subscribes /cartesian_impedance_controller/mpc_command through a realtime
   buffer. The newest command sets the pose directly (no reference filter),
@@ -1336,6 +1336,106 @@ index 639f311..5768c51 100644
    const Eigen::Matrix<double, 6, 1> F_unclamped = F_impedance;
    F_impedance.head(3) = F_impedance.head(3).cwiseMin(18.0).cwiseMax(-18.0); //clamping forces to avoid instabilities
    F_impedance.tail(3) = F_impedance.tail(3).cwiseMin(9.0).cwiseMax(-9.0); //clamping torques to avoid
+-- 
+2.34.1
+
+
+From 916e4dba2e1e5e7afff8853cd9c5c0be8011d3b5 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Thu, 22 Oct 2026 15:46:37 +0200
+Subject: [PATCH 6/6] Optional joint armature in the Pinocchio model
+
+Parameter `armature` (7 values, default none): rotor inertia added to the
+mass matrix (Lambda, critical damping). Tested with the stage-1 MPC in sim:
+no measurable effect on the reach (peak speed 0.36-0.37 m/s, overshoot
+3.5-4.6 mm with and without), so the Isaac config does not set it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../cartesian_impedance_control/pinocchio_model.hpp   |  5 ++++-
+ src/cartesian_impedance_controller.cpp                |  9 ++++++---
+ src/pinocchio_model.cpp                               | 11 ++++++++++-
+ 3 files changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/include/cartesian_impedance_control/pinocchio_model.hpp b/include/cartesian_impedance_control/pinocchio_model.hpp
+index c931272..53b1c84 100644
+--- a/include/cartesian_impedance_control/pinocchio_model.hpp
++++ b/include/cartesian_impedance_control/pinocchio_model.hpp
+@@ -32,9 +32,12 @@ class __attribute__((visibility("default"))) PinocchioModel {
+   // arm_joints: the 7 joints the controller commands, in controller order.
+   // All other joints in the URDF (e.g. gripper fingers) are locked at their
+   // neutral position. ee_frame: URDF frame used as end-effector.
++  // armature: optional rotor inertia per arm joint [kg m^2] (reflected through the gearbox), added to the
++  // mass matrix; empty = none (URDF link inertias only).
+   PinocchioModel(const std::string& urdf_path,
+                  const std::vector<std::string>& arm_joints,
+-                 const std::string& ee_frame);
++                 const std::string& ee_frame,
++                 const std::vector<double>& armature = {});
+   ~PinocchioModel();
+ 
+   PinocchioModel(const PinocchioModel&) = delete;
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index 5768c51..c94a454 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -227,6 +227,7 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<std::string>("ee_frame", "fr3_hand_tcp");
+      auto_declare<bool>("enable_input_server", true);
+      auto_declare<double>("nullspace_damping", 0.0);
++     auto_declare<std::vector<double>>("armature", std::vector<double>{});
+      auto_declare<std::vector<double>>("integrator_weights", {350, 350, 0, 50, 50, 50});
+      auto_declare<std::vector<double>>("integrator_limits", {2.5, 2.5, 2.5, 1.5, 1.5, 0.5});
+      auto_declare<std::vector<double>>("integrator_windows", {0, 0, 0, 0, 0, 0});
+@@ -302,14 +303,16 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+         arm_joints.push_back(arm_id_ + "_joint" + std::to_string(i));
+       }
+       try {
+-        pinocchio_model_ = std::make_unique<PinocchioModel>(urdf_path_, arm_joints, ee_frame_);
++        pinocchio_model_ = std::make_unique<PinocchioModel>(
++            urdf_path_, arm_joints, ee_frame_, get_node()->get_parameter("armature").as_double_array());
+       } catch (const std::exception& e) {
+         RCLCPP_ERROR(get_node()->get_logger(), "Failed to build Pinocchio model from '%s': %s",
+                      urdf_path_.c_str(), e.what());
+         return CallbackReturn::ERROR;
+       }
+-      RCLCPP_INFO(get_node()->get_logger(), "Model source: pinocchio (%s, ee frame %s)",
+-                  urdf_path_.c_str(), ee_frame_.c_str());
++      RCLCPP_INFO(get_node()->get_logger(), "Model source: pinocchio (%s, ee frame %s, %s)",
++                  urdf_path_.c_str(), ee_frame_.c_str(),
++                  get_node()->get_parameter("armature").as_double_array().empty() ? "no armature" : "with armature");
+     } else if (model_source_ == "franka") {
+       franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
+       franka_semantic_components::FrankaRobotModel(arm_id_ + "/" + k_robot_model_interface_name,
+diff --git a/src/pinocchio_model.cpp b/src/pinocchio_model.cpp
+index 8839acf..aa79ffd 100644
+--- a/src/pinocchio_model.cpp
++++ b/src/pinocchio_model.cpp
+@@ -28,7 +28,8 @@ struct PinocchioModel::Impl {
+ 
+ PinocchioModel::PinocchioModel(const std::string& urdf_path,
+                                const std::vector<std::string>& arm_joints,
+-                               const std::string& ee_frame)
++                               const std::string& ee_frame,
++                               const std::vector<double>& armature)
+     : impl_(std::make_unique<Impl>()) {
+   if (arm_joints.size() != 7) {
+     throw std::invalid_argument("PinocchioModel: expected 7 arm joints");
+@@ -68,6 +69,14 @@ PinocchioModel::PinocchioModel(const std::string& urdf_path,
+     impl_->q_idx.push_back(m.joints[jid].idx_q());
+     impl_->v_idx.push_back(m.joints[jid].idx_v());
+   }
++  if (!armature.empty()) {
++    if (armature.size() != 7) {
++      throw std::invalid_argument("PinocchioModel: armature needs 7 values");
++    }
++    for (size_t i = 0; i < 7; ++i) {
++      m.armature[impl_->v_idx[i]] = armature[i];  // crba adds it to the mass matrix diagonal
++    }
++  }
+   impl_->q = Eigen::VectorXd::Zero(m.nq);
+   impl_->v = Eigen::VectorXd::Zero(m.nv);
+   impl_->J_full = Eigen::Matrix<double, 6, Eigen::Dynamic>::Zero(6, m.nv);
 -- 
 2.34.1
 

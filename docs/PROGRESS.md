@@ -5,8 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **Current task:** ROADMAP task 5 (stage-1 MPC: `ci_mpc_planner` using `ci_mpc_msgs/MpcCommand`). Task 3 (MPC
-  interface in the controller) is done and tested in sim. Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
+- **Current task:** stage-1 MPC (task 5) works in sim: reach 0.3–0.4 mm, circle 1.0 mm RMS. Next: orientation
+  in the MPC, real robot (task 6), then stage 2 (contact). Task 3 (MPC interface) done. Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
   is validated in sim and ready for the real FR3 once task 6 bring-up is done. Task 4 (controller in Isaac)
   **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
   <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
@@ -27,6 +27,53 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23: task 5, stage-1 MPC
+- New package `ci_mpc/ci_mpc_planner` (ament_python, OSQP 1.1.3 via `pip install --user osqp`):
+  `TranslationalMpc` = double integrator on the EE position, input acceleration, dt 0.02 s, horizon 50 (1 s),
+  |v| ≤ 0.3 m/s, |a| ≤ 2 m/s², workspace box; constant QP matrices (only x0 / reference / a_prev change),
+  solve 1.5 ms mean, 4.3 ms max. `mpc_node`: solves at 50 Hz, streams MpcCommand at 200 Hz (plan
+  interpolated: pose, twist, wrench = Λ_t(q)·a), tasks hold / reach / circle, sim time. Offline unit tests
+  (`test/test_translational_mpc.py`). Test harness `scripts/mpc_stage1_test.py` (reach out/back 15 cm,
+  circle r 5 cm / 5 s, 10 N disturbance while holding).
+- **First design lost: replanning from the measured state.** The plan's first point is where the arm already
+  is, so the impedance spring never builds up: the controller's position feedback is switched off and only
+  the feedforward Λ·a drives the arm. Reach ended 10–15 mm short, 44 mm off the line, peak 0.14 m/s; the
+  circle never moved (feedforward ~0.2 N < stiction). Fix: replan from the previous plan's state, reset to the
+  measured state only beyond 2 cm.
+
+  | variant | reach out final / t<1 mm | back final | peak speed (v_max 0.3) | off-line / overshoot |
+  |---|---|---|---|---|
+  | measured, no armature | 10.0 mm / never | 15.2 mm | 0.14 m/s | 44 / 3.8 mm |
+  | measured + MPC armature | 9.6 / never | 13.6 | 0.25 | 32 / 4.8 |
+  | **plan** | **0.29 / 0.61 s** | **0.50** | 0.38 | 9.5 / 5.8 |
+  | plan + MPC armature | 0.57 / 1.46 s | 0.86 | 0.36 | 9.3 / 4.8 |
+
+- "Exceeds the speed limit / overshoot" was mostly **the plan itself**: v_max is per axis, so a diagonal move
+  plans 0.367 m/s total (each axis ≤ 0.245), and with q_vel 10 the plan overshoots 3.9 mm. The arm matched it
+  (0.36–0.37 m/s, 3.6–4.6 mm). Hypothesis "controller underdamped (no armature in its model)" **lost**: added
+  an optional `armature` to the controller's PinocchioModel, no measurable change (kept as param, not set).
+- Cost sweep (offline, 15 cm diagonal / 5 cm x): terminal weight irrelevant; q_vel 10 → 3.9 mm overshoot,
+  0.68 s to < 1 mm; 30 → 0.7 mm, 0.88 s; **50 → 0, 1.2 s (new default)**; 70 → 0, 1.5 s.
+- **Result (plan replanning, MPC armature, q_vel 50; sim with identified friction):**
+
+  | test | result |
+  |---|---|
+  | reach out / back (15 cm), final error | 0.37 / 0.30 mm |
+  | overshoot | 0.94 / 0.91 mm |
+  | time to < 1 cm / < 1 mm | 0.73 / 1.40–1.98 s |
+  | circle r 5 cm / 5 s, RMS vs timed reference | 1.03 mm (shape 0.60 mm); direct MpcCommand streaming was 1.29 mm |
+  | 10 N push 2 s while holding | 3.3 mm, back to 0.21 mm |
+  | solve time | 0.9–1.5 ms mean, < 4.3 ms max, all "solved" |
+
+- Measurement artifact: arm vs commanded plan looked like 16 mm RMS on the circle; with the command stamps
+  shifted by −250 ms it is 0.99 mm. In sim the MPC's clock (/clock) and the /joint_states stamps differ by a
+  constant 0.25 s. No effect on control (MPC uses one clock, the controller no stamps); matters for latency
+  measurements later.
+- Test bugs fixed: float parameters for the circle, fail fast if mpc_node exits, ROS_DOMAIN_ID must be ≤ 101
+  (112 did not discover the Controller Manager: DDS ports collide with the ephemeral range).
+- Test bug: `circle_laps:=2` (int) vs a float parameter → node did not start; the circle results above
+  (70.7 mm, radial 0.00 = arm never moved) are invalid for the plan variants. Harness now fails fast.
 
 ### 2026-10-23: task 3, MPC interface in the controller
 - New package `ci_mpc/ci_mpc_msgs` with `MpcCommand` (header, pose, twist, wrench, stiffness[6], damping[6],

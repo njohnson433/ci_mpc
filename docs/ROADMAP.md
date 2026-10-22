@@ -51,10 +51,14 @@
 - [ ] Physics rate: 1 kHz (runs at 240 Hz now), headless or standalone if the GUI is too slow.
 
 ### 5. Stage-1 MPC
-- [ ] `ci_mpc_msgs`, `ci_mpc_planner` packages.
-- [ ] Solver behind an interface: `solve(state, goal) → command`.
-- [ ] Model: end effector as a mass-spring-damper pulled toward the setpoint (matches the impedance loop).
-- [ ] First task: reach a fixed pose, then track a circle.
+- [x] `ci_mpc_msgs`, `ci_mpc_planner` packages.
+- [x] Solver behind an interface: `TranslationalMpc.solve(x0, p_ref, v_ref)` (OSQP, 1 ms).
+- [x] Model: EE double integrator; the plan goes to the impedance controller as pose + twist + Λ·a
+      feedforward; replan from the previous plan (replanning from the measured state switches the
+      impedance feedback off).
+- [x] First task: reach a fixed pose (0.3–0.4 mm), then track a circle (1.0 mm RMS) — sim, identified friction.
+- [ ] Orientation in the MPC (now held at the start orientation).
+- [ ] Same tests on the real robot.
 
 ### 6. Real robot bring-up
 - [ ] Network (static IP), FCI, read-only test with pylibfranka.
