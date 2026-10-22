@@ -27,6 +27,59 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-22 (night): friction handling in the controller (option 1)
+- Controller params (defaults = previous behavior): `integrator_weights`, `integrator_limits`,
+  `friction_compensation` none|lugre|coulomb, `friction_offsets`, `friction_abs_threshold`, `friction_scale`,
+  `friction_tau_eps`. Upstream issues found in the commented-out friction code: integrates with a fixed
+  0.001 s and α = 0.1 per step (1 kHz only → now dt-scaled), thresholds `error < 0.8 mm` instead of
+  `|error|` (zeroes all negative errors), a local `tau_impedance` shadowed the member it reads (always 0),
+  and it was added after the torque-rate limit (now before). At rest the "LuGre" state integrates
+  0.025·τ_impedance, i.e. it acts as a clamped (±3.5 Nm) joint-space integrator.
+- Batch 1, friction scene, steps (worst error after 4 s) and 10 N / 1 Nm pushes (end deflection;
+  frictionless ideal 3.0 / 3.0 / 10.0 mm / 22.1 mrad):
+
+  | config | worst step | Fx / Fy / Fz / Tz |
+  |---|---|---|
+  | B0 baseline | 5.52 mm | 1.50 / 2.61 / 6.21 / 16.6 |
+  | B1 z integral 350 | 3.21 | 1.58 / 2.62 / 6.54 / 16.6 |
+  | B2 z integral + limits 8 N | 2.18 | 1.62 / 2.63 / 5.85 / 16.6 |
+  | B3 coulomb feed-forward | 1.66 | 1.27 / 1.72 / 4.77 / 6.55 |
+  | **B4 lugre (dt-scaled, abs threshold, no offsets)** | **0.98** | 2.85 / 1.99 / 5.20 / 22.8 |
+
+  Coulomb feed-forward adds friction torque in the direction of the impedance torque, which under an external
+  push is the restoring direction → 2.5× stiffer than without compensation (Tz): bad for contact, dropped.
+  LuGre is best on accuracy and closest to frictionless compliance. Integrator changes only help accuracy.
+- Batch 2 (+ robustness: scene friction scaled, controller unchanged):
+
+  | config | worst step | Fx / Fy / Fz / Tz |
+  |---|---|---|
+  | B5 lugre + z integral | 0.79 | 2.88 / 1.99 / 3.33 / 23.1 |
+  | B6 lugre, upstream threshold | 1.47 | 2.69 / 2.00 / 5.67 / 35.8 |
+  | friction ×0.7: B0 / lugre | 3.89 / 1.07 | lugre Tz ≈ 1 mrad (nearly rigid) |
+  | friction ×1.3: B0 / lugre | 7.17 / 1.10 | lugre Tz 17.0 |
+
+  The threshold fix matters. LuGre's hidden joint integrator makes the compliance depend on friction level
+  and on motion history: Tz under 1 Nm = 1 / 25 / 18 mrad at friction ×0.7 / 1.0 / 1.3, and the same B5
+  config gave 23.1 and 32.7 mrad in two runs with different preceding tests.
+- Batch 3 (`velocity` mode = Coulomb·tanh(q̇/0.02) + β·q̇, stateless; circle added):
+
+  | config | worst step | Fx / Fy / Fz / Tz | circle RMS vs filtered ref |
+  |---|---|---|---|
+  | B0 baseline | 5.52 | 1.62 / 2.68 / 6.24 / 16.0 | 10.7 mm |
+  | B5 lugre + z integral | 0.79 | 2.92 / 2.39 / 3.66 / 32.7 | 8.8 |
+  | V1 velocity | 3.10 | 3.57 / 3.70 / 9.79 / 14.3 | 7.3 |
+  | V1 velocity, friction ×0.7 | 1.63 | 4.30 / 3.06 / 12.5 / 31.0 | 5.6 |
+  | V2 velocity + z integral + limits 8 N | 1.56 | 3.24 / 3.47 / 4.61 / 14.3 | 7.3 |
+
+  (frictionless: 0.57 mm, 3.0 / 3.0 / 10.0 / 22.1, circle 6.8.) Velocity compensation restores the
+  translational compliance and removes almost all friction lag while moving; it does nothing at rest
+  (stiction), which the explicit integral handles (V2). Over-compensation at friction ×0.7 makes the arm
+  softer but stays stable.
+- **Recommendation: V2** (predictable impedance for the contact MPC; ~0.8 mm less static accuracy than
+  LuGre); the MPC can re-plan setpoints for the residual and switch the integral off in contact
+  (`integrator_limits`). Pending user decision; Isaac config unchanged. Controller commit e.g. `git log`
+  on `isaac-sim-pinocchio`; all new params default to the previous behavior.
+
 ### 2026-10-22 (evening): identification package, impedance test suite, controller audit
 - **Published friction values compared** (details + sources in `docs/SYSID.md`): Franka publishes none
   (URDF `friction 0.2` for all joints = placeholder); upstream identification 0.42–1.29 Nm; Menagerie FR3
