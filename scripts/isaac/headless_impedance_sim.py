@@ -13,6 +13,7 @@ parser.add_argument("--sync-dir", required=True)
 parser.add_argument("--timeout", type=float, default=7200.0, help="wall-clock seconds (safety net; the ROS side ends the run)")
 parser.add_argument("--config", default="", help="controller YAML (default: the installed isaac_sim_controllers.yaml)")
 parser.add_argument("--gui", action="store_true", help="open the Isaac Sim window (needs DISPLAY)")
+parser.add_argument("--pick-place", action="store_true", help="add table, cube and a position-controlled gripper")
 args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -30,6 +31,7 @@ for name in ("isaacsim.ros2.bridge", "isaacsim.ros2.nodes", "isaacsim.ros2.contr
 here = os.path.dirname(os.path.abspath(__file__))
 graph_lib = runpy.run_path(os.path.join(here, "add_ros2_control_graph.py"), run_name="lib")
 home_lib = runpy.run_path(os.path.join(here, "set_home_pose.py"), run_name="lib")
+pick_lib = runpy.run_path(os.path.join(here, "pick_place_scene.py"), run_name="lib") if args.pick_place else None
 
 omni.usd.get_context().open_stage(args.scene)
 for _ in range(20):
@@ -41,6 +43,8 @@ for path in (graph_lib["OLD_GRAPH"], graph_lib["GRAPH"]):
     prim = stage.GetPrimAtPath(path)
     if prim.IsValid():
         prim.SetActive(False)
+if pick_lib:
+    pick_lib["add_objects"](stage)
 
 # Play first and let SimulationManager initialize physics. If the ros2_control graph already
 # exists at Play, its first tick runs before physics is set up and createArticulationView fails.
@@ -103,6 +107,7 @@ def poll_wrench():
         print(f"[sim] wrench applied: {wrench['active']}", flush=True)
 
 
+gripper = pick_lib["Gripper"](args.sync_dir, home_lib["ROOT"]) if pick_lib else None
 open(os.path.join(args.sync_dir, "home_done"), "w").close()
 
 t0_wall, t0_sim = time.time(), timeline.get_current_time()
@@ -110,6 +115,8 @@ last = t0_wall
 done = os.path.join(args.sync_dir, "done")
 while not os.path.exists(done) and time.time() - t0_wall < args.timeout:
     poll_wrench()
+    if gripper:
+        gripper.poll()
     app.update()
     now = time.time()
     if now - last > 5.0:

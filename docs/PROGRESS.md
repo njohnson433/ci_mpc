@@ -7,7 +7,8 @@ Read this before starting work (and before re-investigating something "new").
 
 - **Current task:** stage 1 is finished in sim (everything that can be done without the robot): 6-DOF MPC with
   force-aware limits, 9/9 tests at nominal friction, stable at friction ×0.7 / ×1.3. Next: real robot (task 6:
-  bring-up, identification, the same tests with `config:=real`, friction_scale 0.5), or stage 2 (contact) in sim. Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
+  bring-up, identification, the same tests with `config:=real`, friction_scale 0.5), or stage 2 (contact) in sim.
+  Pick-and-place demo works in sim (`PICK_PLACE=1 ... pick_place_demo.py`, placed 0.6 mm from the target). Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
   is validated in sim and ready for the real FR3 once task 6 bring-up is done. Task 4 (controller in Isaac)
   **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
   <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
@@ -28,6 +29,21 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23: pick-and-place demo in sim (stage-1 MPC)
+- `PICK_PLACE=1` (sim): table (top z 0.2, x 0.5), 4 cm / 100 g cube (friction 1.0) at (0.45, −0.12); place at
+  (0.45, +0.12); grasp TCP z 0.225, transport z 0.33 (σ_min 0.21, links ≥ 0.33 m above the table).
+- Gripper = sim stand-in: new package `ci_mpc_sim_gripper` (`FingerWidthController`, position interfaces of both
+  fingers, `/gripper/width`), config `isaac_pick_place.yaml` (Isaac controller config + gripper). Real robot:
+  franka_gripper action server instead.
+- Gotcha: isaacsim.ros2.control picks each joint's command kind from the USD drive (stiffness > 0 = position,
+  else effort). The finger drives had stiffness 0 → position commands ignored (fingers stayed closed, the hand
+  landed on the cube). Setting the drives in USD before Play (2000 N/m, 100, 40 N) fixed it; tensor-API gains
+  alone do not change the command kind.
+- `scripts/pick_place_demo.py`: starts mpc_node with `config/mpc_sim.yaml`, goal poses on
+  `/ci_mpc_planner/goal_pose`, open → above → down → close → lift → above place → down → open → up → home.
+- Result: every move within 1.5 mm in 1.2–1.9 s; grasp at 40.0 mm opening, cube lifted 106 mm, placed
+  **0.6 mm** from the target, total 16 s sim.
 
 ### 2026-10-23: finishing stage 1 in sim
 - **Orientation in the MPC:** second QP of the same form on the rotation vector φ (world, R = exp(φ) R_start),

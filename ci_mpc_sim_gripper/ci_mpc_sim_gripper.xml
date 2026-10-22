@@ -1,0 +1,6 @@
+<library path="ci_mpc_sim_gripper">
+  <class name="ci_mpc_sim_gripper/FingerWidthController" type="ci_mpc_sim_gripper::FingerWidthController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>Sim stand-in for the Franka Hand: both finger joints to width/2 (position interfaces).</description>
+  </class>
+</library>
