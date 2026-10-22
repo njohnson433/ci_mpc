@@ -18,7 +18,9 @@ Jacobian), the commanded orientation exp(phi) R_start. Valid for rotations withi
 Tasks (parameter `task`): hold (stay at the start pose), reach (go to `goal` and `goal_rotvec` (rotation
 vector relative to the start orientation, world frame); also settable on ~/goal (position) and ~/goal_pose),
 circle (radius / period in the y-z plane, starting at the current position, `circle_laps` laps, then hold),
-figure8 (same parameters: y = r sin(wt), z = r/2 sin(2wt) around the start position).
+figure8 (same parameters: y = r sin(wt), z = r/2 sin(2wt) around the start position),
+path (~/path, geometry_msgs/PoseArray: from the current plan pose through the poses, corners rounded with
+`path_blend`, stopping at the last pose; timed with path_v_max / path_a_max, see path.BlendedPath).
 Run with use_sim_time:=true in the simulator.
 """
 import time
@@ -27,11 +29,12 @@ import numpy as np
 import pinocchio as pin
 import rclpy
 from ci_mpc_msgs.msg import MpcCommand
-from geometry_msgs.msg import Point, Pose
+from geometry_msgs.msg import Point, Pose, PoseArray
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 from ci_mpc_planner.ee_model import ARM_JOINTS, EeModel
+from ci_mpc_planner.path import BlendedPath
 from ci_mpc_planner.translational_mpc import MpcConfig, TranslationalMpc
 
 
@@ -71,7 +74,10 @@ class MpcNode(Node):
         # (the controller clamps at 18 N / 9 Nm / 2 Nm about z; the rest is headroom for its feedback).
         # 2 m/s^2 needs 47-80 N on the FR3 (Lambda_x 20-30 kg with armature): the arm overshot a wall by 22 mm.
         dp("force_limit", 12.0)
-        dp("stiffness", [0.0])  # 6 values: commanded diagonal K (else the controller keeps its own)
+        dp("stiffness", [0.0])
+        dp("path_v_max", 0.25)   # [m/s] along the path
+        dp("path_a_max", 0.35)   # [m/s^2] tangential and centripetal; below the force-aware MPC limit (~0.5)
+        dp("path_blend", 0.03)   # [m] corner radius at via points  # 6 values: commanded diagonal K (else the controller keeps its own)
         dp("torque_limit", [6.0, 6.0, 1.5])
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         for name in ("dt", "q_pos", "q_vel", "r_acc", "r_dacc", "terminal", "v_max", "a_max", "horizon"):
@@ -109,6 +115,9 @@ class MpcNode(Node):
         self.create_subscription(JointState, "/joint_states", self.on_joint_states, 10)
         self.create_subscription(Point, "~/goal", self.on_goal, 10)
         self.create_subscription(Pose, "~/goal_pose", self.on_goal_pose, 10)
+        self.create_subscription(PoseArray, "~/path", self.on_path, 10)
+        self.path = None
+        self.t_path = 0.0
         self.pub = self.create_publisher(MpcCommand, gp("command_topic"), 10)
         self.create_timer(1.0 / gp("solve_rate"), self.on_solve)
         self.create_timer(1.0 / gp("cmd_rate"), self.on_command)
@@ -145,8 +154,41 @@ class MpcNode(Node):
         self.task = "reach"
         self.get_logger().info(f"new goal pose {np.round(self.goal, 4)}, rotation {np.round(self.goal_rotvec, 3)} rad")
 
+    def on_path(self, msg):
+        if self.start is None or not msg.poses:
+            self.get_logger().warn("path ignored: no robot state yet or empty")
+            return
+        now = self.now_s()
+        if self.plan is not None:
+            p0, rv0 = self.plan_state(now)[0], self.plan_state(now, rot=True)[0]
+        else:
+            p0, rv0 = self.start[0], np.zeros(3)
+        pts, rvs = [p0], [rv0]
+        for pose in msg.poses:
+            pts.append([pose.position.x, pose.position.y, pose.position.z])
+            o = pose.orientation
+            R = pin.Quaternion(o.w, o.x, o.y, o.z).normalized().toRotationMatrix()
+            rvs.append(pin.log3(R @ self.start[1].T))
+        gp = lambda n: self.get_parameter(n).value  # noqa: E731
+        self.path = BlendedPath(pts, rvs, gp("path_v_max"), gp("path_a_max"), gp("path_blend"))
+        self.t_path = now
+        self.goal, self.goal_rotvec = np.array(pts[-1]), np.array(rvs[-1])  # held after the path ends
+        self.singular_stop = False
+        self.task = "path"
+        self.get_logger().info(f"path with {len(msg.poses)} poses, {self.path.s[-1]:.3f} m, {self.path.duration:.2f} s")
+
+    def path_references(self, now):
+        N, dt = self.cfg.horizon, self.cfg.dt
+        ts = (now - self.t_path) + dt * np.arange(N + 1)
+        p, v, rv = self.path.sample(ts)
+        drv = np.gradient(rv, dt, axis=0) * (ts < self.path.duration)[:, None]
+        return p, v, rv, drv
+
     def rot_references(self):
         N = self.cfg.horizon
+        if self.task == "path" and self.path is not None:
+            _, _, rv, drv = self.path_references(self.now_s())
+            return rv, drv
         target = self.goal_rotvec if self.task == "reach" else np.zeros(3)
         return np.tile(target, (N + 1, 1)), np.zeros((N + 1, 3))
 
@@ -157,6 +199,9 @@ class MpcNode(Node):
         p0 = self.start[0]
         if self.task == "reach":
             return np.tile(self.goal, (N + 1, 1)), np.zeros((N + 1, 3))
+        if self.task == "path" and self.path is not None:
+            p, v, _, _ = self.path_references(self.now_s())
+            return p, v
         if self.task == "figure8":
             r = self.get_parameter("circle_radius").value
             T = self.get_parameter("circle_period").value

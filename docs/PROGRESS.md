@@ -30,6 +30,33 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-23: blended waypoints, perception-driven grasp
+- **Blending:** `ci_mpc_planner/path.py` `BlendedPath`: from the current plan pose through via points (corners =
+  circular arcs, radius `path_blend` 3 cm, ≤ 40 % of the adjacent segments) to a stop point, timed with
+  v ≤ 0.25 m/s, a ≤ 0.35 m/s² (tangential, and v ≤ √(a r) in arcs), v = 0 at the ends; rotation vector linear in arc
+  length. mpc_node: `~/path` (geometry_msgs/PoseArray) → task "path", the MPC tracks the timed path with its 1 s
+  preview. Unit test: corner within 3 cm, vertical final approach kept, faster than stopping.
+- **Perception interface:** `vision_msgs/Detection3DArray` on `/perception/detections` (box center, yaw, size).
+  Sim stand-in `scripts/sim_object_detector.py` = ground truth + a fixed per-run estimation error (σ position,
+  size, yaw). The demo plans the grasp from the detection: center, hand yaw = object yaw (smallest 90°-multiple
+  rotation that fits), opening = extent across the fingers + 2 cm, grasp check ± 8 mm. Object size / yaw
+  configurable (`OBJECT_SIZE`, `OBJECT_YAW`).
+- Results (sim, identified friction):
+
+  | case | estimate error | grasp | placed | motion / total |
+  |---|---|---|---|---|
+  | 4 cm cube, stop at every waypoint | 0 | OK | 0.5 mm | 13.7 / 16.0 s |
+  | 4 cm cube, **blended** | 0 | OK | 0.9 mm | **7.3 / 9.6 s** |
+  | 3×5×4 cm box, yaw 30° | 0 | yaw +30°, opening 70 mm, closed 50.2 mm | 0.2 mm | 7.3 s |
+  | same, σ 3 mm / 2 mm / 3° | 2.9 mm, −1.6° | OK (50.6 mm) | 2.5 mm | 7.3 s |
+  | same, σ 6 mm / 2 mm / 6° | 4.2 mm, −2.0° | OK (50.4 mm) | 0.6 mm | 7.4 s |
+  | cube, σ 3 mm (seed 3) | 9.9 mm, −6.1° | OK (40.0 mm) | **9.1 mm** | 7.4 s |
+
+  The grasp is robust (opening margin, fingertip margin, tolerance); the parallel gripper centers the object
+  along the finger axis and re-aligns a box's faces, but the estimate error along the other axis (and the hand yaw
+  error on a cube) carries over to the placement → precise placing needs a better estimate along that axis,
+  an in-hand re-estimate after the grasp, or placing relative to a detected target.
+
 ### 2026-10-23: pick-and-place demo in sim (stage-1 MPC)
 - `PICK_PLACE=1` (sim): table (top z 0.2, x 0.5), 4 cm / 100 g cube (friction 1.0) at (0.45, −0.12); place at
   (0.45, +0.12); grasp TCP z 0.225, transport z 0.33 (σ_min 0.21, links ≥ 0.33 m above the table).

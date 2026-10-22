@@ -14,6 +14,8 @@ parser.add_argument("--timeout", type=float, default=7200.0, help="wall-clock se
 parser.add_argument("--config", default="", help="controller YAML (default: the installed isaac_sim_controllers.yaml)")
 parser.add_argument("--gui", action="store_true", help="open the Isaac Sim window (needs DISPLAY)")
 parser.add_argument("--pick-place", action="store_true", help="add table, cube and a position-controlled gripper")
+parser.add_argument("--object-size", default="0.04,0.04,0.04", help="pick-place object box extents x,y,z [m]")
+parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place object yaw [deg]")
 args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -44,7 +46,7 @@ for path in (graph_lib["OLD_GRAPH"], graph_lib["GRAPH"]):
     if prim.IsValid():
         prim.SetActive(False)
 if pick_lib:
-    pick_lib["add_objects"](stage)
+    pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw)
 
 # Play first and let SimulationManager initialize physics. If the ros2_control graph already
 # exists at Play, its first tick runs before physics is set up and createArticulationView fails.

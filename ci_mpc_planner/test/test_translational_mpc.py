@@ -74,3 +74,24 @@ def test_feasible_start_recovers_from_outside_the_box():
     X, U, status = mpc.solve(mpc.feasible_start(x_bad), np.tile([0.9, 0.0, 0.45], (mpc.N + 1, 1)))
     assert X is not None, status
     assert X[:, 0].max() <= cfg.p_max[0] + 1e-4
+
+
+def test_blended_path_corner_deviation_and_limits():
+    from ci_mpc_planner.path import BlendedPath
+    # home -> above pick -> grasp (90 deg corner at "above pick")
+    pts = [[0.307, 0.0, 0.487], [0.45, -0.12, 0.33], [0.45, -0.12, 0.225]]
+    path = BlendedPath(pts, np.zeros((3, 3)), v_max=0.25, a_max=0.4, blend=0.03)
+    ts = np.linspace(0, path.duration, 2000)
+    p, v, _ = path.sample(ts)
+    assert np.linalg.norm(p[0] - pts[0]) < 1e-9 and np.linalg.norm(p[-1] - pts[-1]) < 1e-9
+    assert np.linalg.norm(v, axis=1).max() <= 0.25 + 1e-6
+    assert np.linalg.norm(v[0]) < 1e-9 and np.linalg.norm(v[-1]) < 1e-9
+    # the corner is cut by at most blend * (1/cos(theta/2) - 1)-ish; at 90+ deg well below 3 cm
+    corner_dist = np.linalg.norm(p - pts[1], axis=1).min()
+    assert corner_dist < 0.03
+    # the last part of the descent is vertical: below z 0.30 the path stays at x, y of the grasp
+    low = p[:, 2] < 0.30
+    assert np.abs(p[low, :2] - np.array(pts[2][:2])).max() < 1e-6
+    # never longer than stopping at the corner
+    stop = BlendedPath(pts[:2], np.zeros((2, 3)), 0.25, 0.4).duration + BlendedPath(pts[1:], np.zeros((2, 3)), 0.25, 0.4).duration
+    assert path.duration < stop
