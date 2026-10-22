@@ -85,8 +85,12 @@ Lessons:
    (`ci_mpc_sysid`, SYSID.md), put the values into the scene, re-run the suite in sim and on the robot.
 2. **Armature:** `franka_description` gives 0.606 / 0.206 kg m², MuJoCo Menagerie 0.195 / 0.074. The
    identification will tell what the controller effectively sees through FCI.
-3. **Task 3 (MPC interface):** velocity-error damping, bypass the reference filter, integral gating (on in
-   free space, off in contact), timeout.
+3. **Task 3 (MPC interface): done** (2026-10-23). `ci_mpc_msgs/MpcCommand` on
+   `/cartesian_impedance_controller/mpc_command`: pose without filter, damping on the velocity error,
+   feedforward wrench, K/D, integral gating, 50 ms timeout → hold. Circle r 5 cm / 5 s: 0.65 mm RMS without
+   friction, 1.29 mm with (old reference_pose path: 33 mm). See PROGRESS.md 2026-10-23.
+   **Safety:** velocity friction compensation without (or with much less) real friction is negative damping;
+   start the real robot with `friction_scale` < 1.
 4. **Contact detection in sim:** an `o_f_ext_hat_k` equivalent for mode 1.
 5. **Sim speed:** headless runs at ~0.55× real time because every physics step renders.
 

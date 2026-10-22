@@ -31,15 +31,17 @@
       Pinocchio everywhere is simpler and fine to start with.
 
 ### 3. MPC-ready controller interface
-- [ ] New mode 3 = "MPC tracking": subscribe to a setpoint topic via `realtime_tools::RealtimeBuffer`.
-      (The existing control_mode 3 is the upstream "lift" stiffness set; pick a non-clashing mode/topic.)
-- [ ] Message `MpcCommand`: desired pose (quaternion), twist, feedforward wrench, K, D, stamp,
+- [x] MPC tracking: `/cartesian_impedance_controller/mpc_command` via `realtime_tools::RealtimeBuffer`
+      (active while commands arrive; no control_mode number, mode 3 is the upstream "lift" set).
+- [x] Message `ci_mpc_msgs/MpcCommand`: desired pose (quaternion), twist, feedforward wrench, K, D, stamp,
       integral on/off (free space vs contact).
-- [ ] Damping on velocity error: `D·(ẋ_des − ẋ)` (now on absolute velocity: 6.8 mm RMS lag on a 5 cm circle).
-- [ ] Bypass the desired-pose exponential filter in mode 3 (τ = 0.5 s: ~27 mm lag on the same circle).
-- [ ] Integral: no reset on every setpoint (done: `integrator_reset_on_target`), gating from the command.
-- [ ] Timeout (≈ 50 ms without a new setpoint) → hold current pose.
-- [ ] Test in sim with the suite: circle / trajectory tracking vs the commanded reference.
+- [x] Damping on velocity error: `D·(ẋ_des − ẋ)` (now on absolute velocity: 6.8 mm RMS lag on a 5 cm circle).
+- [x] Bypass the desired-pose exponential filter (τ = 0.5 s: ~27 mm lag on the same circle).
+- [x] Integral: no reset on every setpoint (`integrator_reset_on_target`), gating from the command.
+- [x] Timeout (50 ms, counted in control cycles) → hold current pose, drop twist/feedforward, reset integral.
+- [x] Test in sim: `scripts/mpc_tracking_test.py` (circle 0.65 mm RMS without friction, 1.29 mm with).
+- [ ] On the real robot: start with `friction_scale` < 1 (compensating friction that is not there is
+      negative damping: unstable in the frictionless sim).
 
 ### 4. Run the controller in Isaac Sim via `isaacsim.ros2.control`
 - [x] Add `On Playback Tick → ROS2ControlManager` (targetPrim `/fr3`, articulation root `/fr3/Geometry/base/fr3_link0`) + `ROS2 Publish Clock`.

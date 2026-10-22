@@ -5,8 +5,9 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **Current task:** ROADMAP task 3 (MPC tracking mode in the controller). In parallel: identification
-  setup (`ci_mpc_sysid`, `docs/SYSID.md`) is validated in sim and ready for the real FR3 once task 6 bring-up is done. Task 4 (controller in Isaac)
+- **Current task:** ROADMAP task 5 (stage-1 MPC: `ci_mpc_planner` using `ci_mpc_msgs/MpcCommand`). Task 3 (MPC
+  interface in the controller) is done and tested in sim. Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
+  is validated in sim and ready for the real FR3 once task 6 bring-up is done. Task 4 (controller in Isaac)
   **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
   <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
   With identified joint friction (now the default scene): hold 0.00 mm, reach **2.2 mm** / 0.0035 rad,
@@ -26,6 +27,29 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23: task 3, MPC interface in the controller
+- New package `ci_mpc/ci_mpc_msgs` with `MpcCommand` (header, pose, twist, wrench, stiffness[6], damping[6],
+  integral_enabled). Controller (`isaac-sim-pinocchio`): `/cartesian_impedance_controller/mpc_command` via a
+  realtime buffer; newest command sets pose directly (no 0.5 s filter), desired twist (damping on the velocity
+  error), feedforward wrench, optional K/D, integral gating (decays at `mpc_integral_off_leak` 5/s). No command
+  for `mpc_timeout` 50 ms (counted in control cycles, because the controller node's clock is wall time while
+  the CM runs on sim time) → hold current pose, drop twist/feedforward, reset the integral.
+- `scripts/mpc_tracking_test.py` (circle 3 ways, timeout, feedforward, commanded K, integral gating):
+
+  | test | no friction (comp. off) | identified friction (Isaac config) |
+  |---|---|---|
+  | circle r 5 cm / 5 s: reference_pose / MpcCommand pose / pose + twist (RMS) | 33.0 / 7.6 / **0.65 mm** | 33.3 / 7.9 / **1.29 mm** |
+  | timeout drift over 2 s | 0.037 mm | 0.006 mm |
+  | feedforward −10 N vs 10 N push | 4.00 → −0.01 mm | 3.16 → 0.23 mm |
+  | commanded K 500, 5 N (10 mm expected) | 9.97 mm | 2.83 mm (stiction) |
+  | integral on / off, 6 N (spring 2.40 mm) | 0.01 / 2.39 mm | 0.75 / 1.39 mm |
+
+- Bug found by the test: at timeout the integral built for the old setpoint pushed the arm 1.85 mm away from
+  the new hold pose → reset on hold (0.006 mm after).
+- **Safety finding:** with velocity friction compensation on and no friction in the scene the arm went unstable
+  (hundreds of mm): compensating friction that is not there = negative damping. Stable at friction ×0.7.
+  → real robot: start with `friction_scale` < 1.
 
 ### 2026-10-22 (night): friction handling in the controller (option 1)
 - Controller params (defaults = previous behavior): `integrator_weights`, `integrator_limits`,
