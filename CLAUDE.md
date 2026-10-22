@@ -19,4 +19,8 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
 - Don't source `/opt/ros` in the Isaac environment (Python 3.10 vs Isaac's 3.12); use `scripts/isaac_ros.sh`.
 - Link Pinocchio before libfranka (libfranka embeds a Pinocchio with a different layout).
 - The GPU (RTX 4080, 16 GB) may be shared with other jobs; check `nvidia-smi` before starting Isaac.
-- Use an isolated `ROS_DOMAIN_ID` (e.g. 42) for tests. Kill processes by exact PID.
+- Use an isolated `ROS_DOMAIN_ID` (e.g. 42) for tests. Kill processes by exact PID (never `pgrep -f`/`pkill -f`
+  from a one-line shell: it matches the shell itself).
+- Isaac ros2_control: Controller Manager targetPrim is `/fr3` (joints live in `/fr3/Physics`); the scene needs
+  `scripts/isaac/prepare_scene.py` (physx variant + FR3 joint armature, else the wrist chatters at 240 Hz).
+- Test: `scripts/isaac/run_impedance_test.sh` (headless, ~1 min); `--dump x.npz`, `CONTROLLER_CONFIG=...`.

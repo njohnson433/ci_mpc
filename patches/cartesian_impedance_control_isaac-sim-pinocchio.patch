@@ -1,7 +1,8 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH] Pinocchio model source so the controller runs in Isaac Sim
+Subject: [PATCH 1/2] Pinocchio model source so the controller runs in Isaac
+ Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
 timing, Isaac/real-robot configs, pinocchio_model_check sanity test.
@@ -678,6 +679,90 @@ index 0000000..54b211a
 +  std::printf("%s\n", failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
 +  return failures == 0 ? 0 : 1;
 +}
+-- 
+2.34.1
+
+
+From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Thu, 22 Oct 2026 12:34:36 +0200
+Subject: [PATCH 2/2] Optional nullspace damping; Isaac config documents it as
+ off
+
+- New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
+  tau += (I - J^T J^T+) (-d * dq)
+- isaac_sim_controllers.yaml sets it to 0: with FR3 joint armature in the sim
+  scene the hold/reach test passes without it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ config/isaac_sim_controllers.yaml                    |  3 +++
+ .../cartesian_impedance_controller.hpp               |  3 +++
+ src/cartesian_impedance_controller.cpp               | 12 ++++++++++--
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/config/isaac_sim_controllers.yaml b/config/isaac_sim_controllers.yaml
+index ec4f9ec..516eabb 100644
+--- a/config/isaac_sim_controllers.yaml
++++ b/config/isaac_sim_controllers.yaml
+@@ -16,3 +16,6 @@ cartesian_impedance_controller:
+     urdf_path: /home/njohnson/ci_mpc_assets/fr3.urdf
+     ee_frame: fr3_hand_tcp
+     enable_input_server: false
++    # nullspace_damping (Nms/rad) is available but not needed once the scene has FR3 joint armature
++    # (ci_mpc scripts/isaac/prepare_scene.py); 0 keeps the controller identical to the real robot.
++    nullspace_damping: 0.0
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index 92114db..550cd2c 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -162,6 +162,9 @@ public:
+     std::string urdf_path_;
+     std::string ee_frame_{"fr3_hand_tcp"};
+     bool enable_input_server_{true};
++    // Joint-space damping projected into the nullspace [Nms/rad]. 0 = off (real robot: joint
++    // friction damps the self-motion). The sim has no joint friction, so the elbow/wrist drift.
++    double nullspace_damping_{0.0};
+     std::unique_ptr<PinocchioModel> pinocchio_model_;
+     bool usePinocchio() const { return model_source_ == "pinocchio"; }
+     const double delta_tau_max_{1.0};  // per 1 ms step, scaled with dt_
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index 2b2ee40..a97308b 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -214,6 +214,7 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<std::string>("urdf_path", "");
+      auto_declare<std::string>("ee_frame", "fr3_hand_tcp");
+      auto_declare<bool>("enable_input_server", true);
++     auto_declare<double>("nullspace_damping", 0.0);
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s", e.what());
+      return CallbackReturn::ERROR;
+@@ -235,6 +236,7 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     urdf_path_ = get_node()->get_parameter("urdf_path").as_string();
+     ee_frame_ = get_node()->get_parameter("ee_frame").as_string();
+     enable_input_server_ = get_node()->get_parameter("enable_input_server").as_bool();
++    nullspace_damping_ = get_node()->get_parameter("nullspace_damping").as_double();
+ 
+     if (model_source_ == "pinocchio") {
+       std::vector<std::string> arm_joints;
+@@ -448,8 +450,14 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+ 
+   // tau_impedance = J.transpose() * Sm * (F_impedance /*+ F_repulsion + F_potential*/) + J.transpose() * Sf * F_cmd;
+   tau_impedance = J.transpose() * F_impedance;
+-  //auto tau_d_placeholder = tau_impedance 
+-  tau_d << tau_impedance + coriolis; /*+ tau_nullspace + coriolis */; //add nullspace and coriolis components to desired torque
++  tau_nullspace.setZero();
++  if (nullspace_damping_ > 0.0) {
++    pseudoInverse(J.transpose(), jacobian_transpose_pinv);
++    tau_nullspace << (Eigen::MatrixXd::Identity(7, 7) - J.transpose() * jacobian_transpose_pinv) *
++                     (-nullspace_damping_ * dq_);
++  }
++  //auto tau_d_placeholder = tau_impedance
++  tau_d << tau_impedance + tau_nullspace + coriolis; //add nullspace and coriolis components to desired torque
+   tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
+   tau_J_d_M = tau_d;
+   //calculate_tau_friction();
 -- 
 2.34.1
 

@@ -29,6 +29,7 @@ p.add_argument("--target", type=float, nargs=3, default=[0.4, 0.1, 0.4])
 p.add_argument("--hold-tol", type=float, default=0.005, help="m")
 p.add_argument("--reach-tol", type=float, default=0.01, help="m")
 p.add_argument("--rot-tol", type=float, default=0.05, help="rad")
+p.add_argument("--dump", default="", help="save /joint_states samples + phase markers to this .npz")
 args = p.parse_args()
 
 
@@ -147,6 +148,10 @@ print(f"REACH target {target}: final err {err[-1] * 1000:.2f} mm, rot err {rot_e
       f"time to <1 cm {t_1cm:.2f} s", flush=True)
 reach_ok = err[-1] < args.reach_tol and rot_err[-1] < args.rot_tol
 
+if args.dump:
+    np.savez(args.dump, t=np.array([t for t, _ in samples]), q=np.array([q for _, q in samples]),
+             hold_start=n0, reach_start=n1, target=target)
+    print(f"samples saved to {args.dump}", flush=True)
 print(f"RESULT hold={'PASS' if hold_ok else 'FAIL'} reach={'PASS' if reach_ok else 'FAIL'}", flush=True)
 node.destroy_node()
 rclpy.shutdown()

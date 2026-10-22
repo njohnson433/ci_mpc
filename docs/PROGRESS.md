@@ -5,22 +5,83 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **Current task:** ROADMAP task 4 (run the impedance controller in Isaac via `isaacsim.ros2.control`).
-  Task 2 (Pinocchio model source) is done on the controller branch below.
-- **Next action:** get `scripts/isaac/run_impedance_test.sh` to pass (hold pose, then reach
-  `reference_pose` (0.4, 0.1, 0.4)). Then ROADMAP task 3 (MPC tracking mode).
+- **Current task:** ROADMAP task 3 (MPC tracking mode in the controller). Task 4 (controller in Isaac)
+  **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
+  <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
+- **Open follow-ups for task 4:** physics/control at 1 kHz (now 240 Hz); RTF is ~0.35 with the GPU shared;
+  joint friction (URDF has `friction`, `mu_viscous`) not modelled yet.
 - **Code that is not in this repo:**
   - `~/franka_ros2_ws/src/cartesian_impedance_control` (upstream `LucasG2001/cartesian_impedance_control`,
-    no push access). Our work is on local branch `isaac-sim-pinocchio` (commit on top of `main` f8d5fe2).
+    no push access). Our work is on local branch `isaac-sim-pinocchio` (2 commits on top of `main` f8d5fe2).
     Backup: `patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`.
     Restore: `git checkout -b isaac-sim-pinocchio f8d5fe2 && git am < .../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
   - `~/franka_ros2_ws/src` (franka_ros2 `humble`): `franka_bringup/config/controllers.yaml` registers
     `cartesian_impedance_controller`. Backup: `patches/franka_ros2_humble_controllers_yaml.patch` (`git apply`).
-  - Assets outside git: `/home/njohnson/ci_mpc_assets/fr3_scene.usd`, `fr3.urdf`.
+  - Assets outside git: `/home/njohnson/ci_mpc_assets/fr3_scene.usd`, `fr3.urdf`. The scene needs
+    `scripts/isaac/prepare_scene.py` (physx variant + joint armature); old copy `fr3_scene.usd.bak-20261022`.
 - **Regenerate the controller patch after changes:**
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-22 (later): task 4 passes, the fix was FR3 joint armature in the sim
+- Ablation (single runs; hold rot drift / reach rot err / reach pos err):
+
+  | scene | nullspace damping | hold rot | reach rot | reach pos | result |
+  |---|---|---|---|---|---|
+  | no armature | 0 | 0.72 rad | 0.70 rad | 1.1 mm | FAIL |
+  | no armature | 0.3 | 0.50 | 0.33 | 1.9 | FAIL |
+  | no armature | 1.0 | 0.21 | 0.38 | 2.3 | FAIL |
+  | no armature | 3.0 | 1.94 | 0.015 | 1.4 | hold FAIL |
+  | **armature** | **0** | **0.0003** | **0.0000** | **0.47** | **PASS** (3 of 3 runs) |
+  | armature | 1.0 | 0.0002 | 0.0000 | 0.47 | PASS |
+
+- **Mechanism:** joint 7 velocity reversed sign on 95–99 % of 240 Hz steps (period-2 chatter): the
+  controller's rotational damping (`D(5,5) ≥ 2√K`) is explicit, and the bare hand's inertia about joint 7
+  is a few 1e-3 kg m², so D·dt/I ≫ 2 → unstable; the ±2 Nm tool-z clamp turned that into a slow 0.2 Hz
+  wander. The real FR3 has rotor inertia reflected through the gearbox. Armature = `motor_inertia ·
+  gear_ratio²` from the URDF `<dynamics>` tags: 0.606 (j1–2), 0.462 (j3–4), 0.206 kg m² (j5–7). After:
+  sign-flip rate 6 %, |q̇7| median 0.002 rad/s.
+- Nullspace damping only reduced the elbow self-motion (j1 swing 2.05 → 0.28 rad) and did not fix the
+  wrist; with armature it adds nothing measurable. Kept as a parameter (default 0), Isaac config = 0.
+- Checked: sim kinematics = Pinocchio FK (0.02–0.04 mm, 0.000 rad at 5 random q), so no axis/frame bug.
+
+### 2026-10-22 (later): controller runs in Isaac; position tracks, orientation drifts
+- **Our plugin loads and runs in Isaac's bundled controller_manager** (no ABI problem). joint_state_broadcaster
+  + cartesian_impedance_controller active, /joint_states at 4.2 ms (240 Hz), EE at home = (0.3069, 0, 0.4869).
+- Three Isaac-side fixes were needed to get there (all in `scripts/isaac/`):
+  1. **Controller Manager target must be `/fr3`, not the articulation root `fr3_link0`.** The URDF synthesizer
+     (`isaacsim.ros2.control/urdf_synth.py`) collects joints under the target prim; our joints live in
+     `/fr3/Physics`, so with `fr3_link0` the URDF had no arm joints → "None of requested interfaces exist".
+  2. With `fr3_link0` as target the first `setup_cm` always failed ("did not match any articulations") and a
+     retry succeeded; the ROS2ControlManager graph node latches the first failure until Stop→Play. We now call
+     `Ros2ControlManager.setup()` directly with retries (`setup_controller_manager()`), graph = /clock only.
+     With `/fr3` as target it succeeded on attempt 1.
+  3. Play first, set home pose, then start the Controller Manager. `app.close()` can hang on RTX sync in
+     headless mode → teardown + `os._exit`.
+- **Result (runs 6, 7), nullspace damping 0:** reach position **0.2–0.5 mm** final error, <1 cm in 1.47 s.
+  Orientation **fails**: hold rot drift 0.60 rad, reach rot err 0.17–1.12 rad.
+- **Mechanism:** joint 7 wanders 0.9 rad (hold) / 2.7 rad (reach) at ~0.2 Hz, rotation error is purely about
+  tool z; joints 1–3, 5 swing 1–2 rad during a 15 cm reach = undamped nullspace self-motion. The sim joints
+  have zero damping/friction, the controller's nullspace term was commented out, and the tool-z torque is
+  clamped to ±2 Nm, so it cannot hold the wrist once the self-motion couples in.
+- Added controller param `nullspace_damping` (Nms/rad, default 0 = unchanged real-robot behavior),
+  `(I − Jᵀ Jᵀ⁺)(−d·q̇)`; Isaac config sets it. Sweep 0 / 0.3 / 1 / 3 running.
+- Also: zero-torque arm drifts before activation (q7 0.785 → 0.675 between home and activation).
+- Tools: `check_impedance_tracking.py --dump x.npz`, `CONTROLLER_CONFIG=... run_impedance_test.sh`.
+
+### 2026-10-22 (later): first full Isaac test run, scene had no physics
+- Run 1 failed before the controller loaded: `ROS2ControlManager setup failed ... no ArticulationRootAPI
+  prim under '/fr3/Geometry/base/fr3_link0'`, then `set_home_pose` crashed (prim path not found).
+- **Cause:** `fr3_scene.usd` references `fr3/payloads/base.usda` and carries the `Physics` variant set
+  (mujoco / none / physics / physx), but had **no variant selected**. So no physics payload was composed:
+  no articulation root, no joints, no rigid bodies (`fr3_link0` was only an `over`).
+- **Fix:** selected `Physics = physx` in the scene (backup: `fr3_scene.usd.bak-20261022`). Checked with pxr:
+  articulation root at `/fr3/Geometry/base/fr3_link0`, joints 1–7 revolute, drive type `force` with
+  stiffness/damping 0 (effort mode), maxForce 87, robot gravity off.
+- `run_impedance_test.sh`: the checker now gets stopped if Isaac exits early (run 1 left it waiting forever).
+- Isaac headless startup took ~500 s with the GPU shared with the YOLO jobs (94 % util, 5.9 GB free).
+  The YOLO jobs stay running (user decision).
 
 ### 2026-10-22: Isaac end-to-end test (task 4), in progress
 - Added a headless test: `scripts/isaac/run_impedance_test.sh` starts Isaac (`headless_impedance_sim.py`,
