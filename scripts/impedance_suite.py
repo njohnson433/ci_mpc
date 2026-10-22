@@ -31,6 +31,7 @@ p.add_argument("--sync-dir", default="")
 p.add_argument("--out", default="", help="save samples and per-test windows to this .npz")
 p.add_argument("--filter-tau", type=float, default=0.5, help="controller reference filter time constant [s]")
 p.add_argument("--tests", default="steps,rotations,circle,stiffness,mode2")
+p.add_argument("--step-hold", type=float, default=4.0, help="sim seconds per step before the final error")
 args = p.parse_args()
 tests = args.tests.split(",")
 
@@ -175,7 +176,7 @@ if "steps" in tests:
             target = p_home + d
             t0 = now()
             send(target, R_home)
-            spin_sim(4.0)
+            spin_sim(args.step_hold)
             w = window(t0, now())
             ts = np.array([t for t, _ in w])
             pos = np.array([T.translation for _, T in w])
@@ -188,7 +189,7 @@ if "steps" in tests:
             saved[f"step_{name}{sgn:+d}"] = np.array([t0, now()])
             send(p_home, R_home)
             spin_sim(3.0)
-    print("STEPS 5 cm (final error after 4 s, overshoot, 90 % time; filtered reference alone: 1.15 s)")
+    print(f"STEPS 5 cm (final error after {args.step_hold:.0f} s, overshoot, 90 % time; filtered reference alone: 1.15 s)")
     for r in rows:
         print(f"  {r[0]}: final err {r[1]:5.2f} mm  overshoot {r[2]:+5.1f} %  t90 {r[3]:4.2f} s  rot drift {r[4]:.4f} rad")
     worst = max(r[1] for r in rows)

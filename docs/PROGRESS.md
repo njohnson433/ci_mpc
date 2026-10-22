@@ -75,10 +75,23 @@ Read this before starting work (and before re-investigating something "new").
   translational compliance and removes almost all friction lag while moving; it does nothing at rest
   (stiction), which the explicit integral handles (V2). Over-compensation at friction ×0.7 makes the arm
   softer but stays stable.
-- **Recommendation: V2** (predictable impedance for the contact MPC; ~0.8 mm less static accuracy than
-  LuGre); the MPC can re-plan setpoints for the residual and switch the integral off in contact
-  (`integrator_limits`). Pending user decision; Isaac config unchanged. Controller commit e.g. `git log`
-  on `isaac-sim-pinocchio`; all new params default to the previous behavior.
+- V2 is **not** good enough (user): the trace shows it gets **stuck** at ~1 mm by 2.5 s (no joint moving):
+  the stiction deadband, K·e = 2500 N/m × 1 mm = 2.5 N cannot break 0.4–1.3 Nm per joint, and the integral at
+  350 builds only 0.35 N/s at 1 mm.
+- Batch 4, integral speed (velocity comp., 8 s step holds; worst final error, behavior):
+
+  | integral weight (limit) | worst at 8 s | behavior |
+  |---|---|---|
+  | 350 (8 N) | 3.30 mm | stuck ~1 mm, then a 2.3 mm slip at 7–8 s (wind-up breaks stiction, overshoots) |
+  | 1000 (8 N) | 0.85 | converges 0.2–0.7 mm, up to 9 stick-slip bursts per step |
+  | **3000 (8 N)** | **0.64** (most 0.11–0.41) | < 1 mm in ~2–3 s, 1–6 small slips per step |
+  | 3000 (15 N) | 0.67 | similar, occasional jumps up to 2 mm |
+
+  Sub-mm is reachable with friction, but the last fraction comes as stick-slip jumps (friction limit cycle,
+  size depends on PhysX's stiction model). A fast integral = very high low-frequency stiffness (rigid for
+  slow loads up to the clamp), so accuracy at rest and compliance at rest cannot come from one fixed set of
+  gains → **gate the integral**: on in free space (velocity comp. + weight ~3000), off in contact
+  (`integrator_limits` 0, velocity comp. stays). The MPC knows the phase → part of the task 3 interface.
 
 ### 2026-10-22 (evening): identification package, impedance test suite, controller audit
 - **Published friction values compared** (details + sources in `docs/SYSID.md`): Franka publishes none
