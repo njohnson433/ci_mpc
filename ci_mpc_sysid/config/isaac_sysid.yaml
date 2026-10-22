@@ -1,0 +1,17 @@
+# Isaac Sim (isaacsim.ros2.control) Controller Manager config for joint identification.
+# Pass to scripts/isaac/headless_impedance_sim.py with --config (CONTROLLER_CONFIG=... for the runner).
+controller_manager:
+  ros__parameters:
+    update_rate: 240        # <= PhysicsScene time steps per second
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    joint_id_controller:
+      type: ci_mpc_sysid/JointIdController
+
+joint_id_controller:
+  ros__parameters:
+    arm_id: fr3
+    joints: [1, 2, 3, 4, 5, 6, 7]
+    experiments: [sweep, breakaway, sine]
+    velocities: [0.05, 0.1, 0.2, 0.4, 0.8]
+    sweep_amplitude: 0.25

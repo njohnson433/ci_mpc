@@ -1,0 +1,15 @@
+# FR3 joint parameters applied to the Isaac scene by scripts/isaac/prepare_scene.py and used as ground
+# truth when validating the identification in sim. Fitted parameters (fit_joint_id.py) use this format.
+# Units: friction [Nm], viscous [Nm s/rad], armature [kg m^2]. friction: |tau| = coulomb + viscous*|dq|
+# while moving, static = breakaway torque. offset = direction-independent bias (not representable in PhysX).
+source: >-
+  friction: upstream identification (cartesian_impedance_controller.hpp static_friction, coulomb_friction,
+  beta); armature: franka_description dynamics.yaml motor_inertia * gear_ratio^2
+joints:
+  fr3_joint1: {static: 1.025412896, coulomb: 1.025412896, viscous: 1.18,  offset: 0.0, armature: 0.60571}
+  fr3_joint2: {static: 1.259913793, coulomb: 1.259913793, viscous: 0.0,   offset: 0.0, armature: 0.60571}
+  fr3_joint3: {static: 0.8380147058, coulomb: 0.8380147058, viscous: 0.55, offset: 0.0, armature: 0.46247}
+  fr3_joint4: {static: 1.005214968, coulomb: 0.96,        viscous: 0.87,  offset: 0.0, armature: 0.46247}
+  fr3_joint5: {static: 1.2928,      coulomb: 1.2928,      viscous: 0.935, offset: 0.0, armature: 0.20554}
+  fr3_joint6: {static: 0.41525,     coulomb: 0.41525,     viscous: 0.54,  offset: 0.0, armature: 0.20554}
+  fr3_joint7: {static: 0.5341655,   coulomb: 0.5341655,   viscous: 0.45,  offset: 0.0, armature: 0.20554}

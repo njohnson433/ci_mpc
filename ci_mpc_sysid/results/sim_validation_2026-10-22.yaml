@@ -1,0 +1,44 @@
+source: fit_joint_id.py id_all2.npz
+joints:
+  fr3_joint1:
+    static: 1.06146
+    coulomb: 1.02558
+    viscous: 1.18297
+    offset: 0.00032
+    armature: 0.61821
+  fr3_joint2:
+    static: 1.30833
+    coulomb: 1.25943
+    viscous: 0.01326
+    offset: 5.0e-05
+    armature: 0.62209
+  fr3_joint3:
+    static: 0.87708
+    coulomb: 0.83804
+    viscous: 0.55144
+    offset: -1.0e-05
+    armature: 0.47279
+  fr3_joint4:
+    static: 1.02083
+    coulomb: 0.96002
+    viscous: 0.87276
+    offset: -2.0e-05
+    armature: 0.4755
+  fr3_joint5:
+    static: 1.31042
+    coulomb: 1.29196
+    viscous: 0.931
+    offset: 0.00044
+    armature: 0.21323
+  fr3_joint6:
+    static: 0.43333
+    coulomb: 0.417
+    viscous: 0.52898
+    offset: 3.0e-05
+    armature: 0.2098
+  fr3_joint7:
+    static: 0.55
+    coulomb: 0.53289
+    viscous: 0.44974
+    offset: -2.0e-05
+    armature: 0.20985

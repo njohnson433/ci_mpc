@@ -10,13 +10,14 @@ import time
 parser = argparse.ArgumentParser()
 parser.add_argument("--scene", default="/home/njohnson/ci_mpc_assets/fr3_scene.usd")
 parser.add_argument("--sync-dir", required=True)
-parser.add_argument("--timeout", type=float, default=600.0, help="wall-clock seconds")
+parser.add_argument("--timeout", type=float, default=7200.0, help="wall-clock seconds (safety net; the ROS side ends the run)")
 parser.add_argument("--config", default="", help="controller YAML (default: the installed isaac_sim_controllers.yaml)")
+parser.add_argument("--gui", action="store_true", help="open the Isaac Sim window (needs DISPLAY)")
 args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True})
+app = SimulationApp({"headless": not args.gui})
 
 import omni.kit.app  # noqa: E402
 import omni.timeline  # noqa: E402
@@ -56,12 +57,59 @@ if not graph_lib["setup_controller_manager"](app.update, config=args.config or g
     os._exit(1)
 for _ in range(5):
     app.update()
+# External wrench on the hand, requested by the ROS side through <sync_dir>/wrench.json:
+# {"force": [fx, fy, fz], "torque": [tx, ty, tz]} (world frame, force acting at the TCP), applied on
+# every physics step while the file exists; <sync_dir>/wrench_ack echoes the wrench once it is active.
+import json  # noqa: E402
+
+import omni.physx  # noqa: E402
+from isaacsim.core.experimental.prims import RigidPrim  # noqa: E402
+from pxr import Usd, UsdGeom  # noqa: E402
+
+HAND = "/fr3/Geometry/base/fr3_link0/fr3_link1/fr3_link2/fr3_link3/fr3_link4/fr3_link5/fr3_link6/fr3_link7/fr3_link8/fr3_hand"
+hand = RigidPrim(HAND)
+tcp_xform = UsdGeom.Xformable(stage.GetPrimAtPath(HAND + "/fr3_hand_tcp"))
+wrench = {"active": None, "mtime": None}
+
+
+def apply_wrench(_dt):
+    w = wrench["active"]
+    if w is None:
+        return
+    p = tcp_xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+    hand.apply_forces_and_torques_at_pos(forces=[w["force"]], torques=[w["torque"]], positions=[list(p)],
+                                         local_frame=False)
+
+
+wrench_sub = omni.physx.get_physx_interface().subscribe_physics_on_step_events(apply_wrench, pre_step=True, order=0)
+wrench_path = os.path.join(args.sync_dir, "wrench.json")
+
+
+def poll_wrench():
+    if not os.path.exists(wrench_path):
+        if wrench["active"] is not None:
+            print("[sim] wrench released", flush=True)
+        wrench["active"], wrench["mtime"] = None, None
+        return
+    mtime = os.path.getmtime(wrench_path)
+    if mtime != wrench["mtime"]:
+        try:
+            w = json.load(open(wrench_path))
+        except (OSError, ValueError):
+            return  # being written, retry next frame
+        wrench["active"] = {"force": list(w.get("force", [0, 0, 0])), "torque": list(w.get("torque", [0, 0, 0]))}
+        wrench["mtime"] = mtime
+        json.dump(wrench["active"], open(os.path.join(args.sync_dir, "wrench_ack"), "w"))
+        print(f"[sim] wrench applied: {wrench['active']}", flush=True)
+
+
 open(os.path.join(args.sync_dir, "home_done"), "w").close()
 
 t0_wall, t0_sim = time.time(), timeline.get_current_time()
 last = t0_wall
 done = os.path.join(args.sync_dir, "done")
 while not os.path.exists(done) and time.time() - t0_wall < args.timeout:
+    poll_wrench()
     app.update()
     now = time.time()
     if now - last > 5.0:

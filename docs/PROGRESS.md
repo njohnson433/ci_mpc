@@ -5,7 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **Current task:** ROADMAP task 3 (MPC tracking mode in the controller). Task 4 (controller in Isaac)
+- **Current task:** ROADMAP task 3 (MPC tracking mode in the controller). In parallel: identification
+  setup (`ci_mpc_sysid`, `docs/SYSID.md`) is validated in sim and ready for the real FR3 once task 6 bring-up is done. Task 4 (controller in Isaac)
   **passes**: `scripts/isaac/run_impedance_test.sh` → hold 0.1 mm / 0.0003 rad, reach 0.47 mm / 0.0000 rad,
   <1 cm in 1.47 s (2 of 2 runs). Tasks 1–2 done.
   With identified joint friction (now the default scene): hold 0.00 mm, reach **2.2 mm** / 0.0035 rad,
@@ -25,6 +26,49 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-22 (evening): identification package, impedance test suite, controller audit
+- **Published friction values compared** (details + sources in `docs/SYSID.md`): Franka publishes none
+  (URDF `friction 0.2` for all joints = placeholder); upstream identification 0.42–1.29 Nm; Menagerie FR3
+  frictionloss 1.14/0.76/0.44/0.25 Nm, armature 0.195/0.074 (3× below `motor_inertia·gear²` = 0.606/0.206,
+  unresolved); Gaz 2019 Panda φ1/2 0.15–0.64 Nm. Plan: identify on the real FR3 through FCI.
+- **New package `ci_mpc/ci_mpc_sysid`**: `JointIdController` (generic interfaces, runs in sim and on
+  franka_hardware; sweep / breakaway / sine per joint, safety limits, log topic), `run_joint_id.py`,
+  `fit_joint_id.py`. Joint parameters now live in `ci_mpc_sysid/config/fr3_joint_params_sim.yaml`, which
+  `prepare_scene.py` reads (`--params`, `--no-friction`).
+- **Validation, joint 7 in sim** (truth = scene values): static 0.550 (0.534, +3.0 %), Coulomb 0.537 (+0.5 %),
+  viscous 0.436 (−3.0 %), armature 0.210 (+2.1 %). Static needed onset back-dating (+13 % with the
+  controller's stop-detection torque).
+- **Full 7-joint validation in sim:** Coulomb 0.0–0.4 %, viscous 0.1–2.0 %, armature 2.1–3.7 %, static 1.4–4.7 %
+  (`ci_mpc_sysid/results/sim_validation_2026-10-22.yaml`). Fix that got there: select sweep samples by measured
+  |ddq| < 0.05 rad/s² (time-based selection: viscous 10–23 % off on j1–4; joint friction+armature regression:
+  up to 40 % off, dropped).
+- First full 7-joint run lost at joint 5: the sim script's 600 s wall timeout ended Isaac, the recorder only
+  saved at the end. Fixed (timeout 7200 s, recorder saves on interruption). Also: editing
+  `run_impedance_test.sh` while a run executes it corrupts that run (bash reads incrementally).
+- **Controller audit (sim usability):** works: impedance law, integrator, clamps, rate limit,
+  `reference_pose`, `control_mode` 0/2/3. Does not work in sim: mode-1 automatic contact switch (needs
+  Franka's `o_f_ext_hat_k` from `franka_robot_state_broadcaster`, nothing publishes it), friction
+  compensation (commented out upstream), gripper (not driven). Force clamps ±18 N / ±9 Nm / ±2 Nm (tool z)
+  → the controller is a spring only for ~7 mm at K 2500. z has K 1000 and **no integral term**.
+- **Impedance suite (`scripts/impedance_suite.py`), with identified friction (GUI run):**
+  steps 5 cm: final err after 4 s 3.0–3.9 mm (x/y), 4.4–5.5 mm (z), all undershoot; rotations 0.3 rad:
+  0.006–0.021 rad; circle r 5 cm / 5 s: 36.5 mm RMS vs commanded (input filter alone 26.6 mm),
+  **11 mm RMS vs the filtered reference** (damping acts on absolute velocity, not velocity error → lag
+  ≈ D·v/K); pushes 10 N: effective stiffness 6180 / 3730 / 1600 N/m vs K 2500 / 2500 / 1000 (stiction
+  carries part of the load), Tz 1 Nm: 63 vs 45 Nm/rad; mode 2 3 N push: 0.57 mm vs 3.3 mm predicted.
+  The pass criteria assumed a frictionless arm.
+- **Friction ablation (same suite, scene without friction):** steps 0.05–0.57 mm, rotations 0.007–0.011 rad,
+  Fx/Fy 10 N → 3.00/2.99 mm (predicted (10−2.5)/2500 = 3.00), Fz → 10.02 mm (10/1000), Tz 1 Nm → 22.05 mrad,
+  mode 2 → 2.86 mm (3.33 predicted), circle 6.8 mm RMS vs filtered reference. **The controller matches its
+  equations exactly; friction causes the 3–5 mm steady errors and the higher apparent stiffness.**
+  Rotational stiffness is K/2 per rad (error = quaternion vector part ≈ θ/2): predicted Tz deflection
+  (1 − 0.5)/(45/2) = 22.2 mrad vs 22.05 measured. The circle lag without friction (6.8 mm) comes from damping
+  on absolute velocity (task 3: damp the velocity error).
+- Consequence for the real robot: precision is limited by friction handling (friction compensation, z has no
+  integral term, integral clamps ±2.5 N ≈ 1 mm at K 2500), so the real-robot identification matters.
+- Isaac GUI works (`GUI=1`); first GUI start 89 s (shader compile). RTF GUI 0.51 vs headless 0.55 (GPU free):
+  rendering every physics step, not the window, limits speed.
 
 ### 2026-10-22 (later): identified joint friction in the sim
 - User decision: use the **identified** friction (controller header `static_friction`, `coulomb_friction`,

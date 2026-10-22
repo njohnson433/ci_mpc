@@ -1,0 +1,6 @@
+<library path="ci_mpc_sysid">
+  <class name="ci_mpc_sysid/JointIdController" type="ci_mpc_sysid::JointIdController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>Joint friction and effective inertia identification (sweep, breakaway, sine).</description>
+  </class>
+</library>
