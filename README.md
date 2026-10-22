@@ -22,7 +22,7 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Impedance test suite (steps, rotations, circle, pushes, windup) | ✅ `scripts/impedance_suite.py` |
 | MPC tracking interface (task 3, `ci_mpc_msgs/MpcCommand`) | ✅ circle 0.65 mm RMS without friction |
 | Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
-| Pick-and-place demo (sim) | ✅ `PICK_PLACE=1 GUI=1 CHECKER=scripts/pick_place_demo.py` + `isaac_pick_place.yaml`; placed 0.6 mm from the target |
+| Pick-and-place demo (sim) | ✅ `scripts/demo_pick_place.sh [box\|cube] [--noise] [--stops] [--headless]`; blended MPC motion, grasp from the detection |
 | Real robot connection test | ⏳ not done yet |
 
 See [docs/REAL_ROBOT.md](docs/REAL_ROBOT.md) for the real-robot bring-up checklist, [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in
