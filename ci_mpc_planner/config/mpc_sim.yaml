@@ -1,0 +1,35 @@
+# Stage-1 MPC in Isaac Sim (tested 2026-10-23, docs/PROGRESS.md)
+ci_mpc_planner:
+  ros__parameters:
+    use_sim_time: true
+    urdf_path: /home/njohnson/ci_mpc_assets/fr3.urdf
+    ee_frame: fr3_hand_tcp
+    task: hold
+    solve_rate: 50.0
+    cmd_rate: 200.0
+    dt: 0.02
+    horizon: 50
+    q_pos: 1000.0
+    q_vel: 50.0
+    r_acc: 1.0
+    r_dacc: 0.1
+    terminal: 10.0
+    v_max: 0.3                 # per axis [m/s]
+    a_max: 2.0                 # per axis [m/s^2]
+    p_min: [0.2, -0.4, 0.15]
+    p_max: [0.6, 0.4, 0.8]       # x 0.7 is close to singular (sigma_min 0.04) with the tool down
+    w_max: 0.6                 # per axis [rad/s]
+    alpha_max: 4.0
+    rot_box: 1.2               # rotation vector limit relative to the start orientation [rad]
+    replan_from: plan          # never "measured": that switches the impedance feedback off
+    reset_threshold: 0.02
+    rot_reset_threshold: 0.05
+    integral_enabled: true
+    force_limit: 12.0           # [N] acceleration limit = force_limit / Lambda (controller clamp 18 N)
+    torque_limit: [6.0, 6.0, 1.5]  # [Nm] (controller clamps 9 / 9 / 2 Nm)
+    sigma_min_stop: 0.08
+    # commanded stiffness: rotational x2 of the controller default (130/130/45) halves the wrist-stiction
+    # deadband (rotation 1-4 mrad instead of 2-7); x3 / x4 were not clearly better
+    stiffness: [2500.0, 2500.0, 1000.0, 260.0, 260.0, 90.0]
+    # rotor inertia reflected through the gearbox (franka_description motor_inertia * gear_ratio^2), as in the scene
+    armature: [0.60571, 0.60571, 0.46247, 0.46247, 0.20554, 0.20554, 0.20554]

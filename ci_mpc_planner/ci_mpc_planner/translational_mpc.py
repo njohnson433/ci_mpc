@@ -27,7 +27,7 @@ class MpcConfig:
     v_max: float = 0.3
     a_max: float = 2.0
     p_min: np.ndarray = field(default_factory=lambda: np.array([0.2, -0.4, 0.15]))
-    p_max: np.ndarray = field(default_factory=lambda: np.array([0.7, 0.4, 0.8]))
+    p_max: np.ndarray = field(default_factory=lambda: np.array([0.6, 0.4, 0.8]))  # x 0.7: near singular
 
 
 class TranslationalMpc:
@@ -70,8 +70,9 @@ class TranslationalMpc:
 
         self.solver = osqp.OSQP()
         l0, u0 = self._bounds(np.zeros(nx))
+        # time_limit bounds the latency of a bad solve (infeasible problems ran 20-90 ms and starved the controller)
         self.solver.setup(self.P, np.zeros(self.n_var), self.A, l0, u0, verbose=False, warm_start=True,
-                          polishing=False, eps_abs=1e-5, eps_rel=1e-5, max_iter=4000)
+                          polishing=False, eps_abs=1e-5, eps_rel=1e-5, max_iter=4000, time_limit=0.01)
         self.a_prev = np.zeros(nu)
 
     def _bounds(self, x0):
@@ -84,9 +85,22 @@ class TranslationalMpc:
         u[self.n_eq:self.n_eq + self.nx] = np.inf
         return l, u
 
-    def solve(self, x0, p_ref, v_ref=None):
-        """x0: measured [p, v]; p_ref, v_ref: (N+1, 3) references for x_0..x_N (v_ref default 0).
-        Returns (states (N+1, 6), accelerations (N, 3), status string)."""
+    def feasible_start(self, x0, a_max=None):
+        """Project a measured state into the region from which the box is still feasible: position clipped
+        into the box, velocity limited to v_max and, towards a wall, to sqrt(2 a_max d) so it can stop."""
+        cfg = self.cfg
+        a = cfg.a_max if a_max is None else min(a_max, cfg.a_max)
+        p = np.clip(x0[:3], cfg.p_min, cfg.p_max)
+        v = np.clip(x0[3:], -cfg.v_max, cfg.v_max)
+        v_up = np.sqrt(2 * a * np.maximum(cfg.p_max - p, 0.0))
+        v_dn = np.sqrt(2 * a * np.maximum(p - cfg.p_min, 0.0))
+        v = np.clip(v, -v_dn, v_up)
+        return np.concatenate([p, v])
+
+    def solve(self, x0, p_ref, v_ref=None, a_max=None):
+        """x0: measured [p, v]; p_ref, v_ref: (N+1, 3) references for x_0..x_N (v_ref default 0);
+        a_max: acceleration limit for this solve (scalar, <= cfg.a_max; e.g. from the force the controller
+        can apply). Returns (states (N+1, 6), accelerations (N, 3), status string)."""
         N, nx = self.N, self.nx
         if v_ref is None:
             v_ref = np.zeros_like(p_ref)
@@ -96,10 +110,13 @@ class TranslationalMpc:
         # -2 r_dacc a_{-1} a_0 term of the first acceleration change
         q[self.n_x:self.n_x + self.nu] = -self.cfg.r_dacc * self.a_prev
         l, u = self._bounds(np.asarray(x0, dtype=float))
+        if a_max is not None:
+            a_lim = min(float(a_max), self.cfg.a_max)
+            l[-self.nu * N:], u[-self.nu * N:] = -a_lim, a_lim
         self.solver.update(q=q, l=l, u=u)
         res = self.solver.solve(raise_error=False)
         status = res.info.status
-        if res.x is None or not np.all(np.isfinite(res.x)):
+        if status not in ("solved", "solved inaccurate") or res.x is None or not np.all(np.isfinite(res.x)):
             return None, None, status
         X = res.x[:self.n_x].reshape(N + 1, nx)
         U = res.x[self.n_x:].reshape(N, self.nu)

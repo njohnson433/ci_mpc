@@ -20,14 +20,14 @@ class EeModel:
         self.ee = self.model.getFrameId(ee_frame)
 
     def update(self, q, dq):
-        """Returns (position, rotation, linear velocity, translational inertia Lambda_t (3x3))."""
+        """Returns (position, rotation, twist [v; w] (6, world frame), operational-space inertia Lambda (6x6))."""
         m, d = self.model, self.data
         pin.computeJointJacobians(m, d, q)
         pin.framesForwardKinematics(m, d, q)
         J = pin.getFrameJacobian(m, d, self.ee, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)
         M = pin.crba(m, d, q)
         M = np.triu(M) + np.triu(M, 1).T
-        Jt = J[:3]
-        lam_t = np.linalg.inv(Jt @ np.linalg.solve(M, Jt.T))
+        lam = np.linalg.inv(J @ np.linalg.solve(M, J.T))
+        self.sigma_min = np.linalg.svd(J, compute_uv=False).min()
         T = d.oMf[self.ee]
-        return T.translation.copy(), T.rotation.copy(), Jt @ dq, lam_t
+        return T.translation.copy(), T.rotation.copy(), J @ dq, lam

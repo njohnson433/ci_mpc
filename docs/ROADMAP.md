@@ -57,7 +57,10 @@
       feedforward; replan from the previous plan (replanning from the measured state switches the
       impedance feedback off).
 - [x] First task: reach a fixed pose (0.3–0.4 mm), then track a circle (1.0 mm RMS) — sim, identified friction.
-- [ ] Orientation in the MPC (now held at the start orientation).
+- [x] Orientation in the MPC (rotation-vector QP, J_l-consistent twist).
+- [x] Robustness in sim: friction ×0.7 / ×1.3, goal changes, workspace wall, singularity guard, fast circle,
+      figure-8; force-aware acceleration limits (controller clamp 18 N vs Λ 20–30 kg).
+- [x] Launch file + sim/real configs (`ros2 launch ci_mpc_planner mpc.launch.py config:=real`).
 - [ ] Same tests on the real robot.
 
 ### 6. Real robot bring-up

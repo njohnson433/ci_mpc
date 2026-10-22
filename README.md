@@ -21,7 +21,7 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Joint identification (`ci_mpc_sysid`) | ✅ validated in sim (Coulomb 0–0.4 %, viscous 0.1–2 %, armature 2–4 %); real robot pending |
 | Impedance test suite (steps, rotations, circle, pushes, windup) | ✅ `scripts/impedance_suite.py` |
 | MPC tracking interface (task 3, `ci_mpc_msgs/MpcCommand`) | ✅ circle 0.65 mm RMS without friction |
-| Stage-1 MPC (`ci_mpc_planner`, OSQP) | ✅ sim: reach 0.3–0.4 mm, circle 1.0 mm RMS, 1 ms solves |
+| Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
 | Real robot connection test | ⏳ not done yet |
 
 See [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in

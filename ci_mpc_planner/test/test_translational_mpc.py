@@ -49,3 +49,28 @@ def test_solve_time():
         mpc.solve(x0, np.tile([0.4, 0.1, 0.4], (mpc.N + 1, 1)))
         ts.append(time.perf_counter() - t)
     assert np.median(ts) < 0.01  # 10 ms at 50 Hz leaves headroom
+
+
+def test_left_jacobian_matches_finite_difference():
+    """mpc_node commands w = J_l(phi) dphi/dt for R = exp(phi) R0 (world-frame angular velocity)."""
+    import pinocchio as pin
+    from ci_mpc_planner.mpc_node import MpcNode
+    rng = np.random.default_rng(0)
+    R0 = pin.exp3(rng.normal(size=3))
+    for _ in range(5):
+        phi, dphi, h = rng.normal(size=3) * 0.6, rng.normal(size=3), 1e-6
+        R1, R2 = pin.exp3(phi) @ R0, pin.exp3(phi + h * dphi) @ R0
+        w_fd = pin.log3(R2 @ R1.T) / h  # world-frame angular velocity
+        assert np.allclose(MpcNode.jl(phi) @ dphi, w_fd, atol=1e-5)
+
+
+def test_feasible_start_recovers_from_outside_the_box():
+    """A measured state outside the box (or too fast towards a wall) must still give a feasible problem."""
+    cfg = MpcConfig()
+    mpc = TranslationalMpc(cfg)
+    x_bad = np.array([cfg.p_max[0] + 0.02, 0.0, 0.45, 0.3, 0.0, 0.0])  # 2 cm past the wall, moving out
+    X, U, status = mpc.solve(x_bad, np.tile([0.9, 0.0, 0.45], (mpc.N + 1, 1)))
+    assert X is None  # infeasible as given
+    X, U, status = mpc.solve(mpc.feasible_start(x_bad), np.tile([0.9, 0.0, 0.45], (mpc.N + 1, 1)))
+    assert X is not None, status
+    assert X[:, 0].max() <= cfg.p_max[0] + 1e-4

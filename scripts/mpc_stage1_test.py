@@ -5,6 +5,12 @@
 #                deviation from the straight line
 #   circle:      r 5 cm, period 5 s, 2 laps (y-z plane); RMS vs the ideal circle after half a lap
 #   disturbance: hold at home, 10 N push in x for 2 s (sim only), deflection and recovery
+#   rotate:      0.4 rad about world z at home: final orientation error, overshoot, position drift
+#   reach_rot:   15 cm translation + rotation (0.2, -0.2, 0.3) rad at the same time
+#   retarget:    new ~/goal_pose 0.4 s into a reach
+#   wall:        goal outside the MPC workspace box (x 0.9 > p_max 0.6): must stop at the wall
+# Before each test the arm is brought back to the home pose; if that fails the remaining tests are skipped.
+#   fast_circle: r 5 cm, period 2.5 s;  figure8: r 5 cm, period 5 s
 import argparse
 import json
 import os
@@ -19,14 +25,16 @@ import rclpy
 from ci_mpc_msgs.msg import MpcCommand
 from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
+from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 
 p = argparse.ArgumentParser()
 p.add_argument("--urdf", default="/home/njohnson/ci_mpc_assets/fr3.urdf")
 p.add_argument("--sync-dir", default="")
-p.add_argument("--tests", default="reach,circle,disturbance")
+p.add_argument("--tests", default="reach,circle,disturbance,rotate,reach_rot,retarget,wall,fast_circle,figure8")
 p.add_argument("--mpc-args", default="", help="extra '-p name:=value' for mpc_node, space separated")
 p.add_argument("--log-dir", default="/tmp")
+p.add_argument("--out", default="", help="save joint samples and commanded positions to this .npz")
 args = p.parse_args()
 tests = args.tests.split(",")
 
@@ -40,6 +48,11 @@ ee_id = model.getFrameId("fr3_hand_tcp")
 def fk(q):
     pin.framesForwardKinematics(model, data, q)
     return data.oMf[ee_id].translation.copy()
+
+
+def fk_R(q):
+    pin.framesForwardKinematics(model, data, q)
+    return data.oMf[ee_id].rotation.copy()
 
 
 def sync(name):
@@ -281,6 +294,146 @@ if "disturbance" in tests and args.sync_dir:
     results["disturbance"] = final < 1e-3
     print(f"  -> {'PASS' if results['disturbance'] else 'FAIL'} (back within 1 mm)", flush=True)
 
+def vec(x):
+    return "[" + ",".join(f"{float(g):.5f}" for g in x) + "]"
+
+
+def pose_reach(label, goal, rotvec, hold=6.0, retarget=None):
+    """Reach goal / goal rotation (rotation vector relative to the start, world frame). retarget: (delay s,
+    new goal, new rotvec) published on ~/goal_pose. Returns final position / rotation errors and more."""
+    q_start = samples[-1][1]
+    p_start, R_start = fk(q_start), fk_R(q_start)
+    pr, t0 = start_mpc(label, {"task": "reach", "goal": vec(goal), "goal_rotvec": vec(rotvec)})
+    if retarget is not None:
+        delay, goal, rotvec = retarget
+        spin_sim(delay)
+        m = Pose()
+        m.position.x, m.position.y, m.position.z = map(float, goal)
+        qg = pin.Quaternion(pin.exp3(np.asarray(rotvec)) @ R_start)
+        m.orientation.x, m.orientation.y, m.orientation.z, m.orientation.w = qg.x, qg.y, qg.z, qg.w
+        goal_pub.publish(m)
+        hold -= delay
+    spin_sim(hold)
+    stop(pr)
+    R_goal = pin.exp3(np.asarray(rotvec)) @ R_start
+    qs = [(t, q) for t, q in samples if t >= t0]
+    ts = np.array([t for t, _ in qs]) - t0
+    pos = np.array([fk(q) for _, q in qs])
+    rot_err = np.array([np.linalg.norm(pin.log3(R_goal.T @ fk_R(q))) for _, q in qs])
+    ang = np.linalg.norm(rotvec)
+    overshoot_rot = 0.0
+    if ang > 1e-6:
+        axis = np.asarray(rotvec) / ang
+        along = np.array([pin.log3(fk_R(q) @ R_start.T) @ axis for _, q in qs])
+        overshoot_rot = max(0.0, along.max() - ang)
+    t1mrad = ts[np.argmax(rot_err < 1e-3)] if (rot_err < 1e-3).any() else np.nan
+    return dict(pos=np.linalg.norm(pos[-1] - goal), rot=rot_err[-1], drift=np.linalg.norm(pos - p_start, axis=1).max(),
+                overshoot_rot=overshoot_rot, t1mrad=t1mrad, pos_traj=pos, ts=ts)
+
+
+goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
+R_home = fk_R(samples[-1][1])
+
+
+def ensure_home(label):
+    """Bring the arm back to the home pose before a test; skip the rest of the suite if that fails."""
+    q = samples[-1][1]
+    if np.linalg.norm(fk(q) - p_home) < 3e-3 and np.linalg.norm(pin.log3(R_home.T @ fk_R(q))) < 0.01:
+        return True
+    rv = pin.log3(R_home @ fk_R(q).T)
+    pose_reach(f"home_before_{label}", p_home, rv, hold=6.0)
+    q = samples[-1][1]
+    e_p, e_r = np.linalg.norm(fk(q) - p_home), np.linalg.norm(pin.log3(R_home.T @ fk_R(q)))
+    if e_p > 0.01 or e_r > 0.05:
+        print(f"ABORT before {label}: arm not back home ({e_p * 1000:.1f} mm, {e_r * 1000:.1f} mrad); "
+              "skipping the remaining tests", flush=True)
+        results[label] = False
+        return False
+    return True
+
+
+healthy = True
+
+if "rotate" in tests and healthy and (healthy := ensure_home("rotate")):
+    p0 = fk(samples[-1][1])
+    r = pose_reach("rotate", p0, [0.0, 0.0, 0.4])
+    print(f"ROTATE 0.4 rad about z at home: final rot err {r['rot'] * 1000:.2f} mrad, overshoot {r['overshoot_rot'] * 1000:.2f} mrad, "
+          f"t<1 mrad {r['t1mrad']:.2f} s, position drift {r['drift'] * 1000:.2f} mm")
+    pose_reach("rotate_back", p0, [0.0, 0.0, -0.4], hold=5.0)  # back to the home orientation
+    # rotation precision is a wrist-stiction deadband (joint 7: 0.53 Nm static vs K/2 per rad), 1-4 mrad in sim
+    results["rotate"] = r["rot"] < 5e-3 and r["drift"] < 2e-3
+    print(f"  -> {'PASS' if results['rotate'] else 'FAIL'} (rot err < 5 mrad, drift < 2 mm)", flush=True)
+
+if "reach_rot" in tests and healthy and (healthy := ensure_home("reach_rot")):
+    p0 = fk(samples[-1][1])
+    r = pose_reach("reach_rot", p0 + np.array([0.10, 0.10, -0.05]), [0.2, -0.2, 0.3])
+    print(f"REACH+ROTATE 15 cm + (0.2, -0.2, 0.3) rad: final pos err {r['pos'] * 1000:.2f} mm, rot err {r['rot'] * 1000:.2f} mrad, "
+          f"rot overshoot {r['overshoot_rot'] * 1000:.2f} mrad, t<1 mrad {r['t1mrad']:.2f} s")
+    back = pose_reach("reach_rot_back", p0, -np.array([0.2, -0.2, 0.3]))  # approximately back (small-angle)
+    results["reach_rot"] = r["pos"] < 1e-3 and r["rot"] < 5e-3
+    print(f"  -> {'PASS' if results['reach_rot'] else 'FAIL'} (pos < 1 mm, rot < 5 mrad)", flush=True)
+
+if "retarget" in tests and healthy and (healthy := ensure_home("retarget")):
+    p0 = fk(samples[-1][1])
+    goal_b = p0 + np.array([0.0, 0.10, -0.05])
+    r = pose_reach("retarget", p0 + np.array([0.10, 0.0, 0.0]), [0, 0, 0], retarget=(0.4, goal_b, [0, 0, 0]))
+    print(f"RETARGET A = +10 cm x, after 0.4 s B = (0, +10, -5) cm: final err to B {r['pos'] * 1000:.2f} mm, "
+          f"rot err {r['rot'] * 1000:.2f} mrad")
+    pose_reach("retarget_back", p0, [0, 0, 0], hold=5.0)
+    results["retarget"] = r["pos"] < 1e-3
+    print(f"  -> {'PASS' if results['retarget'] else 'FAIL'} (final < 1 mm)", flush=True)
+
+if "wall" in tests and healthy and (healthy := ensure_home("wall")):
+    p0 = fk(samples[-1][1])
+    goal = np.array([0.9, p0[1], p0[2]])  # x beyond the MPC box p_max x = 0.6
+    r = pose_reach("wall", goal, [0, 0, 0])
+    x_max, x_end = r["pos_traj"][:, 0].max(), r["pos_traj"][-1, 0]
+    print(f"WALL goal x 0.9 (box x <= 0.6): final x {x_end:.4f} m, max x {x_max:.4f} m")
+    pose_reach("wall_back", p0, [0, 0, 0], hold=5.0)
+    # what matters for a safety boundary: never past it; stopping a little short (stiction) is fine
+    results["wall"] = abs(x_end - 0.6) < 2e-3 and x_max < 0.6015
+    print(f"  -> {'PASS' if results['wall'] else 'FAIL'} (stops within 2 mm of 0.6, never more than 1.5 mm past)", flush=True)
+
+
+def trajectory(label, task, r_c, period, laps, ideal):
+    pr, t0 = start_mpc(label, {"task": task, "circle_radius": float(r_c), "circle_period": float(period),
+                               "circle_laps": float(laps)})
+    p_start = fk(samples[-1][1])
+    spin_sim(laps * period + 1.0)
+    stop(pr)
+    w = window(t0 + period / 2, t0 + laps * period)
+    ts = np.array([t for t, _ in w]) - t0
+    pos = np.array([pp for _, pp in w])
+    e = np.linalg.norm(pos - ideal(p_start, ts), axis=1)
+    return np.sqrt(np.mean(e ** 2)), e.max()
+
+
+def circle_ideal(r_c, period):
+    wv = 2 * np.pi / period
+    return lambda p0, ts: (p0 - np.array([0, r_c, 0])) + r_c * np.stack(
+        [np.zeros_like(ts), np.cos(wv * ts), np.sin(wv * ts)], axis=1)
+
+
+def figure8_ideal(r_c, period):
+    wv = 2 * np.pi / period
+    return lambda p0, ts: p0 + np.stack([np.zeros_like(ts), r_c * np.sin(wv * ts), 0.5 * r_c * np.sin(2 * wv * ts)], axis=1)
+
+
+if "fast_circle" in tests and healthy and (healthy := ensure_home("fast_circle")):
+    rms, mx = trajectory("fast_circle", "circle", 0.05, 2.5, 3, circle_ideal(0.05, 2.5))
+    print(f"FAST CIRCLE r 5 cm / 2.5 s (0.126 m/s): RMS {rms * 1000:.2f} mm (max {mx * 1000:.2f}) vs the timed reference")
+    results["fast_circle"] = rms < 3e-3
+    print(f"  -> {'PASS' if results['fast_circle'] else 'FAIL'} (RMS < 3 mm)", flush=True)
+
+if "figure8" in tests and healthy and (healthy := ensure_home("figure8")):
+    rms, mx = trajectory("figure8", "figure8", 0.05, 5.0, 2, figure8_ideal(0.05, 5.0))
+    print(f"FIGURE 8 r 5 cm / 5 s: RMS {rms * 1000:.2f} mm (max {mx * 1000:.2f}) vs the timed reference")
+    results["figure8"] = rms < 3e-3
+    print(f"  -> {'PASS' if results['figure8'] else 'FAIL'} (RMS < 3 mm)", flush=True)
+
+if args.out:
+    np.savez(args.out, t=np.array([t for t, _ in samples]), q=np.array([q for _, q in samples]),
+             cmd_t=np.array([t for t, _ in commands]), cmd_p=np.array([p for _, p in commands]))
 print("RESULT " + " ".join(f"{k}={'PASS' if v else 'FAIL'}" for k, v in results.items()), flush=True)
 node.destroy_node()
 rclpy.shutdown()
