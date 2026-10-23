@@ -148,7 +148,7 @@ class PegHole3D:
         return phi, N, T1, T2, W
 
     # --- offline plant
-    def step(self, x, u, compliance, arm_friction=None):
+    def step(self, x, u, compliance, arm_friction=None, eps=1e-9, max_iter=20000):
         import osqp
         import scipy.sparse as sp
 
@@ -176,8 +176,8 @@ class PegHole3D:
         G[6 * m:, 5 * m:] = np.eye(5)
         lo[6 * m:], hi[6 * m:] = -fa, fa
         solver = osqp.OSQP()
-        solver.setup(sp.csc_matrix(np.triu(A)), b, sp.csc_matrix(G), lo, hi, verbose=False, eps_abs=1e-9,
-                     eps_rel=1e-9, polish=True, max_iter=20000)
+        solver.setup(sp.csc_matrix(np.triu(A)), b, sp.csc_matrix(G), lo, hi, verbose=False, eps_abs=eps,
+                     eps_rel=eps, polish=eps < 1e-7, max_iter=max_iter)
         res = solver.solve(raise_error=False)
         z = res.x if res.x is not None else np.zeros(nvar)
         lam = np.maximum(z[:5 * m], 0.0)

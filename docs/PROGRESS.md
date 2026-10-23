@@ -43,6 +43,57 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (later): CI-MPC plan, steps 1-2: 3D model, probing localization, 3D C3
+- **User question: model the hole with a NN for a convex contact problem?** My answer:
+  - The linearized contact force problem is already convex (Anitescu QP) whatever the geometry representation;
+    the hard parts (mode switching, contact location vs pose over the horizon) remain with a learned SDF, and the
+    hole's free space is concave (an ICNN cannot represent it).
+  - The Factory hole is axisymmetric: an exact analytic SDF is cheaper and exact.
+  - A NN is better used as an amortized estimator or as a C3 warm start (step 3).
+- **Step 1, 3D model** (`peg_hole_3d.py`):
+  - TCP pose (x, y, z, rx, ry)
+  - exact axisymmetric hole SDF (2D profile in (r, z))
+  - peg ring points vs the hole, hole rim points vs the peg side
+  - friction pyramid, arm stiction box
+  - convex plant
+- **Key finding:** one contact does not localize the hole. Resting flat on the top face only rules out holes under
+  the tip (~2 mm); a chamfer push only exists while the tip overlaps it. Static likelihood maps after one contact
+  were flat (160 of 169 cells within 2 log-units) → **active probing**:
+  - `hole_belief.py`: grid belief over the hole xy, vectorized SDF measurement model, ~6 ms per update
+  - next probe = max P(hole within the capture radius)
+  - offline: 12/12 offsets up to 5 mm in all directions, 0–18 misses.
+- **Isaac** (`--strategy probe`), the issues on the way, each found from the logs:
+  - The probes did not reach their targets (arm lateral stiction ~2 N) → lateral feedforward.
+  - Probe positions were excluded as targets (crawl) → exclude measured positions of clear misses, 1.5 mm
+    spacing.
+  - In-hand slip at 5–6 N: the sim gripper was a spring drive (2000 N/m, 4 mm on the 8 mm peg = 8 N grip; the
+    4 cm cube got 40 N) → force-controlled grasp (stiff drive saturating at 20 N per finger = 40 N, like the
+    Franka Hand, also in the pick-place scene; REAL_ROBOT.md grasp force 40).
+  - Grasp height offset +0.55–0.60 mm: every hypothesis showed a gap, so the belief never moved → calibrated on
+    the first flat-top contact.
+  - The wrench estimate's lateral offset (~1 N, torque sensor bias) read as chamfer pushes → tare before each
+    probe. The lateral error while pressing (~1 N) stays the size of the chamfer push → the belief uses geometry
+    only.
+  - Penetration tolerance 0.3 mm: a 0.07 mm residual made every probe favour holes next to it.
+  - Touch tolerance 0.15 mm: ring points over the chamfer counted as supported, so each probe excluded too
+    little.
+  - Results: first full benchmark 7/10 (±5, 3 mm failed), after the last two fixes 4/4 on those (5.2–81 s).
+    The final 10-offset run is in the next entry.
+- **Step 2, 3D C3+** (`c3_3d.py`, engaged phase after probing; offline vs the force-following heuristic):
+
+  | variant | solve | result (3 offsets 1–1.6 mm on the chamfer) | peak contact force (heuristic: 3.6–5.7 N) |
+  |---|---|---|---|
+  | rollout warm start each solve (contact radius 2 mm, N 6) | ~1 s (40 contacts) | centers, enters | 0.5 N |
+  | rollout each solve (radius 0.5 mm, N 4) | 1.5 s (rollout = cost) | centers, enters, 2 of 2 | 1.1–1.7 N |
+  | zero warm start | 25 ms | enters | 5.8 N |
+  | shifted previous targets | 13–42 ms | 1 of 2 inserted fastest (61 steps), 1 stuck at the opening | 3.6 N |
+  | rollout every 4th solve | 38–74 ms | 1 of 3 (2 stuck at the opening, violation 1–5.6) | 1.9 N |
+
+  - **Reading:** with a physics-consistent warm start, C3 centers and inserts with 2–3× lower contact forces than
+    the heuristic; that is the CI-MPC benefit. But that variant costs ~1.5 s per solve in Python, and the fast
+    variants fall into local minima (stuck at the opening) or lose the force advantage.
+  - → step 3: learn the warm start / an amortized policy from the slow reliable C3 (teacher), or port to C++.
+
 ### 2026-10-24: CI-MPC step 3, Isaac: localization / C3 on the Factory peg (planar model along x)
 - `scripts/peg_insert_demo.py --strategy spiral|estimate|c3`: 10 Hz model-based contact phase. The TCP pose comes
   from FK, the contact wrench from the controller's estimate (sign flipped, peg weight removed), plus the particle

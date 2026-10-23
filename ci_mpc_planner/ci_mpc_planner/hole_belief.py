@@ -114,13 +114,14 @@ class HoleBelief:
         mean = w @ self.h
         return mean, np.sqrt(w @ np.sum((self.h - mean) ** 2, axis=1))
 
-    def next_probe(self, exclude=(), current=None):
+    def next_probe(self, exclude=(), current=None, min_spacing=None):
         """Probe position maximizing P(hole within the capture radius); positions already probed are skipped; among
         near-ties (within 10 %) the one closest to `current` (a flat belief otherwise always picked a grid corner)."""
         w = self.weights()
         cands, ps = [], []
         for c in self.h[::3]:
-            if any(np.linalg.norm(c - e) < 0.5 * self.capture for e in exclude):
+            spacing = 0.5 * self.capture if min_spacing is None else min_spacing
+            if any(np.linalg.norm(c - e) < spacing for e in exclude):
                 continue
             cands.append(c)
             ps.append(w[np.linalg.norm(self.h - c, axis=1) < self.capture].sum())

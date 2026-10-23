@@ -410,7 +410,9 @@ elif args.strategy == "probe":
     O = np.array([hole_est[0], hole_est[1], hole_tip_z])
     # lateral force evidence off: in Isaac the estimate's lateral error while pressing (~1 N) is the size of the
     # chamfer's push; the belief uses the robust part only ("the peg did not drop: the hole is not under the tip")
-    belief = HoleBelief(geo, f_lateral=1e9)
+    # touch tolerance small: ring points over the chamfer must not count as supported (0.4 mm + the 0.3 mm
+    # penetration tolerance shrank each probe's exclusion to ~1.3 mm, and the search crawled)
+    belief = HoleBelief(geo, f_lateral=1e9, touch=1.5e-4)
     c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
 
     c["z_bias"] = 0.0  # tip height offset of the grasp (peg seated deeper / shallower in the fingers than nominal)
@@ -494,7 +496,7 @@ elif args.strategy == "probe":
         belief.update(x, F)
         est, std = belief.estimate()
         n_probes += 1
-        engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > 2.0  # sank into the chamfer / clear push
+        engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > 1.2  # sank into the chamfer / a push (centering only)
         on_top = not engaged
         if on_top:
             probes.append(x[:2].copy())
@@ -527,7 +529,7 @@ elif args.strategy == "probe":
                     break
             c["phase"], c["t_done"] = "done", state["t"]
             break
-        target, _ = belief.next_probe(exclude=probes, current=x[:2])
+        target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
     if c["phase"] != "done":
         c["phase"] = "failed"
     print(f"  probing: {c['phase']} after {n_probes} probes, {state['t'] - c['t0']:.1f} s", flush=True)
