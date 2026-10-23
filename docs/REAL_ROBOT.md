@@ -42,7 +42,7 @@ On the robot, replace the demo's gripper calls (`scripts/pick_place_demo.py`) by
 |---|---|---|
 | once after start | — | action `/franka_gripper/homing` (calibrates the fingers) |
 | open | `/gripper/width` ← 0.08 | action `/franka_gripper/move`: `width 0.08, speed 0.1` |
-| grasp the 4 cm cube | `/gripper/width` ← 0.0 (drive max 40 N per finger) | action `/franka_gripper/grasp`: `width 0.04, speed 0.05, force 20.0, epsilon inner/outer 0.005` |
+| grasp the 4 cm cube | `/gripper/width` ← 0.0 (force-limited drive: 20 N per finger = 40 N grasp) | action `/franka_gripper/grasp`: `width 0.04, speed 0.05, force 40.0, epsilon inner/outer 0.005` (sim grasps with 40 N; the 8 mm peg slid at ~8 N grasp) |
 | grasp check | opening from `/joint_states` ≈ 40 mm | result `success` (final width within width ± epsilon) |
 | finger state | `/joint_states` (`fr3_finger_joint1/2`) | `/franka_gripper/joint_states` |
 

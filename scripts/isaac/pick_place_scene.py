@@ -66,9 +66,11 @@ def add_objects(stage, size=(CUBE_EDGE,) * 3, yaw_deg=0.0, boxes=()):
     for joint in ("fr3_finger_joint1", "fr3_finger_joint2"):
         drive = UsdPhysics.DriveAPI.Apply(stage.GetPrimAtPath(f"/fr3/Physics/{joint}"), "linear")
         drive.CreateTypeAttr("force")
-        drive.CreateStiffnessAttr(2000.0)
-        drive.CreateDampingAttr(100.0)
-        drive.CreateMaxForceAttr(40.0)
+        # force-controlled grasp like the Franka Hand: a stiff drive saturating at 20 N per finger (= a 40 N grasp)
+        # for any object width (2000 N/m gave 40 N on the 4 cm cube but ~8 N on the 8 mm peg, which slid at 6-8 N)
+        drive.CreateStiffnessAttr(20000.0)
+        drive.CreateDampingAttr(200.0)
+        drive.CreateMaxForceAttr(20.0)
         drive.CreateTargetPositionAttr(0.04)
     global OBJECT_SIZE
     OBJECT_SIZE = list(size)

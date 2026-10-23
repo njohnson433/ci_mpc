@@ -58,9 +58,11 @@ p.add_argument("--dither", default="0,0", help="lateral dither amplitude [m], fr
 p.add_argument("--engage", type=float, default=0.003, help="tip this far below the opening = in the hole [m]")
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
-p.add_argument("--strategy", default="spiral", choices=["spiral", "estimate", "c3"],
+p.add_argument("--max-probes", type=int, default=12)
+p.add_argument("--strategy", default="spiral", choices=["spiral", "estimate", "c3", "probe"],
                help="contact phase: spiral search (hand-written); estimate = hole localization from contact "
-                    "(particle filter on the measured wrench) + straight down; c3 = localization + C3+ CI-MPC")
+                    "(particle filter on the measured wrench) + straight down; c3 = localization + C3+ CI-MPC; "
+                    "probe = 3D hole belief (x and y) + information-driven probing + chamfer centering")
 p.add_argument("--particles", type=int, default=30)
 p.add_argument("--follow-force", type=float, default=0.0,
                help="[m/N per step] admittance along the measured lateral contact force (the round rim pushes the "
@@ -399,6 +401,136 @@ spin_sim(0.05)
 if args.strategy == "spiral":
     timer = node.create_timer(0.005, command)
     spin_until(lambda: c["phase"] in ("done", "failed") or state["t"] - c["t0"] > args.timeout_contact, 600)
+elif args.strategy == "probe":
+    # 3D: grid belief over the hole xy (exact axisymmetric hole), probes where entry is most likely
+    from ci_mpc_planner.hole_belief import HoleBelief
+    from ci_mpc_planner.peg_hole import PegHoleGeometry
+
+    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp)
+    O = np.array([hole_est[0], hole_est[1], hole_tip_z])
+    # lateral force evidence off: in Isaac the estimate's lateral error while pressing (~1 N) is the size of the
+    # chamfer's push; the belief uses the robust part only ("the peg did not drop: the hole is not under the tip")
+    belief = HoleBelief(geo, f_lateral=1e9)
+    c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
+
+    c["z_bias"] = 0.0  # tip height offset of the grasp (peg seated deeper / shallower in the fingers than nominal)
+
+    def measure5():
+        T = fk(state["q"])
+        Rrel = T.rotation @ R.T
+        rx, ry = np.arctan2(Rrel[2, 1], Rrel[2, 2]), np.arctan2(Rrel[0, 2], Rrel[2, 2])
+        p = T.translation - O
+        p[2] -= c["z_bias"]
+        return np.array([*p, rx, ry])
+
+    c["tare"] = np.zeros(3)
+
+    def force3(window=0.2, raw=False):
+        rows = np.array([r[1:4] for r in wrench_log if r[0] > state["t"] - window])
+        if not len(rows):
+            return np.zeros(3)
+        f = -rows.mean(0)  # Franka sign -> force on the peg
+        # tare: the reading while hovering free just before the probe (estimate offsets from the torque sensor
+        # bias, ~1 N in y here, and the carried peg weight); without it the bias read as a chamfer push
+        return f if raw else f - c["tare"]
+
+    def cmd(xy, z, ff=(0.0, 0.0, 0.0)):  # z in the bias-corrected model frame, like measure5()
+        c["u_cmd"] = (np.array([O[0] + xy[0], O[1] + xy[1], O[2] + z + c["z_bias"]]), R)
+        c["ff"] = np.asarray(ff, float)
+
+    def command_probe():
+        pos, Rc = c["u_cmd"]
+        qc = pin.Quaternion(Rc)
+        m = MpcCommand()
+        m.header.stamp = node.get_clock().now().to_msg()
+        m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, pos)
+        m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = qc.x, qc.y, qc.z, qc.w
+        m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, c["ff"])
+        m.stiffness = K_search
+        m.integral_enabled = False
+        cmd_pub.publish(m)
+
+    timer = node.create_timer(0.005, command_probe)
+    dt = args.plan_period
+    z_hover = tip_below_tcp + 0.001
+    tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
+    probes, target, c["phase"] = [], np.zeros(2), "probe"
+    n_probes = 0
+    for k in range(args.max_probes):
+        if state["t"] - c["t0"] > args.timeout_contact:
+            break
+        x = measure5()
+        cmd(x[:2], z_hover)
+        spin_sim(0.4)
+        for _ in range(25):  # lateral move with a stiction feedforward along the remaining offset
+            x = measure5()
+            d = target - x[:2]
+            if np.linalg.norm(d) < 2e-4:
+                break
+            cmd(target, z_hover, (*(2.5 * d / np.linalg.norm(d)), 0.0))
+            spin_sim(dt)
+        cmd(measure5()[:2] if np.linalg.norm(target - measure5()[:2]) > 2e-4 else target, z_hover)
+        spin_sim(0.3)
+        c["tare"] = force3(0.25, raw=True)
+        x = measure5()
+        uz = x[2]
+        for _ in range(40):  # press (stiction feedforward), until contact or in the hole
+            x = measure5()
+            uz = max(uz - 5e-4, x[2] - 0.006)
+            cmd(target, uz, (0.0, 0.0, -args.stiction_ff))
+            spin_sim(dt)
+            F = force3(0.1)
+            if F[2] > 1.0 or tip_z(measure5()) < -0.003:
+                break
+        cmd(target, measure5()[2] - 0.001, (0.0, 0.0, -args.stiction_ff))  # light: just keep the contact
+        spin_sim(0.3)
+        x, F = measure5(), force3(0.3)
+        if k == 0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
+            # first contact on the flat top face (no lateral push): its tip height is the grasp offset (Isaac:
+            # +0.55 mm; uncorrected, every hypothesis showed a gap and the belief never moved)
+            c["z_bias"] = tip_z(x)
+            x = measure5()
+            print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibrated on the top face)", flush=True)
+        belief.update(x, F)
+        est, std = belief.estimate()
+        n_probes += 1
+        engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > 2.0  # sank into the chamfer / clear push
+        on_top = not engaged
+        if on_top:
+            probes.append(x[:2].copy())
+        print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
+              f"{tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N; belief {np.round(est * 1000, 2)} "
+              f"(std {std * 1000:.2f}) mm", flush=True)
+        if engaged:
+            # engaged on the chamfer: follow its push towards the axis with a light normal force
+            for _ in range(60):
+                x, F = measure5(), force3(0.1)
+                lat = F[:2]
+                if np.linalg.norm(lat) > 0.3:
+                    dirn = lat / np.linalg.norm(lat)
+                    cmd(x[:2] + 4e-4 * dirn, x[2] - 0.002, (*(2.5 * dirn), -2.0))
+                else:
+                    cmd(x[:2], x[2] - 0.004, (0.0, 0.0, -args.stiction_ff))
+                spin_sim(dt)
+                if tip_z(measure5()) < -0.003:
+                    break
+            print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
+                  flush=True)
+        if tip_z(measure5()) < -0.003:  # in the hole: push to the bottom (force-limited)
+            c["t_engage"] = c["t_contact"] = state["t"]
+            for _ in range(150):
+                x, F = measure5(), force3(0.1)
+                uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
+                cmd(x[:2], uz, (0.0, 0.0, -args.stiction_ff))
+                spin_sim(dt)
+                if geo.depth - (-tip_z(measure5())) < 0.001:
+                    break
+            c["phase"], c["t_done"] = "done", state["t"]
+            break
+        target, _ = belief.next_probe(exclude=probes, current=x[:2])
+    if c["phase"] != "done":
+        c["phase"] = "failed"
+    print(f"  probing: {c['phase']} after {n_probes} probes, {state['t'] - c['t0']:.1f} s", flush=True)
 else:
     # model-based contact phase (planar x-z model along world x; the hole offset is along x in these tests)
     from ci_mpc_planner.c3 import C3Config, PegHoleC3

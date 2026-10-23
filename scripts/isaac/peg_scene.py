@@ -103,9 +103,10 @@ def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False
         if p.IsValid():
             drive = UsdPhysics.DriveAPI.Apply(p, "linear")
             drive.CreateTypeAttr("force")
-            drive.CreateStiffnessAttr(2000.0)
-            drive.CreateDampingAttr(100.0)
-            drive.CreateMaxForceAttr(40.0)
+            # force-controlled grasp like the Franka Hand (see pick_place_scene.py): 20 N per finger = 40 N grasp
+            drive.CreateStiffnessAttr(20000.0)
+            drive.CreateDampingAttr(200.0)
+            drive.CreateMaxForceAttr(20.0)
             drive.CreateTargetPositionAttr(0.04)
     print(f"[sim] peg-in-hole (Factory 8 mm, SDF): hole at {hole_xy} (top z {TOP + HOLE_BASE + HOLE_DEPTH:.3f}), "
           f"peg at {peg_xy}" + (", drop test pegs" if drop_test else ""), flush=True)

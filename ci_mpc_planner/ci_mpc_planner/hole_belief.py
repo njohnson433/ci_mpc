@@ -50,6 +50,7 @@ def profile_sdf(r, z, g):
 
 class HoleBelief:
     def __init__(self, geo=PegHoleGeometry(), spread=0.006, res=0.0005, n_ring=24, touch=4e-4, f_contact=0.8,
+                 pen_tol=3e-4,
                  f_lateral=1.0, capture=0.002):  # f_lateral ~3 sigma of the wrench estimate (0.5: noise read as a push)
         self.g = geo
         ax = np.arange(-spread, spread + 1e-9, res)
@@ -61,6 +62,9 @@ class HoleBelief:
         edge = np.column_stack([geo.a * np.cos(ang), geo.a * np.sin(ang), np.full(n_ring, geo.pc)])
         self.peg_points = np.vstack([tip, edge, [[0, 0, 0]]])
         self.touch, self.f_contact, self.f_lateral, self.capture = touch, f_contact, f_lateral, capture
+        # penetration tolerance: the measured tip height is only good to ~0.1-0.3 mm (grasp offset calibration,
+        # estimate); without it a tip 0.07 mm "inside" the top face favoured holes next to every probe
+        self.pen_tol = pen_tol
 
     def points_world(self, x):
         """Peg points in the model frame for TCP pose x = (x, y, z, rx, ry)."""
@@ -81,8 +85,8 @@ class HoleBelief:
     def update(self, x, force):
         """x: measured TCP pose (model frame), force: measured contact force on the peg (3, world)."""
         d, n = self.gaps(x)
-        ll = -np.sum(np.minimum(d, 0.0) ** 2, axis=1) / (3e-4) ** 2  # penetration
-        touching = d < self.touch
+        ll = -np.sum(np.minimum(d + self.pen_tol, 0.0) ** 2, axis=1) / (3e-4) ** 2  # penetration beyond tolerance
+        touching = d < self.touch + self.pen_tol
         any_touch = touching.any(axis=1)
         F = np.asarray(force, float)
         if np.linalg.norm(F) > self.f_contact:
