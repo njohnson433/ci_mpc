@@ -43,7 +43,35 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
-### 2026-10-24 (night): sampled C3 teacher, option selector + DAgger (step 3, second attempt)
+### 2026-10-23: daily summary
+- **Stage 2, planar pushing (sim):** pusher-slider LTV MPC with a sticking contact: straight 20 cm 2.2–2.3 mm
+  final, 90° arc 0.9–1.0 mm final (8 mm RMS), 10° start corrected to < 1° yaw. Open: the contact slides 9 mm
+  along the face on arcs (sticking-only model) → stage 3.
+- **Stacking and perception:** 3-cube tower from stage-1 MPC, 1.2–3.2 mm per level. New `ci_mpc_perception`
+  (simulated Gemini 305 wrist camera, depth noise, box detector): tower top 1.7 mm off the base from camera
+  detections. A GUI run failed (brighter faces → 19.6 mm detection error); fixed with depth-grown top faces,
+  then GUI and headless agree (1.9 / 2.0 mm).
+- **Factory 8 mm peg-in-hole benchmark (sim, SDF):** the hand-written search-and-insert succeeds at 0–1 mm hole
+  error, fails at ≥ 2 mm (jamming, in-hand slip). This is the CI-MPC target.
+- **External wrench estimate (momentum observer on the measured joint torques):** against a simulated wrist F/T
+  sensor, error RMS 0.17 / 0.31 / 0.80 N in contact, up to 7 N briefly at impacts (bandwidth ~5 Hz). The PhysX
+  contact report was misleading (2× the weight, no friction).
+- **CI-MPC, planar model + C3+:** offline, localization alone fixes 2–5 mm, and C3 adds nothing on top. In Isaac the
+  planar model is wrong in 3D (the filter converged to the wrong side), so offsets ≥ 3 mm still failed.
+- **3D model + active probing:** exact axisymmetric hole SDF, grid belief, information-driven probes. Offline
+  12/12 offsets up to 5 mm; in Isaac 7/10 first, then 4/4 on the failed ones after fixes (force-controlled 40 N
+  grasp, grasp-height calibration, wrench tare, tolerances). 3D C3+ gives 2–3× lower contact forces
+  (1.1–1.7 N vs 3.6–5.7 N), but only with a ~1.5 s rollout warm start per solve; the fast variants get stuck.
+- **Amortized C3, negative result:** with randomized starts the single-C3 teacher entered only 8/80 episodes, and
+  the MSE student 1/10. The **sampled teacher** (9 warm starts + heuristic, scored in a plant copy) enters 9/10
+  with 1.4–2.35 N peak force (heuristic 8/10, 2.2–5.8 N) at 1–6 s/step. The option selector + DAgger reaches 8/10
+  at 2.1–2.5 N and 0.2–0.5 s/step. Fair 30-start test (separate RNGs): heuristic 22/30 (peak median 2.80 N, p90
+  4.96 N), selector round 1 19/30 (2.41 / 4.18 N), round 2 16/30 (2.33 / 2.75 N): lower forces, fewer entries;
+  DAgger made it worse (validation regret 0.18 → 0.45). Learned amortization does not beat the heuristic yet.
+- **Clean Isaac benchmark (pinned to cores 0–15):** probing 6/10, spiral (40 N grasp) 5/10, estimator (planar)
+  2/10. Run-to-run variance is large (probing 4/4, 7/10, 6/10 in earlier runs), so repeated runs are planned.
+
+### 2026-10-23 (night): sampled C3 teacher, option selector + DAgger (step 3, second attempt)
 - **Sampled teacher** (`sampled_teacher.py`): per step, C3 from 9 warm starts (rollouts of different nominal
   command sequences: centering with a light / firm press, press only, ±x / ±y lateral, ±tilt) plus the heuristic,
   each executed 4 steps in a plant copy and scored (depth, centering, force above 3 N). Privileged (true hole).
@@ -76,7 +104,7 @@ Read this before starting work (and before re-investigating something "new").
   - A wait loop after a session restart used `pgrep -f` on a pattern in its own command line (never ends); stopped
     by PID, replaced by a file check.
 
-### 2026-10-24 (later): CI-MPC step 3, amortized C3 (student) — stopped, teacher not good enough
+### 2026-10-23 (later): CI-MPC step 3, amortized C3 (student) — stopped, teacher not good enough
 - **Pipeline (kept, works):**
   - `scripts/c3_teacher_data.py`: teacher = 3D C3+ with the rollout warm start every solve; random engaged starts
     0.3–1.8 mm, estimate error σ 0.2 mm, 30 % perturbed commands (DART); 16 workers, 80 episodes, 4622 samples.
@@ -101,7 +129,7 @@ Read this before starting work (and before re-investigating something "new").
     - a C++ C3 (the C3 papers' speed);
     - a student trained on a better teacher (e.g. MIQP or sampled C3, offline, any speed).
 
-### 2026-10-24 (later): CI-MPC plan, steps 1-2: 3D model, probing localization, 3D C3
+### 2026-10-23 (later): CI-MPC plan, steps 1-2: 3D model, probing localization, 3D C3
 - **User question: model the hole with a NN for a convex contact problem?** My answer:
   - The linearized contact force problem is already convex (Anitescu QP) whatever the geometry representation;
     the hard parts (mode switching, contact location vs pose over the horizon) remain with a learned SDF, and the
@@ -152,7 +180,7 @@ Read this before starting work (and before re-investigating something "new").
     variants fall into local minima (stuck at the opening) or lose the force advantage.
   - → step 3: learn the warm start / an amortized policy from the slow reliable C3 (teacher), or port to C++.
 
-### 2026-10-24: CI-MPC step 3, Isaac: localization / C3 on the Factory peg (planar model along x)
+### 2026-10-23: CI-MPC step 3, Isaac: localization / C3 on the Factory peg (planar model along x)
 - `scripts/peg_insert_demo.py --strategy spiral|estimate|c3`: 10 Hz model-based contact phase. The TCP pose comes
   from FK, the contact wrench from the controller's estimate (sign flipped, peg weight removed), plus the particle
   filter. estimate = localization + straight down; c3 = localization + C3+. Hole offset along world x only (planar
@@ -196,7 +224,7 @@ Read this before starting work (and before re-investigating something "new").
     particles; that is what makes the rim's push informative
   - then C3 on it with a mode-aware initialization (warm-start ADMM in "slide", not "stick").
 
-### 2026-10-24: CI-MPC step 2, planar peg-hole model, C3+ and hole localization (offline)
+### 2026-10-23: CI-MPC step 2, planar peg-hole model, C3+ and hole localization (offline)
 - **Model** (`ci_mpc_planner/peg_hole.py`):
   - planar (x-z, tilt about y) Factory peg and hole: hole r 4.5 mm with a 1 mm chamfer, peg half width 3.993 mm
     with a 0.5 mm chamfer
@@ -228,7 +256,7 @@ Read this before starting work (and before re-investigating something "new").
   CI-MPC's force and grasp limits target and that broke the Isaac runs. Next: Isaac with three contact strategies
   (spiral / localization + straight down / localization + C3) on the same offsets.
 
-### 2026-10-24: CI-MPC step 1, external wrench estimate in sim
+### 2026-10-23: CI-MPC step 1, external wrench estimate in sim
 - **Controller** (`cartesian_impedance_control` 153c12b):
   - generalized momentum observer r = K_O (M q̇ − ∫(τ + Cᵀq̇ − g + r)dt − p0), K_O 30
   - wrench at the TCP = −pinv(Jᵀ) r in Franka's sign convention (robot on environment positive); published on
