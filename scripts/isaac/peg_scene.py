@@ -57,9 +57,11 @@ def _factory_body(prim, iterations=None):
     rb.CreateAngularDampingAttr(0.0)
 
 
-def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False):
+def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False, friction=None, hole_tilt_deg=0.0):
+    """friction: contact friction of table / peg / hole (default FRICTION); hole_tilt_deg: the hole block tilted
+    about the world x axis (held-out variations, unknown to the controller)."""
     """drop_test: also drop free pegs into the hole (no robot needed) to check the contact setup."""
-    mat = _material(stage, "/Peg/Material", FRICTION)
+    mat = _material(stage, "/Peg/Material", FRICTION if friction is None else friction)
     table = UsdGeom.Cube.Define(stage, "/Peg/Table")
     table.CreateSizeAttr(1.0)
     xf = UsdGeom.Xformable(table.GetPrim())
@@ -81,6 +83,8 @@ def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False
         hole = stage.DefinePrim(path, "Xform")
         hole.GetReferences().AddReference(f"{ASSETS}/factory_hole_8mm.usd")
         UsdGeom.Xformable(hole).AddTranslateOp().Set(Gf.Vec3d(xy[0], xy[1], TOP + HOLE_BASE))
+        if hole_tilt_deg and path == HOLE:
+            UsdGeom.Xformable(hole).AddRotateXOp().Set(float(hole_tilt_deg))
         stage.GetPrimAtPath(path + "/forge_hole_8mm/FixedJoint").SetActive(False)
         hb = stage.GetPrimAtPath(path + "/forge_hole_8mm/forge_hole_8mm")
         UsdPhysics.RigidBodyAPI(hb).CreateKinematicEnabledAttr(True)
@@ -108,6 +112,7 @@ def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False
             drive.CreateDampingAttr(200.0)
             drive.CreateMaxForceAttr(20.0)
             drive.CreateTargetPositionAttr(0.04)
+    print(f"[sim] friction {FRICTION if friction is None else friction}, hole tilt {hole_tilt_deg} deg", flush=True)
     print(f"[sim] peg-in-hole (Factory 8 mm, SDF): hole at {hole_xy} (top z {TOP + HOLE_BASE + HOLE_DEPTH:.3f}), "
           f"peg at {peg_xy}" + (", drop test pegs" if drop_test else ""), flush=True)
 

@@ -44,6 +44,8 @@ p.add_argument("--urdf", default="/home/njohnson/ci_mpc_assets/fr3.urdf")
 p.add_argument("--sync-dir", required=True)
 p.add_argument("--log-dir", default="/tmp")
 p.add_argument("--mode", default="blended", choices=["blended", "stops"])
+p.add_argument("--grasp-offset", default="0,0", help="grasp off the nominal point dx (hand x, across the finger axis), "
+               "dz (deeper +) [mm]; the controller keeps assuming the nominal grasp (held-out variation)")
 p.add_argument("--hole-offset", default="0,0", help="perception error of the hole position dx,dy [mm]")
 p.add_argument("--stiffness", default="1500,1500,500", help="translational stiffness in contact [N/m]")
 p.add_argument("--insert-stiffness", default="500,500,500",
@@ -283,13 +285,16 @@ tr0 = truth()
 R = T_home.rotation
 peg_top = peg_c[2] + peg_size[2] / 2
 z_grasp = peg_top - 0.010
-tip_below_tcp = z_grasp - (peg_c[2] - peg_size[2] / 2)
+tip_below_tcp = z_grasp - (peg_c[2] - peg_size[2] / 2)  # nominal: what the controller assumes
+g_off = np.array([float(v) for v in args.grasp_offset.split(",")]) / 1000.0
+grasp_xy = peg_c[:2] + np.array([g_off[0], 0.0])
+z_grasp_actual = z_grasp - g_off[1]
 print(f"PEG at {np.round(peg_c, 4)}, HOLE opening at {np.round(hole_top, 4)}, perception error "
       f"{np.round(offset[:2] * 1000, 2)} mm -> hole estimate {np.round(hole_est, 4)}; tip {tip_below_tcp * 1000:.1f} mm "
       f"below the TCP", flush=True)
 t_start = state["t"]
 gripper(0.03, settle=0.5)
-segment("A home -> above peg -> grasp", [(np.array([*peg_c[:2], Z_SAFE]), R), (np.array([*peg_c[:2], z_grasp]), R)])
+segment("A home -> above peg -> grasp", [(np.array([*grasp_xy, Z_SAFE]), R), (np.array([*grasp_xy, z_grasp_actual]), R)])
 gripper(0.0, settle=1.0)
 closed = state["fingers"]
 if abs(closed - peg_size[0]) > 0.003:

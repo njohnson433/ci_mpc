@@ -22,6 +22,8 @@ parser.add_argument("--camera", action="store_true", help="add the simulated Gem
 parser.add_argument("--peg", action="store_true", help="add the Factory 8 mm peg-in-hole (SDF collision)")
 parser.add_argument("--peg-hole-xy", default="0.5,0.1", help="peg: hole x,y [m]")
 parser.add_argument("--peg-drop-test", action="store_true", help="peg: also drop free pegs into the hole")
+parser.add_argument("--peg-friction", type=float, default=None, help="peg: contact friction (default 0.75)")
+parser.add_argument("--peg-hole-tilt", type=float, default=0.0, help="peg: hole block tilt about x [deg]")
 parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
 parser.add_argument("--push-xy", default="0.55,-0.15", help="push slider start x,y [m]")
 parser.add_argument("--push-yaw", type=float, default=90.0, help="push slider yaw [deg]")
@@ -66,7 +68,8 @@ if pick_lib:
 if cam_lib:
     cam_lib["add_camera"](stage)
 if peg_lib:
-    peg_lib["add_objects"](stage, [float(v) for v in args.peg_hole_xy.split(",")], drop_test=args.peg_drop_test)
+    peg_lib["add_objects"](stage, [float(v) for v in args.peg_hole_xy.split(",")], drop_test=args.peg_drop_test,
+                           friction=args.peg_friction, hole_tilt_deg=args.peg_hole_tilt)
 if push_lib:
     push_lib["add_objects"](stage, yaw_deg=args.push_yaw, xy=[float(x) for x in args.push_xy.split(",")])
 
