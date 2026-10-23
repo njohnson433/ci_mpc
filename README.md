@@ -24,9 +24,9 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
 | Pick-and-place demo (sim) | ✅ `scripts/demo_pick_place.sh [box\|cube] [--noise] [--stops] [--headless]`; blended MPC motion, grasp from the detection |
 | Box stacking demo (sim) | ✅ `scripts/demo_stack.sh [--noise] [--headless]`: 3-cube tower, 1.2–3.2 mm per level; `--camera`: from the simulated Gemini 305 wrist camera (box detector on color + noisy depth), top 1.7 mm off base |
-| Factory peg-in-hole (sim, SDF) | 🟡 `scripts/demo_peg.sh [--offset dx,dy]`: hand-written search 0–1 mm hole error ✅, ≥ 2 mm ❌ (jamming / in-hand slip); `peg_insert_demo.py --strategy probe` (3D hole belief, active probing): 7/10 offsets up to 5 mm, then 4/4 on the failed ones after fixes |
+| Factory peg-in-hole (sim, SDF) | 🟡 `scripts/demo_peg.sh [--offset dx,dy]`: hand-written search 0–1 mm hole error ✅, ≥ 2 mm ❌ (jamming / in-hand slip); `peg_insert_demo.py --strategy probe` (3D hole belief, active probing): 7/10 offsets up to 5 mm, then 4/4 on the failed ones after fixes; clean pinned benchmark: probing 6/10, spiral 5/10, planar estimator 2/10 (large run-to-run variance); `--entry gpu` (GPU MPC over belief-sampled holes) wired up, not benchmarked yet |
 | External wrench estimate (momentum observer, measured joint torques) | ✅ vs simulated wrist F/T: 0.17 / 0.31 / 0.80 N RMS in contact |
-| CI-MPC (peg, 3D C3+, `ci_mpc_planner`) | 🟡 offline: 2–3× lower contact force than the heuristic, but ~1.5 s/solve and warm-start sensitive; sampled teacher 9/10 entries (heuristic 8/10), learned option selector 8/10 at 0.2–0.5 s/step |
+| CI-MPC (peg, 3D C3+, `ci_mpc_planner`) | 🟡 offline: 2–3× lower contact force than the heuristic, but ~1.5 s/solve and warm-start sensitive; sampled teacher 9/10 entries (heuristic 8/10); learned option selector does not beat the heuristic on the fair 30-start test (16–19/30 vs 22/30). **GPU sampling MPC** (batched FISTA plant, matches OSQP to 0.012 mm; ~140 ms/decision): 30/30 offline (heuristic 22/30), p90 peak force 5.36 N (heuristic 4.96 N); held-out variation drivers `scripts/heldout_h1.sh`, `heldout_h4.sh` |
 | Stage-2 pushing MPC (sticking contact, sim) | ✅ `scripts/demo_push.sh [line\|arc\|yaw10]`: straight 20 cm 2.2 mm, 90° arc 0.9 mm final (8 mm RMS), 10° start corrected; contact sliding on arcs open → stage 3 |
 | Real robot connection test | ⏳ not done yet |
 
@@ -81,7 +81,7 @@ The repo sits in `src/` so that the ROS packages we add later (`ci_mpc_msgs`,
 ```
 README.md                  this file
 ci_mpc_msgs/               MpcCommand (MPC → controller setpoint)
-ci_mpc_planner/            MPCs (stage 1, pushing, C3+ peg-hole), hole belief, mpc_node
+ci_mpc_planner/            MPCs (stage 1, pushing, C3+ peg-hole, GPU sampling MPC), hole belief, mpc_node
 ci_mpc_perception/         simulated Gemini 305 depth noise, box detector
 ci_mpc_sim_gripper/        sim gripper controller
 ci_mpc_sysid/              joint identification
