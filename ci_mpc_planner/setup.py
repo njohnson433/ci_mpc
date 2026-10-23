@@ -21,5 +21,6 @@ setup(
     description="Stage-1 MPC for the FR3 (end-effector trajectory QP on top of the impedance controller)",
     license="Apache 2.0",
     tests_require=["pytest"],
-    entry_points={"console_scripts": ["mpc_node = ci_mpc_planner.mpc_node:main"]},
+    entry_points={"console_scripts": ["mpc_node = ci_mpc_planner.mpc_node:main",
+                                      "push_node = ci_mpc_planner.push_node:main"]},
 )

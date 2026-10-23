@@ -16,6 +16,9 @@ parser.add_argument("--gui", action="store_true", help="open the Isaac Sim windo
 parser.add_argument("--pick-place", action="store_true", help="add table, cube and a position-controlled gripper")
 parser.add_argument("--object-size", default="0.04,0.04,0.04", help="pick-place object box extents x,y,z [m]")
 parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place object yaw [deg]")
+parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
+parser.add_argument("--push-xy", default="0.55,-0.15", help="push slider start x,y [m]")
+parser.add_argument("--push-yaw", type=float, default=90.0, help="push slider yaw [deg]")
 args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -34,6 +37,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 graph_lib = runpy.run_path(os.path.join(here, "add_ros2_control_graph.py"), run_name="lib")
 home_lib = runpy.run_path(os.path.join(here, "set_home_pose.py"), run_name="lib")
 pick_lib = runpy.run_path(os.path.join(here, "pick_place_scene.py"), run_name="lib") if args.pick_place else None
+push_lib = runpy.run_path(os.path.join(here, "push_scene.py"), run_name="lib") if args.push else None
 
 omni.usd.get_context().open_stage(args.scene)
 for _ in range(20):
@@ -47,6 +51,8 @@ for path in (graph_lib["OLD_GRAPH"], graph_lib["GRAPH"]):
         prim.SetActive(False)
 if pick_lib:
     pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw)
+if push_lib:
+    push_lib["add_objects"](stage, yaw_deg=args.push_yaw, xy=[float(x) for x in args.push_xy.split(",")])
 
 # Play first and let SimulationManager initialize physics. If the ros2_control graph already
 # exists at Play, its first tick runs before physics is set up and createArticulationView fails.
@@ -110,6 +116,8 @@ def poll_wrench():
 
 
 gripper = pick_lib["Gripper"](args.sync_dir, home_lib["ROOT"]) if pick_lib else None
+if push_lib:
+    gripper = push_lib["Poller"](args.sync_dir)
 open(os.path.join(args.sync_dir, "home_done"), "w").close()
 
 t0_wall, t0_sim = time.time(), timeline.get_current_time()

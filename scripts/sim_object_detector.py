@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Sim stand-in for the vision pipeline: publishes the pick-place object as vision_msgs/Detection3DArray on
-# /perception/detections (10 Hz, frame "base" = robot base) from the sim ground truth (<sync>/object.json),
+# /perception/detections (--rate, default 10 Hz, frame "base" = robot base) from the sim ground truth (<sync>/object.json),
 # with a fixed estimation error per run: position offset ~ N(0, pos_noise) in x/y/z, size ~ N(0, size_noise)
 # per extent, yaw ~ N(0, yaw_noise_deg). The real vision pipeline publishes the same message.
 #   sim_object_detector.py --sync-dir DIR [--pos-noise 0.003] [--size-noise 0.002] [--yaw-noise-deg 3] [--seed 1]
@@ -20,6 +20,7 @@ p.add_argument("--pos-noise", type=float, default=0.0, help="std of the position
 p.add_argument("--size-noise", type=float, default=0.0, help="std of the size error [m]")
 p.add_argument("--yaw-noise-deg", type=float, default=0.0, help="std of the yaw error [deg]")
 p.add_argument("--seed", type=int, default=1)
+p.add_argument("--rate", type=float, default=10.0, help="publish rate [Hz] (wall time)")
 args, _ = p.parse_known_args()
 
 rng = np.random.default_rng(args.seed)
@@ -32,7 +33,7 @@ class Detector(Node):
     def __init__(self):
         super().__init__("sim_object_detector")
         self.pub = self.create_publisher(Detection3DArray, "/perception/detections", 10)
-        self.create_timer(0.1, self.tick)
+        self.create_timer(1.0 / args.rate, self.tick)
         self.get_logger().info(f"estimation error: position {np.round(d_pos * 1000, 1)} mm, "
                                f"size {np.round(d_size * 1000, 1)} mm, yaw {np.degrees(d_yaw):.1f} deg")
 

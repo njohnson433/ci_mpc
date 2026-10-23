@@ -76,6 +76,17 @@
 - [ ] Faster headless sim (physics steps without rendering every step).
 - [ ] External wrench estimate in sim (`o_f_ext_hat_k` equivalent) for the controller's mode 1.
 
+### 7. Stage-2 MPC: planar pushing, sticking contact (sim, 2026-10-23)
+- [x] Pusher-slider model (quasi-static, ellipsoidal limit surface, motion cone) + offline loop with a sliding
+      "true" contact (`pusher_slider.py`, `scripts/push_offline_sim.py`, unit tests).
+- [x] LTV MPC (OSQP) around the reference path, motion-cone constraints; push node (approach, contact, push,
+      retreat) on the MPC interface; detection-latency compensation.
+- [x] Isaac push scene (box, rod on the hand); straight, arc, rotated start pass (docs/PROGRESS.md).
+- [x] Slider parameter c fitted from Isaac logs (0.045); contact location chosen for the path curvature.
+- [ ] Contact sliding on arcs (9 mm along the face): sliding modes in the model → stage 3.
+- [ ] External wrench estimate (contact force feedback instead of the quasi-static feedforward only).
+- [ ] Real robot: pusher pin in the gripper, vision latency measured, same tests.
+
 ### Later
 - [ ] Object(s) in the sim scene and object state estimation (perception package).
 - [ ] Stage 2 / stage 3 solvers (OCS2, C3 via dairlib needs Drake + Bazel).

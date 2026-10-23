@@ -5,7 +5,14 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **Current task:** stage 1 is finished in sim (everything that can be done without the robot): 6-DOF MPC with
+- **Stage 2 (2026-10-23 evening):** planar pushing with a sticking contact works in sim
+  (`scripts/demo_push.sh [line|arc|yaw10]`):
+  - straight 20 cm: 2.2–2.3 mm final
+  - 90° arc: 0.9–1.0 mm final, 8 mm RMS
+  - box rotated 10° at the start: 4–4.8 mm, yaw corrected to < 1°
+  - contact sliding on arcs (9 mm along the face) is the open point and motivates stage 3. Also still open:
+    external wrench estimate (roadmap 4b).
+- **Earlier:** stage 1 is finished in sim (everything that can be done without the robot): 6-DOF MPC with
   force-aware limits, 9/9 tests at nominal friction, stable at friction ×0.7 / ×1.3. Next: real robot (task 6:
   bring-up, identification, the same tests with `config:=real`, friction_scale 0.5), or stage 2 (contact) in sim.
   Pick-and-place demo works in sim (`PICK_PLACE=1 ... pick_place_demo.py`, placed 0.6 mm from the target). Identification setup (`ci_mpc_sysid`, `docs/SYSID.md`)
@@ -29,6 +36,56 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23 (evening): stage 2, planar pushing with a sticking contact (sim)
+- **Task:** pusher-slider. An 8 × 8 × 5 cm, 300 g box on the table (μ table 0.5), pushed by a rod on the hand
+  (capsule collider r 6 mm, 7–19 cm below the hand frame, μ pusher 0.3 with combine mode "min";
+  `scripts/isaac/push_scene.py`, `PUSH=1`, `PUSH_XY`, `PUSH_YAW`). On the real robot the rod would be a pin held
+  in the closed gripper.
+- **Model** (`ci_mpc_planner/pusher_slider.py`):
+  - quasi-static, ellipsoidal limit surface (c = m_max/f_max), sticking point contact (Lynch 1992):
+    V = M(p_y) u; motion cone from μ_p
+  - `step()` also simulates sliding along the face and separation, so the offline loop has a "true" contact.
+- **MPC** (`PushingMpc`):
+  - LTV around the reference slider path; OSQP, dt 0.1 s, N 50 (5 s)
+  - constraints: v_n ≥ 2 mm/s while the reference moves; motion cone shrunk to 0.7
+  - solve 11–17 ms in Isaac runs
+- **Node** (`push_node`):
+  - approach (min-jerk) → creep into contact → push (MPC at 20 Hz, commands at 200 Hz) → retreat
+  - command: TCP = planned slider pose + R·[−a/2 − r + 0.5 mm, p_y], twist R·u, feedforward = quasi-static
+    contact force, integral off in contact
+  - p_y and the slider pose are re-measured every solve (from `/perception/detections`, sim detector at 30 Hz).
+  - Harness: `scripts/push_test.py`; demo `scripts/demo_push.sh [line|arc|yaw10]`; offline loop
+    `scripts/push_offline_sim.py`; unit tests `test/test_pusher_slider.py`.
+- **What it took (Isaac, one lever at a time):**
+
+  | change | straight 20 cm: final / RMS | arc 90° r 15 cm: final / RMS | box rotated 10°: final, yaw | why |
+  |---|---|---|---|---|
+  | first run (c 0.03, q_θ 0.1, N 30) | 1.94 / 1.88 mm | — | — | slider 1 mm behind (detection latency), 1.8 mm overshoot at the stop |
+  | + latency comp. 30 ms (forward prediction) | 2.70 / 1.23 | 0.57 / **29.4** | 5.2 mm, **9.7°** | arc: contact slid 10 mm; yaw ignored (q_θ 0.1) |
+  | c 0.03 → 0.045 (fitted from the logs) | 5.28 / 2.56 | 117 / 59 | 11.8, 11.6° | right ω gain, but steering at p_y 0 is weak and the arc is outside the cone |
+  | **+ q_θ 3, N 50, contact p_y chosen for the curvature** | **2.34 / 1.20** | **0.88 / 8.19** | **4.77, 0.24°** | all pass |
+  | repeat | 2.19 / 1.32 | 0.97 / 8.34 | 4.00, 0.78° | repeatable |
+  | stiffness xy 2500 → 1000 (500) | 3.58 / 3.07 | 1.52 / 8.01 (6.43 / 7.14) | 35 mm, 22° (fail) | lost: contact still slides, rod tracks worse |
+
+- **Findings:**
+  - **c from the data:** fitting the rotation response gives c = 0.041–0.052 (median per run), above the 0.03
+    "uniform pressure" guess (≈ 0.38 a). PhysX supports the box mostly at its corners (a/√2 = 0.057).
+    μ_p 0.3 agrees best with when the contact slid (88 % of samples).
+  - **Contact location is part of the plan:** with a sticking contact at the face center, the slider can only turn
+    by pushing sideways inside the cone. An arc of r 15 cm needs v_t/v_n −0.43 at p_y 0 (cone ±0.54, ×0.7
+    margin = ±0.38): infeasible. `contact_for_curvature` picks the p_y that centers the nominal input in the cone
+    (−13.5 mm for r 15 cm, −8 mm for r 25 cm; left turns contact right of center). Offline arc: 50 → 1.8 mm.
+  - **Heading weight:** q_θ 0.1 let the MPC correct lateral error with body slip (gain c²/D = 0.56 at c 0.045)
+    at the price of heading. The heading then drifted it back after the horizon (Isaac yaw drift 12°).
+    q_θ 3 with a 5 s horizon fixes it.
+  - **Remaining:** on the arc the contact still slides 9 mm along the face (−15 → −6.5 mm). The cone itself is
+    right; with ~1.5 N normal force the contact holds only ~0.45 N tangentially, and the rod's tracking error is
+    ~1 mm, so small tracking or model errors leave the cone. The MPC tolerates it because it re-measures p_y, but
+    a sticking-only model cannot plan it. The 10° start has a 14 mm transient: the slider has to drift sideways
+    before sticking steering turns it. Both are the stage-3 case (sliding modes in the model).
+- Offline (c 0.045, 30 ms latency, 0.3 mm noise): straight 0.6 mm, arc 1.6 mm, 10° start 1.4 mm / 0.8°. Isaac is
+  worse mainly in the transients (arc RMS 8 mm), which the quasi-static model does not reproduce.
 
 ### 2026-10-23: blended waypoints, perception-driven grasp
 - **Blending:** `ci_mpc_planner/path.py` `BlendedPath`: from the current plan pose through via points (corners =
