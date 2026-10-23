@@ -5,6 +5,9 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
+  at 0–1 mm hole error, fails at ≥ 2 mm (jamming, in-hand slip). Proposed next: contact force estimate → CI-MPC
+  (planar peg-hole with a compliant grasp) → Isaac.
 - **Perception (2026-10-23 night):** simulated Gemini 305 wrist camera + box detector; stacking from camera
   detections works (`scripts/demo_stack.sh --camera`). Next: plug in the real pipeline (YOLO) on the same topics,
   measure the real mount (hand-eye calibration).
@@ -39,6 +42,47 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23 (night): Factory peg-in-hole benchmark in sim
+- **Assets:** Isaac Lab Factory / FORGE 8 mm round peg and hole (`~/ci_mpc_assets/factory/`, from the Isaac 6.2 asset
+  server), meshes with PhysX SDF collision.
+  - Actual mesh geometry: hole r 4.5 mm with a 1 mm chamfer, peg r 3.993 mm with 0.5 mm chamfers, so the radial
+    clearance is 0.51 mm. The 8.1 mm in the Factory task config is only a nominal number; I first quoted it wrongly
+    as a 0.06 mm clearance.
+  - Scene `scripts/isaac/peg_scene.py` (`PEG=1`): kinematic hole block, free peg on the table, Factory contact
+    settings (μ 0.75, contact offset 5 mm, rest 0), 32 position iterations (Factory: 192; while the robot holds the
+    peg it shares the island: RTF 0.19 → 0.7 at 32).
+  - Drop test (`PEG_DROP_TEST=1`): pegs dropped 0 / 0.5 / 1.5 mm off all reach the bottom (32 and 192 iterations).
+    First version put three pegs over one hole, 0.5 mm apart → they overlapped and blew apart (my bug).
+- **Demo** `scripts/demo_peg.sh [--offset dx,dy]` → `scripts/peg_insert_demo.py`:
+  - stage-1 MPC grasps the peg and carries it above the hole estimate
+  - the MPC is paused (`/ci_mpc_planner/active`, new) and a contact phase commands the controller directly:
+    descend until contact (lag 3 mm, stopped, near the expected opening) → spiral search with a push → insert
+    (soft laterally) until the peg stalls at the bottom
+  - success = peg bottom within 1 mm of the hole bottom (Factory: 4 % of the depth).
+- **Fixes on the way:**
+  - Contact detection by lag alone fires 10 mm above the hole: joint stiction holds the arm at the start of the
+    descent with the soft z spring. Gated by "stopped" + expected height.
+  - The insert phase stopped 1.5 mm early → stop when stalled at the bottom.
+  - Negative offsets were parsed as options → `--hole-offset=...`.
+- **Results (hole position error = perception error):**
+
+  | variant | 0 mm | 1 mm | 2 mm | ≥ 3 mm |
+  |---|---|---|---|---|
+  | search K 1500 / push 2 N / 4 mm/s | ✅ 0.05 mm, search 1.6 s | ✅ 0.04 mm, search 9.8 s | ❌ jammed 2.4 mm short | ❌ not found (TCP lags the spiral 2.6 mm, ~stuck) |
+  | K 2500 / push 1 N / 3 mm/s | ❌ (stiff laterally: the chamfer can't guide it, then stuck 21 mm short) | | ❌ | ❌ |
+  | 1500 / 2 N + soft insert (500 N/m) | ✅ 0.04 mm, no search needed | | ❌ jammed 2.7 mm short | ❌ |
+  | + dither 0.4 mm @ 8 Hz | ✅ 0.03 mm | | ❌ peg pushed up in the gripper → false "engaged" | ❌ same |
+
+- **Mechanisms (why ≥ 2 mm fails):**
+  - Joint stiction plus contact friction (push × 0.75) mean the TCP follows a slow spiral only in jumps.
+  - Sideways forces at the tip (40 mm lever) tilt or slip the peg in the grasp; a tilted peg wedges (two-point
+    jamming).
+  - Engagement is detected from the TCP (assumes a rigid grasp), which is wrong once the peg slips.
+  - None of these is in the controller's model → motivation for contact-implicit MPC: grasp and peg-hole contacts
+    in the model (friction cones, complementarity), forces chosen to avoid slip and wedging, tilt-insertion
+    strategies. Prerequisites: contact force estimate (sim: from joint torques, check against PhysX), planar
+    peg-hole model, fast solver.
 
 ### 2026-10-23 (night): simulated Gemini 305 wrist camera, stacking from camera detections
 - **Camera** (`scripts/isaac/wrist_camera.py`, `CAMERA=1`; config `ci_mpc_perception/config/gemini305_sim.yaml`):

@@ -21,6 +21,8 @@ circle (radius / period in the y-z plane, starting at the current position, `cir
 figure8 (same parameters: y = r sin(wt), z = r/2 sin(2wt) around the start position),
 path (~/path, geometry_msgs/PoseArray: from the current plan pose through the poses, corners rounded with
 `path_blend`, stopping at the last pose; timed with path_v_max / path_a_max, see path.BlendedPath).
+~/active (std_msgs/Bool): false stops planning and publishing (another node commands the controller, e.g. a
+contact phase); true resumes from the measured pose (holding it until a new goal arrives).
 Run with use_sim_time:=true in the simulator.
 """
 import time
@@ -32,6 +34,7 @@ from ci_mpc_msgs.msg import MpcCommand
 from geometry_msgs.msg import Point, Pose, PoseArray
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 
 from ci_mpc_planner.ee_model import ARM_JOINTS, EeModel
 from ci_mpc_planner.path import BlendedPath
@@ -116,6 +119,8 @@ class MpcNode(Node):
         self.create_subscription(Point, "~/goal", self.on_goal, 10)
         self.create_subscription(Pose, "~/goal_pose", self.on_goal_pose, 10)
         self.create_subscription(PoseArray, "~/path", self.on_path, 10)
+        self.create_subscription(Bool, "~/active", self.on_active, 10)
+        self.active = True
         self.path = None
         self.t_path = 0.0
         self.pub = self.create_publisher(MpcCommand, gp("command_topic"), 10)
@@ -135,6 +140,17 @@ class MpcNode(Node):
         idx = [msg.name.index(n) for n in ARM_JOINTS]
         self.q = np.array([msg.position[i] for i in idx])
         self.dq = np.array([msg.velocity[i] for i in idx]) if msg.velocity else np.zeros(7)
+
+    def on_active(self, msg):
+        if msg.data == self.active:
+            return
+        self.active = msg.data
+        if self.active and self.q is not None and self.start is not None:
+            p, R, _, _ = self.model.update(self.q, self.dq)
+            self.plan = None  # the next solve starts from the measured state
+            self.task, self.goal, self.goal_rotvec = "reach", p.copy(), pin.log3(R @ self.start[1].T)
+            self.singular_stop = False
+        self.get_logger().info(f"{'active: holding ' + str(np.round(self.goal, 4)) if self.active else 'paused'}")
 
     def on_goal(self, msg):
         self.singular_stop = False
@@ -244,7 +260,7 @@ class MpcNode(Node):
         return X[k, :3] + X[k, 3:] * tau + 0.5 * a * tau ** 2, X[k, 3:] + a * tau, a
 
     def on_solve(self):
-        if self.q is None:
+        if self.q is None or not self.active:
             return
         p, R, twist, lam = self.model.update(self.q, self.dq)
         v, w = twist[:3], twist[3:]
@@ -293,7 +309,7 @@ class MpcNode(Node):
             self.plan = (now, X, U, lam, Xr, Ur)
 
     def on_command(self):
-        if self.plan is None:
+        if self.plan is None or not self.active:
             return
         p, v, a = self.plan_state(self.now_s())
         phi, dphi, ddphi = self.plan_state(self.now_s(), rot=True)
