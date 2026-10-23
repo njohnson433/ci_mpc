@@ -5,7 +5,8 @@
 #
 # The boxes come from vision_msgs/Detection3DArray on /perception/detections (id = box name; sim stand-in
 # scripts/sim_object_detector.py with optional estimation error). The base box (--base, default box1) stays;
-# the others (--order) are stacked on it one after the other. Every round re-reads the detections:
+# the others (--order) are stacked on it one after the other. Every round re-reads the detections (--perception
+# camera: from a viewing pose above the table, median over --look-window of the wrist-camera box detector):
 #   grasp   = as in pick_place_demo.py: box center, hand yaw = box yaw (90-degree multiple closest to home),
 #             opening = extent across the fingers + 2 cm;
 #   place   = on the box currently on top (detected pose): xy of its center, bottom of the carried box 2 mm above
@@ -42,6 +43,11 @@ p.add_argument("--pos-noise", type=float, default=0.0)
 p.add_argument("--size-noise", type=float, default=0.0)
 p.add_argument("--yaw-noise-deg", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
+p.add_argument("--perception", default="truth", choices=["truth", "camera"],
+               help="truth: sim_object_detector (ground truth + fixed error); camera: the simulated Gemini 305 on "
+                    "the wrist (needs CAMERA=1) + ci_mpc_perception depth_noise and box_detector")
+p.add_argument("--look", default="0.5,0.0,0.45", help="camera: TCP position of the viewing pose (home orientation)")
+p.add_argument("--look-window", type=float, default=1.0, help="camera: seconds of detections averaged per look")
 args = p.parse_args()
 
 PLACE = np.array([0.45, 0.12])
@@ -89,7 +95,7 @@ def run(cmd):
 
 rclpy.init()
 node = Node("stack_demo")
-state = {"q": None, "t": 0.0, "fingers": None, "det": None, "dets": {}}
+state = {"q": None, "t": 0.0, "fingers": None, "det": None, "dets": {}, "collect": None}
 
 
 def on_js(msg):
@@ -104,6 +110,8 @@ def on_det(msg):
     if msg.detections:
         state["det"] = msg.detections[0]
         state["dets"] = {d.id: d for d in msg.detections}
+        if state["collect"] is not None:
+            state["collect"].append(state["dets"])
 
 
 node.create_subscription(JointState, "/joint_states", on_js, 100)
@@ -198,17 +206,26 @@ spin_sim(1.0)
 T_home = fk(state["q"])
 
 here = os.path.dirname(os.path.abspath(__file__))
-det_log = open(os.path.join(args.log_dir, "sim_object_detector.log"), "w")
-procs.append(subprocess.Popen([sys.executable, os.path.join(here, "sim_object_detector.py"), "--sync-dir", args.sync_dir,
-                               "--pos-noise", str(args.pos_noise), "--size-noise", str(args.size_noise),
-                               "--yaw-noise-deg", str(args.yaw_noise_deg), "--seed", str(args.seed)],
-                              stdout=det_log, stderr=subprocess.STDOUT))
+det_log = open(os.path.join(args.log_dir, "detector_stack.log"), "w")
+if args.perception == "truth":
+    procs.append(subprocess.Popen([sys.executable, os.path.join(here, "sim_object_detector.py"), "--sync-dir",
+                                   args.sync_dir, "--pos-noise", str(args.pos_noise), "--size-noise",
+                                   str(args.size_noise), "--yaw-noise-deg", str(args.yaw_noise_deg), "--seed",
+                                   str(args.seed)], stdout=det_log, stderr=subprocess.STDOUT))
+else:
+    perc = os.path.join(get_package_prefix("ci_mpc_perception"), "lib", "ci_mpc_perception")
+    for exe_name in ("depth_noise", "box_detector"):
+        procs.append(subprocess.Popen([os.path.join(perc, exe_name), "--ros-args", "-p", "use_sim_time:=true",
+                                       "-p", f"seed:={args.seed}"] if exe_name == "depth_noise" else
+                                      [os.path.join(perc, exe_name), "--ros-args", "-p", "use_sim_time:=true"],
+                                      stdout=det_log, stderr=subprocess.STDOUT))
 exe = os.path.join(get_package_prefix("ci_mpc_planner"), "lib", "ci_mpc_planner", "mpc_node")
 cfg = os.path.join(get_package_share_directory("ci_mpc_planner"), "config", "mpc_sim.yaml")
 mpc_log = open(os.path.join(args.log_dir, "mpc_node_stack.log"), "w")
 procs.append(subprocess.Popen([exe, "--ros-args", "-r", "__node:=ci_mpc_planner", "--params-file", cfg, "-p", "task:=hold"],
                               stdout=mpc_log, stderr=subprocess.STDOUT))
-if not spin_until(lambda: "start pose" in open(mpc_log.name).read() and state["det"] is not None, 60):
+if not spin_until(lambda: "start pose" in open(mpc_log.name).read()
+                   and (state["det"] is not None or args.perception == "camera"), 60):
     print("FAIL: mpc_node or detector did not start:\n" + open(mpc_log.name).read()[-1500:] + open(det_log.name).read()[-1500:])
     finish(2)
 
@@ -217,15 +234,49 @@ def wrap(a):
     return (a + np.pi) % (2 * np.pi) - np.pi
 
 
-def box(name):
-    d = state["dets"][name]
+def parse(d):
     c = d.bbox.center
     return (np.array([c.position.x, c.position.y, c.position.z]),
             yaw_of([c.orientation.w, c.orientation.x, c.orientation.y, c.orientation.z]),
             np.array([d.bbox.size.x, d.bbox.size.y, d.bbox.size.z]))
 
 
+averaged = {}
+
+
+def box(name):
+    return averaged[name] if args.perception == "camera" else parse(state["dets"][name])
+
+
+def look(label):
+    """camera: go to the viewing pose, settle, median of the detections over the window; print errors vs truth."""
+    global t_motion
+    xyz = np.array([float(v) for v in args.look.split(",")])
+    t_motion += segment(f"look ({label})", [(xyz, T_home.rotation)])
+    spin_sim(0.5)
+    state["collect"] = []
+    spin_sim(args.look_window)
+    frames, state["collect"] = state["collect"], None
+    averaged.clear()
+    tr = truth()
+    for name in sorted({n for f in frames for n in f}):
+        ds = [parse(f[name]) for f in frames if name in f]
+        c = np.median([d[0] for d in ds], axis=0)
+        yaw = np.angle(np.mean([np.exp(4j * d[1]) for d in ds])) / 4  # mean of the yaw mod 90 deg
+        size = np.median([d[2] for d in ds], axis=0)
+        averaged[name] = (c, yaw, size)
+        if name in tr:
+            e = c - tr[name][0]
+            print(f"  camera {name}: {len(ds)}/{len(frames)} frames, error xy {np.linalg.norm(e[:2]) * 1000:4.1f} mm, "
+                  f"z {e[2] * 1000:+5.1f} mm, yaw {np.degrees(wrap(4 * (yaw - tr[name][1])) / 4):+5.1f} deg, "
+                  f"size {np.round(size * 1000, 1)} mm", flush=True)
+
+
 order = [n for n in args.order.split(",") if n]
+t_motion = 0.0
+if args.perception == "camera":
+    look("start")
+    state["dets"] = averaged
 missing = [n for n in [args.base] + order if n not in state["dets"]]
 if missing:
     print(f"FAIL: not detected: {missing} (detected {sorted(state['dets'])})")
@@ -233,11 +284,14 @@ if missing:
 home_yaw = 0.0  # hand yaw is measured relative to the home orientation
 stack = [args.base]
 t_start = state["t"]
-t_motion = 0.0
 ok = True
 truth0 = truth()
-for name in order:
-    spin_sim(0.3)  # fresh detections
+for i, name in enumerate(order):
+    if args.perception == "camera":
+        if i > 0:
+            look(f"before {name}")
+    else:
+        spin_sim(0.3)  # fresh detections
     center, obj_yaw, size = box(name)
     top_c, top_yaw, top_size = box(stack[-1])
     # grasp: smallest hand rotation from home whose extent fits

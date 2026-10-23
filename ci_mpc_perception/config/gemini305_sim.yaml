@@ -1,0 +1,29 @@
+# Simulated Orbbec Gemini 305 on the FR3 hand (assumed wrist mount; replace with the hand-eye calibration on the
+# real robot). Read by scripts/isaac/wrist_camera.py (Isaac side) and by the ci_mpc_perception nodes.
+# Specs (reseller pages, 2026): active stereo, baseline 18 mm, range 4-100 cm (best 7-50 cm), depth 1280x800 @30,
+# depth FOV 88 x 65 deg, color 1280x800 @60, color FOV 94 x 68 deg, <= 1 % at 50 cm, latency ~60 ms, 42x42x23 mm, 68 g.
+camera:
+  parent_frame: fr3_hand          # mount is relative to this frame (FR3 hand, z = tool axis)
+  # optical center in the hand frame [m] and tilt about the hand y axis [deg]: 7 cm in front of the hand
+  # center, 3 cm below the flange, looking along the tool axis, tilted 15 deg towards the fingers
+  position: [0.07, 0.0, 0.03]
+  tilt_deg: 15.0
+  body_size: [0.042, 0.042, 0.023]
+  body_mass: 0.068
+  # color and depth are rendered from the same pose (= the driver's depth-to-color alignment, D2C)
+  width: 640                      # Gemini 305 modes include 1280x800 and 640x400 (aspect 1.6)
+  height: 400
+  hfov_deg: 94.0                  # color FOV (vertical follows from the aspect: 68 deg)
+  near: 0.04
+  far: 2.0
+  rate: 30.0                      # [Hz] published
+  frame_id: camera_color_optical_frame
+depth_noise:
+  baseline: 0.018                 # [m]
+  disparity_std_px: 0.08          # stereo matching noise at 1280 px width (sigma_z = z^2 sigma_d / (f b))
+  edge_holes_px: 2                # invalid pixels at depth discontinuities
+  edge_jump: 0.01                 # [m] depth jump that counts as an edge
+  dropout: 0.01                   # fraction of random invalid pixels
+  min_range: 0.04
+  max_range: 1.0
+  latency: 0.06                   # [s]

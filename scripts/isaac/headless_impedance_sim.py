@@ -17,6 +17,7 @@ parser.add_argument("--pick-place", action="store_true", help="add table, cube a
 parser.add_argument("--object-size", default="0.04,0.04,0.04", help="pick-place object box extents x,y,z [m]")
 parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place object yaw [deg]")
 parser.add_argument("--boxes", default="", help="pick-place: more boxes 'x,y,yaw;x,y,yaw' (same size)")
+parser.add_argument("--camera", action="store_true", help="add the simulated Gemini 305 wrist camera")
 parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
 parser.add_argument("--push-xy", default="0.55,-0.15", help="push slider start x,y [m]")
 parser.add_argument("--push-yaw", type=float, default=90.0, help="push slider yaw [deg]")
@@ -24,7 +25,10 @@ args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": not args.gui})
+# camera: real-time ray tracing without DLSS (the default path tracer + DLSS at 640x400 ran out of RTX
+# resource descriptors and hung the renderer)
+app = SimulationApp({"headless": not args.gui,
+                     **({"renderer": "RaytracedLighting", "anti_aliasing": 0} if args.camera else {})})
 
 import omni.kit.app  # noqa: E402
 import omni.timeline  # noqa: E402
@@ -39,6 +43,7 @@ graph_lib = runpy.run_path(os.path.join(here, "add_ros2_control_graph.py"), run_
 home_lib = runpy.run_path(os.path.join(here, "set_home_pose.py"), run_name="lib")
 pick_lib = runpy.run_path(os.path.join(here, "pick_place_scene.py"), run_name="lib") if args.pick_place else None
 push_lib = runpy.run_path(os.path.join(here, "push_scene.py"), run_name="lib") if args.push else None
+cam_lib = runpy.run_path(os.path.join(here, "wrist_camera.py"), run_name="lib") if args.camera else None
 
 omni.usd.get_context().open_stage(args.scene)
 for _ in range(20):
@@ -53,6 +58,8 @@ for path in (graph_lib["OLD_GRAPH"], graph_lib["GRAPH"]):
 if pick_lib:
     boxes = [[float(v) for v in b.split(",")] for b in args.boxes.split(";") if b]
     pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw, boxes)
+if cam_lib:
+    cam_lib["add_camera"](stage)
 if push_lib:
     push_lib["add_objects"](stage, yaw_deg=args.push_yaw, xy=[float(x) for x in args.push_xy.split(",")])
 
@@ -69,6 +76,8 @@ graph_lib["add_ros2_control_graph"](with_manager=False)  # /clock only
 if not graph_lib["setup_controller_manager"](app.update, config=args.config or graph_lib["CONFIG"]):
     print("[sim] Controller Manager setup failed, giving up", flush=True)
     os._exit(1)
+if cam_lib:
+    cam_lib["add_camera_graph"]()
 for _ in range(5):
     app.update()
 # External wrench on the hand, requested by the ROS side through <sync_dir>/wrench.json:

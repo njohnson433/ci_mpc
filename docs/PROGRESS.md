@@ -5,6 +5,9 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **Perception (2026-10-23 night):** simulated Gemini 305 wrist camera + box detector; stacking from camera
+  detections works (`scripts/demo_stack.sh --camera`). Next: plug in the real pipeline (YOLO) on the same topics,
+  measure the real mount (hand-eye calibration).
 - **Stage 2 (2026-10-23 evening):** planar pushing with a sticking contact works in sim
   (`scripts/demo_push.sh [line|arc|yaw10]`):
   - straight 20 cm: 2.2–2.3 mm final
@@ -36,6 +39,45 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-23 (night): simulated Gemini 305 wrist camera, stacking from camera detections
+- **Camera** (`scripts/isaac/wrist_camera.py`, `CAMERA=1`; config `ci_mpc_perception/config/gemini305_sim.yaml`):
+  - generic Isaac camera with the 305's color FOV (94° H, f 298.4 px at 640 × 400) and a 42 × 42 × 23 mm, 68 g
+    body (collider) on fr3_hand.
+  - Assumed mount: 7 cm in front of the hand center, 3 cm below the flange, tilted 15° toward the fingers.
+  - Isaac 6.2 has no 305 asset (Orbbec: Gemini 2 / 335 / 335L / Femto Mega); the 335 is a 50 mm baseline camera
+    for 0.26–3 m, the 305 an 18 mm wrist camera for 7–50 cm.
+  - Topics follow OrbbecSDK_ROS2: `/camera/color/image_raw`, `/camera/color/camera_info`, and depth aligned to
+    color (same render pose = D2C).
+- **Depth noise** (`ci_mpc_perception depth_noise`): Isaac depth (`/sim/camera/depth`, exact) → `/camera/depth/image_raw`
+  (16UC1 mm):
+  - stereo error σ_z = z²σ_d/(f b), b 18 mm, correlated in patches
+  - holes at depth edges (2 px), 1 % dropout, range 4–100 cm, 60 ms latency.
+- **Box detector** (`ci_mpc_perception box_detector`): HSV color masks (stand-in for YOLO: class → box name) →
+  depth back-projection with the camera pose from FK + the mount → top face minAreaRect (center, yaw mod 90°,
+  extent), height from the visible sides → Detection3DArray. `stack_demo.py --perception camera` looks from a
+  viewing pose (TCP 0.5, 0, 0.45) before each pick and uses the median over 1 s.
+- **Bugs on the way:**
+  - The default renderer (real-time path tracing + DLSS at 640 × 400, below DLSS's 300 px minimum input) ran out
+    of RTX resource descriptors and hung → RaytracedLighting without anti-aliasing for camera runs.
+  - The scene had no lights (black image) → dome + distant light.
+  - The camera published at 7 Hz: frameSkipCount counts app updates (~60 per sim second, 4 physics steps each),
+    not physics steps.
+  - The detector dropped every frame: `/joint_states` stamps are ~0.24 s behind the image stamps (Isaac's
+    in-process controller manager, same offset as in stage 1) → joint states timed on arrival in sim
+    (`joint_stamp: arrival`; `header` on the real robot).
+- **Results (stacking, camera perception, headless):**
+
+  | box | detection xy | z | yaw | size (true 40 mm) |
+  |---|---|---|---|---|
+  | box0 (red) | 3.0 mm | +2.4 | −0.2° | 37.7 / 37.5 / 37.2 |
+  | box1 (green, base) | 2.6 | +1.7 | +0.1° | 37.1 / 37.8 / 38.7 |
+  | box2 (blue) | 0.7 | +0.5 | +0.1° | 35.1 / 34.9 / 41.0 |
+
+  Tower: box0 0.7 mm on box1, box2 1.3 mm on box0, top 1.7 mm off the base (ground-truth run: 2.1 mm). Total
+  21.9 s sim (2 viewing moves). Sizes are 2–5 mm small: the edge holes eat the top face's border. Once box0 is on
+  box1, box1's estimate is off by 20 mm (only a 4 mm strip visible). It isn't used (the demo places on the top
+  box), but a real pipeline needs occlusion handling. Camera runs: RTF ~0.6 (render + physics).
 
 ### 2026-10-23 (evening): box stacking demo (stage-1 MPC)
 - `scripts/demo_stack.sh [--noise] [--headless]` → `scripts/stack_demo.py`:

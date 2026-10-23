@@ -87,8 +87,15 @@
 - [ ] External wrench estimate (contact force feedback instead of the quasi-static feedforward only).
 - [ ] Real robot: pusher pin in the gripper, vision latency measured, same tests.
 
+### 8. Perception (wrist camera)
+- [x] Simulated Gemini 305 on the hand (assumed mount), OrbbecSDK_ROS2 topic names, stereo depth noise model.
+- [x] Box detector (color masks + depth → Detection3DArray); stacking from camera detections in sim.
+- [ ] Real pipeline (YOLO + depth) on the same topics; occlusion handling (a box under another one).
+- [ ] Measure the real mount (hand-eye calibration) → `gemini305_sim.yaml` / real config; check depth noise
+      against the real 305.
+
 ### Later
-- [ ] Object(s) in the sim scene and object state estimation (perception package).
+- [x] Object(s) in the sim scene and object state estimation (perception package).
 - [ ] Stage 2 / stage 3 solvers (OCS2, C3 via dairlib needs Drake + Bazel).
 - [ ] Logging (rosbag) and plots for sim-to-real comparison.
 - [ ] Re-check which FR3 hardware revision the URDF should use (`fr3` vs `fr3v2*`). Currently `fr3`.

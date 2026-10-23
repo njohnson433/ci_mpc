@@ -4,6 +4,8 @@
 #
 #   scripts/demo_stack.sh               # Isaac window open
 #   scripts/demo_stack.sh --noise       # realistic estimation error (3 mm, 2 mm, 3 deg per box)
+#   scripts/demo_stack.sh --camera      # perception from the simulated Gemini 305 on the wrist (box detector on
+#                                       # color + noisy depth) instead of ground truth
 #   scripts/demo_stack.sh --headless    # no window (faster)
 # Extra options are passed to scripts/stack_demo.py (e.g. --order box2,box0).
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -15,6 +17,7 @@ extra=()
 for arg in "$@"; do
   case "$arg" in
     --noise)    extra+=(--pos-noise 0.003 --size-noise 0.002 --yaw-noise-deg 3 --seed 1) ;;
+    --camera)   export CAMERA=1; extra+=(--perception camera) ;;
     --headless) unset GUI ;;
     *)          extra+=("$arg") ;;
   esac
