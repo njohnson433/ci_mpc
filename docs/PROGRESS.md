@@ -37,6 +37,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-23 (evening): box stacking demo (stage-1 MPC)
+- `scripts/demo_stack.sh [--noise] [--headless]` → `scripts/stack_demo.py`:
+  - three 4 cm cubes (box0 yaw 20°, box1 = base, yaw 10°, box2 yaw −25°); box0 and box2 go onto box1.
+  - Every round re-reads the detections and places on the detected top box: bottom 2 mm above its top, hand yaw
+    turned so the carried box matches the top box's yaw (mod 90°, hand within ±45° of home), safe height above
+    the current stack.
+- Scene: `pick_place_scene.add_objects(boxes=...)` (`BOXES='x,y,yaw;...'`). object.json has `objects` (all boxes);
+  the detector publishes one detection per box (`id` = name, fixed per-box error).
+- Results (sim, identified friction):
+
+  | case | box0 on box1 | box2 on box0 | top vs base | yaw diff | time |
+  |---|---|---|---|---|---|
+  | exact detections | 1.2 mm | 1.3 mm | 2.1 mm | −0.3 / +1.2° | motion 12.9 s, total 20.1 s |
+  | σ 3 mm / 2 mm / 3° per box | 1.4 mm | 3.2 mm | 4.5 mm | +2.0 / +0.4° | same |
+
+  Placement error stays at the 1–3 mm level because each box goes onto the *detected* box below, so errors don't
+  add up along the tower beyond the estimate error. Pick-and-place regression unchanged (1.1 mm).
+
 ### 2026-10-23 (evening): stage 2, planar pushing with a sticking contact (sim)
 - **Task:** pusher-slider. An 8 × 8 × 5 cm, 300 g box on the table (μ table 0.5), pushed by a rod on the hand
   (capsule collider r 6 mm, 7–19 cm below the hand frame, μ pusher 0.3 with combine mode "min";

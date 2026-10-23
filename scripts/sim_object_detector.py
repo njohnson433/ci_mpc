@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Sim stand-in for the vision pipeline: publishes the pick-place object as vision_msgs/Detection3DArray on
+# Sim stand-in for the vision pipeline: publishes the pick-place objects (one detection each, id = box name) as vision_msgs/Detection3DArray on
 # /perception/detections (--rate, default 10 Hz, frame "base" = robot base) from the sim ground truth (<sync>/object.json),
 # with a fixed estimation error per run: position offset ~ N(0, pos_noise) in x/y/z, size ~ N(0, size_noise)
 # per extent, yaw ~ N(0, yaw_noise_deg). The real vision pipeline publishes the same message.
@@ -24,9 +24,14 @@ p.add_argument("--rate", type=float, default=10.0, help="publish rate [Hz] (wall
 args, _ = p.parse_known_args()
 
 rng = np.random.default_rng(args.seed)
-d_pos = rng.normal(0, args.pos_noise, 3)
-d_size = rng.normal(0, args.size_noise, 3)
-d_yaw = np.radians(rng.normal(0, args.yaw_noise_deg))
+errors = []  # fixed estimation error per object: (position, size, yaw)
+
+
+def error(i):
+    while len(errors) <= i:
+        errors.append((rng.normal(0, args.pos_noise, 3), rng.normal(0, args.size_noise, 3),
+                       np.radians(rng.normal(0, args.yaw_noise_deg))))
+    return errors[i]
 
 
 class Detector(Node):
@@ -34,21 +39,30 @@ class Detector(Node):
         super().__init__("sim_object_detector")
         self.pub = self.create_publisher(Detection3DArray, "/perception/detections", 10)
         self.create_timer(1.0 / args.rate, self.tick)
-        self.get_logger().info(f"estimation error: position {np.round(d_pos * 1000, 1)} mm, "
+        d_pos, d_size, d_yaw = error(0)
+        self.get_logger().info(f"estimation error (first object): position {np.round(d_pos * 1000, 1)} mm, "
                                f"size {np.round(d_size * 1000, 1)} mm, yaw {np.degrees(d_yaw):.1f} deg")
 
     def tick(self):
         try:
-            o = json.load(open(os.path.join(args.sync_dir, "object.json")))
+            data = json.load(open(os.path.join(args.sync_dir, "object.json")))
         except (OSError, ValueError):
             return
+        msg = Detection3DArray()
+        msg.header.frame_id = "base"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        for i, o in enumerate(data.get("objects", [{**data, "name": "box"}])):
+            msg.detections.append(self.detection(o, *error(i), msg.header))
+        self.pub.publish(msg)
+
+    def detection(self, o, d_pos, d_size, d_yaw, header):
         w, x, y, z = o["quat_wxyz"]
         R = pin.Quaternion(w, x, y, z).normalized().toRotationMatrix()
         R = pin.exp3(np.array([0, 0, d_yaw])) @ R
         q = pin.Quaternion(R)
         det = Detection3D()
-        det.header.frame_id = "base"
-        det.header.stamp = self.get_clock().now().to_msg()
+        det.header = header
+        det.id = o["name"]
         c = np.array(o["cube"]) + d_pos
         det.bbox.center.position.x, det.bbox.center.position.y, det.bbox.center.position.z = map(float, c)
         det.bbox.center.orientation.x, det.bbox.center.orientation.y = q.x, q.y
@@ -59,10 +73,7 @@ class Detector(Node):
         hyp.hypothesis.class_id = "box"
         hyp.hypothesis.score = 1.0
         det.results.append(hyp)
-        msg = Detection3DArray()
-        msg.header = det.header
-        msg.detections.append(det)
-        self.pub.publish(msg)
+        return det
 
 
 rclpy.init()

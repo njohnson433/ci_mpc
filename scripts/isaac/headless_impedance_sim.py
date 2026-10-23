@@ -16,6 +16,7 @@ parser.add_argument("--gui", action="store_true", help="open the Isaac Sim windo
 parser.add_argument("--pick-place", action="store_true", help="add table, cube and a position-controlled gripper")
 parser.add_argument("--object-size", default="0.04,0.04,0.04", help="pick-place object box extents x,y,z [m]")
 parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place object yaw [deg]")
+parser.add_argument("--boxes", default="", help="pick-place: more boxes 'x,y,yaw;x,y,yaw' (same size)")
 parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
 parser.add_argument("--push-xy", default="0.55,-0.15", help="push slider start x,y [m]")
 parser.add_argument("--push-yaw", type=float, default=90.0, help="push slider yaw [deg]")
@@ -50,7 +51,8 @@ for path in (graph_lib["OLD_GRAPH"], graph_lib["GRAPH"]):
     if prim.IsValid():
         prim.SetActive(False)
 if pick_lib:
-    pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw)
+    boxes = [[float(v) for v in b.split(",")] for b in args.boxes.split(";") if b]
+    pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw, boxes)
 if push_lib:
     push_lib["add_objects"](stage, yaw_deg=args.push_yaw, xy=[float(x) for x in args.push_xy.split(",")])
 

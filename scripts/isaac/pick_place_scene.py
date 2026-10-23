@@ -7,7 +7,10 @@
 #                                         else effort, so this has to be in USD (tensor-API gains are not enough).
 #                                         The ci_mpc_sim_gripper controller (ROS topic /gripper/width) then
 #                                         commands the finger positions.
+#                                         boxes=[(x, y, yaw_deg), ...] adds more boxes of the same size (stacking:
+#                                         box0 at the pick spot, box1.. at these spots; colors differ).
 #   Gripper(sync_dir, articulation_root)  after Play: poll() writes <sync>/object.json with the cube position
+#                                         (first box; "objects": all boxes with name, cube, quat_wxyz, size)
 # The real robot uses the franka_gripper action server instead; this is a simulation stand-in.
 import json
 import os
@@ -34,8 +37,13 @@ def _box(stage, path, center, size, color, yaw_deg=0.0):
     return cube.GetPrim()
 
 
-def add_objects(stage, size=(CUBE_EDGE,) * 3, yaw_deg=0.0):
-    """size: object box extents [m] (x, y, z in its own frame), yaw_deg: rotation about z."""
+COLORS = [(0.85, 0.1, 0.1), (0.1, 0.6, 0.15), (0.1, 0.3, 0.85), (0.9, 0.7, 0.1), (0.6, 0.2, 0.7)]
+BOX_PATHS = [CUBE_PATH]
+
+
+def add_objects(stage, size=(CUBE_EDGE,) * 3, yaw_deg=0.0, boxes=()):
+    """size: object box extents [m] (x, y, z in its own frame), yaw_deg: rotation about z;
+    boxes: more boxes [(x, y, yaw_deg)] of the same size."""
     material = UsdShade.Material.Define(stage, "/PickPlace/Material")
     pm = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
     pm.CreateStaticFrictionAttr(1.0)
@@ -43,10 +51,17 @@ def add_objects(stage, size=(CUBE_EDGE,) * 3, yaw_deg=0.0):
     pm.CreateRestitutionAttr(0.0)
     table = _box(stage, "/PickPlace/Table", TABLE_CENTER, TABLE_SIZE, (0.55, 0.45, 0.35))
     top = TABLE_CENTER[2] + TABLE_SIZE[2] / 2
-    cube = _box(stage, CUBE_PATH, (PICK[0], PICK[1], top + size[2] / 2), size, (0.85, 0.1, 0.1), yaw_deg)
-    UsdPhysics.RigidBodyAPI.Apply(cube)
-    UsdPhysics.MassAPI.Apply(cube).CreateMassAttr(CUBE_MASS)
-    for prim in (table, cube):
+    spots = [(PICK[0], PICK[1], yaw_deg)] + [tuple(b) for b in boxes]
+    prims = [table]
+    for i, (x, y, yaw) in enumerate(spots):
+        path = CUBE_PATH if i == 0 else f"/PickPlace/Box{i}"
+        cube = _box(stage, path, (x, y, top + size[2] / 2), size, COLORS[i % len(COLORS)], yaw)
+        UsdPhysics.RigidBodyAPI.Apply(cube)
+        UsdPhysics.MassAPI.Apply(cube).CreateMassAttr(CUBE_MASS)
+        prims.append(cube)
+        if i > 0:
+            BOX_PATHS.append(path)
+    for prim in prims:
         UsdShade.MaterialBindingAPI.Apply(prim).Bind(material, UsdShade.Tokens.weakerThanDescendants, "physics")
     for joint in ("fr3_finger_joint1", "fr3_finger_joint2"):
         drive = UsdPhysics.DriveAPI.Apply(stage.GetPrimAtPath(f"/fr3/Physics/{joint}"), "linear")
@@ -58,7 +73,7 @@ def add_objects(stage, size=(CUBE_EDGE,) * 3, yaw_deg=0.0):
     global OBJECT_SIZE
     OBJECT_SIZE = list(size)
     print(f"[sim] pick-place: table top z {top:.3f}, object {[round(x * 100, 1) for x in size]} cm, yaw {yaw_deg} deg "
-          f"at {PICK}", flush=True)
+          f"at {PICK}" + (f", more boxes at {list(boxes)}" if boxes else ""), flush=True)
 
 
 class Gripper:
@@ -68,15 +83,17 @@ class Gripper:
         from isaacsim.core.experimental.prims import XformPrim
 
         self.sync_dir = sync_dir
-        self.cube = XformPrim(CUBE_PATH)
+        self.boxes = [XformPrim(p) for p in BOX_PATHS]
         self.frame = 0
 
     def poll(self):
         self.frame += 1
         if self.frame % 5 == 0:
-            pos, quat = self.cube.get_world_poses()  # quaternion w, x, y, z
-            p = np.asarray(pos).reshape(-1)[:3].tolist()
-            q = np.asarray(quat).reshape(-1)[:4].tolist()
+            objects = []
+            for i, box in enumerate(self.boxes):
+                pos, quat = box.get_world_poses()  # quaternion w, x, y, z
+                objects.append({"name": f"box{i}", "cube": np.asarray(pos).reshape(-1)[:3].tolist(),
+                                "quat_wxyz": np.asarray(quat).reshape(-1)[:4].tolist(), "size": OBJECT_SIZE})
             tmp = os.path.join(self.sync_dir, "object.json.tmp")
-            json.dump({"cube": p, "quat_wxyz": q, "size": OBJECT_SIZE}, open(tmp, "w"))
+            json.dump({**{k: objects[0][k] for k in ("cube", "quat_wxyz", "size")}, "objects": objects}, open(tmp, "w"))
             os.replace(tmp, os.path.join(self.sync_dir, "object.json"))

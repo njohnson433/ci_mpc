@@ -23,6 +23,7 @@ mode, and finally make the contact sequence part of the optimization (contact-im
 | MPC tracking interface (task 3, `ci_mpc_msgs/MpcCommand`) | ✅ circle 0.65 mm RMS without friction |
 | Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
 | Pick-and-place demo (sim) | ✅ `scripts/demo_pick_place.sh [box\|cube] [--noise] [--stops] [--headless]`; blended MPC motion, grasp from the detection |
+| Box stacking demo (sim) | ✅ `scripts/demo_stack.sh [--noise] [--headless]`: 3-cube tower, 1.2–3.2 mm per level |
 | Stage-2 pushing MPC (sticking contact, sim) | ✅ `scripts/demo_push.sh [line\|arc\|yaw10]`: straight 20 cm 2.2 mm, 90° arc 0.9 mm final (8 mm RMS), 10° start corrected; contact sliding on arcs open → stage 3 |
 | Real robot connection test | ⏳ not done yet |
 
