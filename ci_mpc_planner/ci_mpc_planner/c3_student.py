@@ -28,3 +28,30 @@ class C3Student:
                 h = np.tanh(h)
         step = np.clip(h * self.sd_y + self.mu_y, -10.0, 10.0)
         return x + step / 1000.0
+
+
+class C3Selector:
+    """Option selector (amortized sampled C3): MLP features (10) -> logits over the teacher's options (0: heuristic,
+    1..9: C3 warm starts), trained with soft targets softmax(scores / tau) (scripts/train_c3_selector.py). Predicting
+    the option instead of the command avoids averaging the teacher's very different modes (the command-regression
+    student entered 1 of 10)."""
+
+    def __init__(self, path):
+        d = np.load(path)
+        self.W = [(d["W0"], d["b0"]), (d["W1"], d["b1"]), (d["W2"], d["b2"])]
+        self.mu_x, self.sd_x = d["mu_x"], d["sd_x"]
+
+    @staticmethod
+    def features(x, est_xy, wrench, tip_below_tcp):
+        return np.concatenate([(x[:2] - est_xy) * 1000, [(x[2] - tip_below_tcp) * 1000], x[3:] * 1000, wrench])
+
+    def logits(self, f):
+        h = (np.asarray(f) - self.mu_x) / self.sd_x
+        for i, (W, b) in enumerate(self.W):
+            h = W @ h + b
+            if i < len(self.W) - 1:
+                h = np.tanh(h)
+        return h
+
+    def choose(self, f):
+        return int(np.argmax(self.logits(f)))

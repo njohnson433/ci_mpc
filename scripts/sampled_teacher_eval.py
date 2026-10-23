@@ -7,13 +7,16 @@ import time
 import numpy as np
 
 from ci_mpc_planner.peg_hole_3d import PegHole3D
+from ci_mpc_planner.c3_student import C3Student
 from ci_mpc_planner.sampled_teacher import SampledTeacher, heuristic_command
 
 p = argparse.ArgumentParser()
 p.add_argument("--episodes", type=int, default=5)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--steps", type=int, default=60)
-p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic"])
+p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student"])
+p.add_argument("--student", default="")
+p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
 rng = np.random.default_rng(args.seed)
 comp = np.array([1 / 1500, 1 / 1500, 1 / 500, 1 / 130, 1 / 130])
@@ -27,6 +30,8 @@ for ep in range(args.episodes):
     for _ in range(10):
         x, lam, nc = plant.step(x, np.array([0, 0, x[2] - 0.004, 0, 0]) + comp * np.array([0, 0, -3.0, 0, 0]), comp, fa)
     w = plant.contact_wrench(lam) if nc else np.zeros(5)
+    err = rng.normal(0, args.est_error, 2) / 1000.0
+    student = C3Student(args.student) if args.policy == "student" else None
     teacher = SampledTeacher(PegHole3D(hole_xy=-off, n_ring=8, n_rim=12), comp, fa)
     goal = np.array([*(-off), tb - plant.g.depth, 0.0, 0.0])
     u, peak, srcs, t0 = x.copy(), 0.0, {}, time.perf_counter()
@@ -34,6 +39,9 @@ for ep in range(args.episodes):
         if args.policy == "teacher":
             u, ff, info = teacher.act(plant, x, goal, u, w)
             srcs[info["source"]] = srcs.get(info["source"], 0) + 1
+        elif args.policy == "student":
+            u = student.command(x, -off + err, w + rng.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01]), tb)
+            ff = np.zeros(5)
         else:
             u, ff = heuristic_command(x, w)
         x, lam, nc = plant.step(x, u + comp * ff, comp, fa)

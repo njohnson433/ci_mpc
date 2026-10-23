@@ -70,21 +70,32 @@ class SampledTeacher:
         wd, wc, wf = self.w
         return -wd * tip[2] * 1000 - wc * np.linalg.norm(tip[:2]) * 1000 - wf * max(peak - self.f_soft, 0.0) ** 2, peak
 
+    N_OPTIONS = 10  # 0: heuristic, 1..9: C3 with nominal 0..8
+
+    def option(self, i, x, goal, u_prev, wrench):
+        """Command (u, ff, planned sequence, its feedforwards) of option i, without evaluating it."""
+        if i == 0:
+            u_h, ff_h = heuristic_command(x, wrench)
+            return u_h, ff_h, [u_h] * self.eval_steps, [ff_h] * self.eval_steps
+        self.mpc.prev = None
+        u0, info = self.mpc.solve(x, goal, u_prev, nominal=self.nominals(x, goal)[i - 1])
+        if info.get("status") != "ok":
+            return None
+        return u0, np.zeros(5), info["U"], None
+
     def act(self, plant, x, goal, u_prev, wrench):
-        """Best first command (and its feedforward) over the sampled C3 plans and the heuristic."""
-        best = None
-        u_h, ff_h = heuristic_command(x, wrench)
-        seq_h, ffs_h, xs = [], [], x.copy()
-        for _ in range(self.eval_steps):  # heuristic re-evaluated each step would need its own measurements: hold
-            seq_h.append(u_h), ffs_h.append(ff_h)
-        sc, pk = self.score(plant, x, seq_h, ffs_h)
-        best = (sc, u_h, ff_h, "heuristic", pk)
-        for i, nom in enumerate(self.nominals(x, goal)):
-            self.mpc.prev = None
-            u0, info = self.mpc.solve(x, goal, u_prev, nominal=nom)
-            if info.get("status") != "ok":
+        """Best first command (and its feedforward) over the sampled C3 plans and the heuristic; info["scores"] has
+        every option's score (-inf if it failed), for training an option selector."""
+        scores = np.full(self.N_OPTIONS, -np.inf)
+        cmds, peaks = [None] * self.N_OPTIONS, np.zeros(self.N_OPTIONS)
+        for i in range(self.N_OPTIONS):
+            o = self.option(i, x, goal, u_prev, wrench)
+            if o is None:
                 continue
-            sc, pk = self.score(plant, x, info["U"])
-            if sc > best[0]:
-                best = (sc, u0, np.zeros(5), f"c3[{i}]", pk)
-        return best[1], best[2], {"source": best[3], "score": best[0], "peak": best[4]}
+            u, ff, seq, ffs = o
+            scores[i], peaks[i] = self.score(plant, x, seq, ffs)
+            cmds[i] = (u, ff)
+        b = int(np.argmax(scores))
+        src = "heuristic" if b == 0 else f"c3[{b - 1}]"
+        return cmds[b][0], cmds[b][1], {"source": src, "score": scores[b], "peak": peaks[b], "scores": scores,
+                                        "best": b}
