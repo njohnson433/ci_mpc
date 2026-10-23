@@ -14,7 +14,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--episodes", type=int, default=5)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--steps", type=int, default=60)
-p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector"])
+p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu"])
 p.add_argument("--student", default="")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
@@ -43,6 +43,14 @@ for ep in range(args.episodes):
     for k in range(args.steps):
         if args.policy == "teacher":
             u, ff, info = teacher.act(plant, x, goal, u, w)
+            srcs[info["source"]] = srcs.get(info["source"], 0) + 1
+        elif args.policy == "gpu":
+            if k == 0:
+                from ci_mpc_planner.sampling_mpc import SamplingMPC
+                gpu = SamplingMPC(comp, fa, seed=args.seed)
+            wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
+            u, info = gpu.act(x, -off + err, wm)
+            ff = np.zeros(5)
             srcs[info["source"]] = srcs.get(info["source"], 0) + 1
         elif args.policy == "selector":
             wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
