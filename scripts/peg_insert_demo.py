@@ -61,6 +61,9 @@ p.add_argument("--engage", type=float, default=0.003, help="tip this far below t
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
 p.add_argument("--max-probes", type=int, default=12)
+p.add_argument("--entry", default="follow", choices=["follow", "gpu"],
+               help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
+                    "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
 p.add_argument("--strategy", default="spiral", choices=["spiral", "estimate", "c3", "probe"],
                help="contact phase: spiral search (hand-written); estimate = hole localization from contact "
                     "(particle filter on the measured wrench) + straight down; c3 = localization + C3+ CI-MPC; "
@@ -459,6 +462,22 @@ elif args.strategy == "probe":
 
     timer = node.create_timer(0.005, command_probe)
     dt = args.plan_period
+    c["mpc_ms"] = []
+    if args.entry == "gpu":
+        import socket
+        port = 47000 + int(os.environ.get("ROS_DOMAIN_ID", "42"))
+        srv_log = open(os.path.join(args.log_dir, "gpu_mpc_server.log"), "w")
+        procs.append(subprocess.Popen([os.path.expanduser("~/IsaacLab/.venv/bin/python"),
+                                       os.path.join(os.path.dirname(os.path.abspath(__file__)), "gpu_mpc_server.py"),
+                                       "--port", str(port)], stdout=srv_log, stderr=subprocess.STDOUT,
+                                      env={k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "ROS",
+                                                                                                      "AMENT", "LD_"))}))
+        t_wait = time.time()
+        while "ready" not in open(srv_log.name).read() and time.time() - t_wait < 300:
+            time.sleep(1)
+        mpc_sock = socket.create_connection(("127.0.0.1", port))
+        mpc_io = mpc_sock.makefile("rw")
+        print(f"  GPU MPC server up on port {port} ({time.time() - t_wait:.0f} s)", flush=True)
     z_hover = tip_below_tcp + 0.001
     tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
     probes, target, c["phase"] = [], np.zeros(2), "probe"
@@ -508,7 +527,28 @@ elif args.strategy == "probe":
         print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
               f"{tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N; belief {np.round(est * 1000, 2)} "
               f"(std {std * 1000:.2f}) mm", flush=True)
-        if engaged:
+        if engaged and args.entry == "gpu":
+            # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
+            for _ in range(80):
+                x, F = measure5(), force3(0.1)
+                est_now, _ = belief.estimate()
+                wts = belief.weights()
+                samples = belief.h[np.random.default_rng(len(c["mpc_ms"])).choice(len(wts), 8, p=wts)]
+                mpc_io.write(json.dumps({"x": x.tolist(), "hole_xy": est_now.tolist(), "hole_samples": samples.tolist(),
+                                         "wrench": [*F.tolist(), 0.0, 0.0]}) + "\n")
+                mpc_io.flush()
+                rep = json.loads(mpc_io.readline())
+                c["mpc_ms"].append(rep["ms"])
+                ug = np.array(rep["u"])
+                c["u_cmd"] = (np.array([O[0] + ug[0], O[1] + ug[1], O[2] + ug[2] + c["z_bias"]]), R)
+                c["ff"] = np.zeros(3)  # the MPC's set-point already contains the feedforward as an offset
+                spin_sim(dt)
+                belief.update(measure5(), force3(0.1))  # the engaged contact informs the belief too
+                if tip_z(measure5()) < -0.005:
+                    break
+            print(f"    GPU MPC: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
+                  f"{np.mean(c['mpc_ms']):.0f} ms per decision", flush=True)
+        elif engaged:
             # engaged on the chamfer: follow its push towards the axis with a light normal force
             for _ in range(60):
                 x, F = measure5(), force3(0.1)

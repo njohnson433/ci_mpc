@@ -35,6 +35,8 @@ class SamplingMPC:
         self.n_total = 256
 
     def t(self, a):
+        if isinstance(a, torch.Tensor):
+            return a.to(device=self.dev, dtype=self.dt)
         return torch.as_tensor(np.asarray(a), device=self.dev, dtype=self.dt)
 
     def _structured(self, x, goal_xy):
@@ -72,7 +74,8 @@ class SamplingMPC:
         """Roll out K sequences (or the heuristic with K gain sets); returns score (K,), peak force (K,)."""
         K = seqs.shape[0] if heuristic is None else heuristic.shape[0]
         x = self.t(x0)[None].repeat(K, 1)
-        h = self.t(hole_xy)[None].repeat(K, 1)
+        h = self.t(hole_xy)
+        h = h[None].repeat(K, 1) if h.dim() == 1 else h  # one hole for all, or one per row (belief samples)
         peak = torch.zeros(K, device=self.dev, dtype=self.dt)
         w = torch.zeros(K, 5, device=self.dev, dtype=self.dt) if w0 is None else self.t(w0)[None].repeat(K, 1)
         first = None
@@ -103,18 +106,31 @@ class SamplingMPC:
         return score, peak, first
 
     @torch.no_grad()
-    def act(self, x, hole_xy, wrench=None):
+    def act(self, x, hole_xy, wrench=None, hole_samples=None):
         """Best first set-point (numpy, 5) for the TCP pose x given the (estimated) hole xy and the measured contact
-        wrench (for the heuristic candidates' first step)."""
+        wrench (for the heuristic candidates' first step). hole_samples (M, 2): hole positions sampled from the
+        belief; every candidate is then rolled out under each of them and scored by the mean (belief-space MPC: in
+        Isaac the MPC engaged before probing had localized the hole and planned against a hole 2 mm off)."""
         seqs = torch.cat([self._structured(x, hole_xy), self._random(x)], 0)
         # fixed batch size (one CUDA graph): pad with copies of the first structured sequence / truncate
         K = self.n_total
         if seqs.shape[0] < K:
             seqs = torch.cat([seqs, seqs[:1].repeat(K - seqs.shape[0], 1, 1)], 0)
         seqs = seqs[:K]
-        s1, p1, f1 = self.rollout(x, seqs, hole_xy)
+        M = 1 if hole_samples is None else len(hole_samples)
+        if M > 1:
+            hs = self.t(hole_samples)
+            s1, p1, f1 = self.rollout(x, seqs.repeat_interleave(M, 0), hs.repeat(seqs.shape[0], 1))
+            s1, f1 = s1.view(-1, M).mean(1), f1.view(-1, M, 5)[:, 0]
+        else:
+            s1, p1, f1 = self.rollout(x, seqs, hole_xy)
         gains = self.t([[4e-4, 2.5, 2.0], [2e-4, 2.5, 2.0], [4e-4, 1.5, 1.0], [6e-4, 3.0, 2.0], [4e-4, 2.5, 3.0]])
-        s2, p2, f2 = self.rollout(x, None, hole_xy, heuristic=gains, w0=wrench)
+        if M > 1:
+            s2, p2, f2 = self.rollout(x, None, hs.repeat(gains.shape[0], 1),
+                                      heuristic=gains.repeat_interleave(M, 0), w0=wrench)
+            s2, f2 = s2.view(-1, M).mean(1), f2.view(-1, M, 5)[:, 0]
+        else:
+            s2, p2, f2 = self.rollout(x, None, hole_xy, heuristic=gains, w0=wrench)
         scores = torch.cat([s1, s2])
         i = int(torch.argmax(scores))
         if i < seqs.shape[0]:

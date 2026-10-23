@@ -3,7 +3,8 @@
 # (perception error, mm), N runs in parallel (own ROS domains), then a summary table from the res.json files.
 #   scripts/peg_benchmark.sh OUT_DIR STRATEGY [extra peg_insert_demo.py options]
 #   e.g. scripts/peg_benchmark.sh /tmp/bench probe --timeout-contact 150 --max-probes 25
-# OFFSETS (env) overrides the default set; PARALLEL (env, default 4) the batch size.
+# OFFSETS (env) overrides the default set; PARALLEL (env, default 4) the batch size; DOMAIN_BASE (env, default 60)
+# the first ROS domain (parallel benchmarks need disjoint ranges).
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; STRATEGY=$2; shift 2
 OFFSETS=${OFFSETS:-"0,0 2,0 3,0 -3,0 5,0 -5,0 0,4 3,3 -4,2 -3,-2"}
@@ -12,7 +13,7 @@ mkdir -p "$OUT"
 i=0
 for off in $OFFSETS; do
   name="${STRATEGY}_${off/,/_}"
-  dom=$((60 + i % PARALLEL))
+  dom=$((${DOMAIN_BASE:-60} + i % PARALLEL))
   mkdir -p "$OUT/$name"
   (LOG="$OUT/$name/isaac.log" ROS_DOMAIN_ID=$dom timeout 2400 "$HERE/demo_peg.sh" --headless --offset "$off" \
      --strategy "$STRATEGY" --log-dir "$OUT/$name" --out "$OUT/$name/res.json" "$@" > "$OUT/$name/run.out" 2>&1) &
