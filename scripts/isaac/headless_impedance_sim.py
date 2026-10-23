@@ -17,6 +17,7 @@ parser.add_argument("--pick-place", action="store_true", help="add table, cube a
 parser.add_argument("--object-size", default="0.04,0.04,0.04", help="pick-place object box extents x,y,z [m]")
 parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place object yaw [deg]")
 parser.add_argument("--boxes", default="", help="pick-place: more boxes 'x,y,yaw;x,y,yaw' (same size)")
+parser.add_argument("--wrist-ft", action="store_true", help="log the simulated wrist F/T sensor (wrist_ft.csv)")
 parser.add_argument("--camera", action="store_true", help="add the simulated Gemini 305 wrist camera")
 parser.add_argument("--peg", action="store_true", help="add the Factory 8 mm peg-in-hole (SDF collision)")
 parser.add_argument("--peg-hole-xy", default="0.5,0.1", help="peg: hole x,y [m]")
@@ -137,6 +138,8 @@ if push_lib:
     gripper = push_lib["Poller"](args.sync_dir)
 if peg_lib:
     gripper = peg_lib["Poller"](args.sync_dir)
+wrist_ft = runpy.run_path(os.path.join(here, "wrist_ft.py"), run_name="lib")["WristFT"](args.sync_dir, home_lib["ROOT"]) \
+    if args.wrist_ft else None
 open(os.path.join(args.sync_dir, "home_done"), "w").close()
 
 t0_wall, t0_sim = time.time(), timeline.get_current_time()
@@ -146,6 +149,8 @@ while not os.path.exists(done) and time.time() - t0_wall < args.timeout:
     poll_wrench()
     if gripper:
         gripper.poll()
+    if wrist_ft:
+        wrist_ft.poll()
     app.update()
     now = time.time()
     if now - last > 5.0:

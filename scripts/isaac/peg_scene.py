@@ -7,7 +7,10 @@
 #     z 0.228), the peg standing upright on the table (dynamic, 19 g); gripper finger joints as position drives
 #     (like pick_place_scene). Contact settings as in Isaac Lab Factory: friction 0.75, contact offset 5 mm, rest
 #     offset 0, ITERATIONS (32; Factory: 192) position iterations on peg and hole, max depenetration velocity 5 m/s.
-#   Poller(sync_dir)                     after Play: writes <sync>/object.json: objects "peg" and "hole" (center of
+#   Poller(sync_dir)                     after Play: appends the total contact force on the hole block (PhysX contact
+#                                        report, mean over the physics steps since the last write) to
+#                                        <sync>/hole_contact.csv (sim time, fx, fy, fz [N], world frame); writes
+#                                        <sync>/object.json: objects "peg" and "hole" (center of
 #                                        the hole opening at its top face; peg center), same format as the other
 #                                        scenes (cube, quat_wxyz, size).
 # Geometry (meshes, metres, z up): peg  r 3.993 mm, z 0..50 mm (origin at its bottom face)
@@ -83,6 +86,8 @@ def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False
         UsdPhysics.RigidBodyAPI(hb).CreateKinematicEnabledAttr(True)
         _factory_body(hb)
         _bind(hb, mat)
+        # contact forces on the hole blocks (ground truth for the external wrench estimate; drop holes: calibration)
+        PhysxSchema.PhysxContactReportAPI.Apply(hb).CreateThresholdAttr().Set(0.0)
     for path, pos in pegs:
         peg = stage.DefinePrim(path, "Xform")
         peg.GetReferences().AddReference(f"{ASSETS}/factory_peg_8mm.usd")
@@ -91,6 +96,7 @@ def add_objects(stage, hole_xy=(0.5, 0.1), peg_xy=(0.45, -0.12), drop_test=False
         body.RemoveAPI(UsdPhysics.ArticulationRootAPI)  # a free rigid body, not a one-link articulation
         UsdPhysics.MassAPI(body).CreateMassAttr(0.019)
         _factory_body(body)
+        PhysxSchema.PhysxRigidBodyAPI(body).CreateSleepThresholdAttr(0.0)
         _bind(body, mat)
     for joint in ("fr3_finger_joint1", "fr3_finger_joint2"):
         p = stage.GetPrimAtPath(f"/fr3/Physics/{joint}")
@@ -118,9 +124,56 @@ class Poller:
         self.drops = [XformPrim(f"/Peg/Drop{i}/forge_round_peg_8mm") for i in range(3)
                       if stage.GetPrimAtPath(f"/Peg/Drop{i}").IsValid()]
         self.frame = 0
+        # contact report: impulses on the hole block per physics step
+        from omni.physx import get_physx_simulation_interface
+        from pxr import PhysicsSchemaTools
+        import omni.timeline
+        self._to_path = PhysicsSchemaTools.intToSdfPath
+        self.timeline = omni.timeline.get_timeline_interface()
+        self.impulse, self.steps, self.total_steps = np.zeros(3), 0, 0
+        self.drop_imp, self.drop_headers, self.drop_steps0 = [np.zeros(3) for _ in range(3)], [0, 0, 0], None
+        self.contact_csv = open(os.path.join(sync_dir, "hole_contact.csv"), "w")
+        self.contact_csv.write("t,fx,fy,fz\n")
+        self.contact_sub = get_physx_simulation_interface().subscribe_contact_report_events(self.on_contacts)
+
+    def on_contacts(self, headers, data):
+        self.steps += 1
+        self.total_steps += 1
+        if self.drops:  # calibration: per drop hole, the force of the free peg resting in it (= its weight)
+            for k in range(3):
+                hp = f"/Peg/DropHole{k}/forge_hole_8mm/forge_hole_8mm"
+                for h in headers:
+                    a0, a1 = str(self._to_path(h.actor0)), str(self._to_path(h.actor1))
+                    if hp in (a0, a1):
+                        sign = 1.0 if a0 == hp else -1.0
+                        for i in range(h.contact_data_offset, h.contact_data_offset + h.num_contact_data):
+                            imp = data[i].impulse
+                            self.drop_imp[k] += sign * np.array([imp[0], imp[1], imp[2]])
+                        self.drop_headers[k] += 1
+        for h in headers:
+            a0, a1 = str(self._to_path(h.actor0)), str(self._to_path(h.actor1))
+            if HOLE_BODY not in (a0, a1):
+                continue
+            sign = 1.0 if a0 == HOLE_BODY else -1.0  # impulse is reported on actor0
+            for i in range(h.contact_data_offset, h.contact_data_offset + h.num_contact_data):
+                imp = data[i].impulse
+                self.impulse += sign * np.array([imp[0], imp[1], imp[2]])
 
     def poll(self):
+        if self.steps:
+            f = self.impulse / self.steps * 240.0  # mean impulse per step / dt (physics at 240 Hz)
+            self.contact_csv.write(f"{self.timeline.get_current_time():.5f},{f[0]:.4f},{f[1]:.4f},{f[2]:.4f}\n")
+            self.contact_csv.flush()
+            self.impulse, self.steps = np.zeros(3), 0
         self.frame += 1
+        if self.drops and self.frame == 300:
+            self.drop_imp, self.drop_headers, self.drop_steps0 = [np.zeros(3) for _ in range(3)], [0, 0, 0], self.total_steps
+        if self.drops and self.frame == 600:
+            n = self.total_steps - self.drop_steps0
+            for k in range(3):
+                print(f"[sim] contact report calibration, drop hole {k}: {n} callbacks, {self.drop_headers[k]} headers, "
+                      f"mean force {np.round(self.drop_imp[k] / n * 240.0, 4).tolist()} N (resting peg weight "
+                      f"{0.019 * 9.81:.3f} N)", flush=True)
         if self.drops and self.frame in (60, 240, 600):  # app updates (~60 per sim second)
             hole_bottom = np.asarray(self.hole.get_world_poses()[0]).reshape(-1)[2]  # all holes at the same z
             for i, d in enumerate(self.drops):

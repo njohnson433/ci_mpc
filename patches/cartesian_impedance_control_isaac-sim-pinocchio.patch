@@ -1,7 +1,7 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH 1/6] Pinocchio model source so the controller runs in Isaac
+Subject: [PATCH 1/7] Pinocchio model source so the controller runs in Isaac
  Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
@@ -686,7 +686,7 @@ index 0000000..54b211a
 From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 12:34:36 +0200
-Subject: [PATCH 2/6] Optional nullspace damping; Isaac config documents it as
+Subject: [PATCH 2/7] Optional nullspace damping; Isaac config documents it as
  off
 
 - New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
@@ -770,7 +770,7 @@ index 2b2ee40..a97308b 100644
 From 0fe0271f4e82d4e5ebedbf35a5be34478d56a83a Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 14:37:06 +0200
-Subject: [PATCH 3/6] Friction compensation and integrator as parameters
+Subject: [PATCH 3/7] Friction compensation and integrator as parameters
  (defaults unchanged)
 
 - integrator_weights / integrator_limits replace the hard-coded integral
@@ -956,7 +956,7 @@ index a97308b..1c6d626 100644
 From acc11b205e5d2750350b03179055f5ea90e1a846 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:04:02 +0200
-Subject: [PATCH 4/6] Conditional integration (anti-windup) as parameters;
+Subject: [PATCH 4/7] Conditional integration (anti-windup) as parameters;
  Isaac config uses it
 
 - integrator_windows, integrator_velocity_window, integrator_freeze_on_saturation,
@@ -1100,7 +1100,7 @@ index 1c6d626..639f311 100644
 From e6d5f8de57c0f76457c60dd36a908dd26270758d Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:23:21 +0200
-Subject: [PATCH 5/6] MPC tracking interface (ci_mpc_msgs/MpcCommand)
+Subject: [PATCH 5/7] MPC tracking interface (ci_mpc_msgs/MpcCommand)
 
 - Subscribes /cartesian_impedance_controller/mpc_command through a realtime
   buffer. The newest command sets the pose directly (no reference filter),
@@ -1343,7 +1343,7 @@ index 639f311..5768c51 100644
 From 916e4dba2e1e5e7afff8853cd9c5c0be8011d3b5 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:46:37 +0200
-Subject: [PATCH 6/6] Optional joint armature in the Pinocchio model
+Subject: [PATCH 6/7] Optional joint armature in the Pinocchio model
 
 Parameter `armature` (7 values, default none): rotor inertia added to the
 mass matrix (Lambda, critical damping). Tested with the stage-1 MPC in sim:
@@ -1436,6 +1436,326 @@ index 8839acf..aa79ffd 100644
    impl_->q = Eigen::VectorXd::Zero(m.nq);
    impl_->v = Eigen::VectorXd::Zero(m.nv);
    impl_->J_full = Eigen::Matrix<double, 6, Eigen::Dynamic>::Zero(6, m.nv);
+-- 
+2.34.1
+
+
+From 153c12b96b8765e2c432e72beb2353e5765f234e Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Fri, 23 Oct 2026 13:42:28 +0200
+Subject: [PATCH 7/7] External wrench estimate: momentum observer on measured
+ link torques (or commanded), ~/external_wrench
+
+Franka sign convention, fed into F_ext. Optional gravity (real FR3), observer-only armature, sim torque sensor
+noise/bias. PinocchioModel: C^T dq and g(q). Isaac config: measured torques, noise 0.05 Nm, offsets <= 0.15 Nm.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt                                |  2 +
+ config/isaac_sim_controllers.yaml             | 10 ++
+ .../cartesian_impedance_controller.hpp        | 33 +++++++
+ .../pinocchio_model.hpp                       |  6 ++
+ package.xml                                   |  1 +
+ src/cartesian_impedance_controller.cpp        | 93 +++++++++++++++++++
+ src/pinocchio_model.cpp                       |  4 +
+ 7 files changed, 149 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a8b1a9d..df93b80 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -30,6 +30,7 @@ find_package(rclcpp_action REQUIRED)
+ find_package(pinocchio REQUIRED)
+ find_package(ci_mpc_msgs REQUIRED)
+ find_package(realtime_tools REQUIRED)
++find_package(geometry_msgs REQUIRED)
+ 
+ 
+ add_library(
+@@ -72,6 +73,7 @@ ament_target_dependencies(
+         messages_fr3
+         ci_mpc_msgs
+         realtime_tools
++        geometry_msgs
+ )
+ 
+ 
+diff --git a/config/isaac_sim_controllers.yaml b/config/isaac_sim_controllers.yaml
+index 12c7b33..049f452 100644
+--- a/config/isaac_sim_controllers.yaml
++++ b/config/isaac_sim_controllers.yaml
+@@ -24,6 +24,16 @@ cartesian_impedance_controller:
+     # only acts near the target (|e| < 3 mm / 0.02, EE < 1 cm/s, not while the output is clamped) and
+     # otherwise decays, so blocked motion or pushes do not wind it up. Steps settle to 0.06-0.38 mm (8 s),
+     # windup jump after a held 15 N push 0.09 mm (unconditional integral: 7 mm). Real robot: not yet.
++    # external wrench estimate (momentum observer, ~/external_wrench, Franka sign convention) on the measured link-side
++    # joint torques (Isaac effort state = torque transmitted through the joint, like the FR3 torque sensors; known
++    # wrench at rest: exact). observer_armature only applies to observer_torque_source: command.
++    observer_gain: 30.0
++    observer_torque_source: measured
++    observer_gravity: false
++    # torque sensor model (assumed until measured on the FR3): noise 0.05 Nm, fixed offsets up to 0.15 Nm
++    observer_torque_noise: 0.05
++    observer_torque_bias: [0.10, -0.15, 0.08, 0.12, -0.05, 0.06, -0.03]
++    observer_armature: [0.60571, 0.60571, 0.46247, 0.46247, 0.20554, 0.20554, 0.20554]
+     friction_compensation: velocity
+     integrator_weights: [3000.0, 3000.0, 3000.0, 50.0, 50.0, 50.0]
+     integrator_limits: [8.0, 8.0, 8.0, 1.5, 1.5, 0.5]
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index 3df4d05..213b123 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -20,6 +20,7 @@
+ #include <cstring>
+ #include <exception>
+ #include <memory>
++#include <random>
+ #include <mutex>
+ #include <string>
+ #include <unistd.h>
+@@ -50,6 +51,8 @@
+ #include "std_msgs/msg/int16.hpp"
+ #include <geometry_msgs/msg/pose.hpp>
+ #include <realtime_tools/realtime_buffer.h>
++#include <realtime_tools/realtime_publisher.h>
++#include <geometry_msgs/msg/wrench_stamped.hpp>
+ #include "ci_mpc_msgs/msg/mpc_command.hpp"
+ 
+ #include "franka_semantic_components/franka_robot_model.hpp"
+@@ -202,6 +205,36 @@ public:
+     // optional K / D and integral gating. Without a new command for mpc_timeout [s] (counted in control
+     // cycles) the controller holds the current pose and drops twist and feedforward wrench.
+     realtime_tools::RealtimeBuffer<ci_mpc_msgs::msg::MpcCommand::SharedPtr> mpc_buffer_;
++    // External wrench estimate (model_source pinocchio; the real robot also has Franka's O_F_ext_hat_K): generalized
++    // momentum observer r = K_O (M dq - int(tau + C^T dq - g + r) dt - p0); wrench at the EE frame = -pinv(J^T) r
++    // in Franka's sign convention (force of the robot on the environment positive). tau (observer_torque_source):
++    //   measured: the joints' effort state = link-side joint torque (FR3 torque sensors; Isaac: the torque PhysX
++    //             transmits through the joint), friction stays out; M without rotor inertia; g if
++    //             observer_gravity (FR3: tau_J includes gravity; sim: robot gravity is off);
++    //   command:  the commanded torque; joint friction not cancelled by the compensation (stiction at rest) shows
++    //             up in it (sim, known wrench at rest: 2-4.7 N off on the other axes); M + observer_armature.
++    // Published on ~/external_wrench (geometry_msgs/WrenchStamped, base frame) and fed into F_ext (mode 1).
++    std::string observer_torque_source_{"measured"};
++    // sim only: torque sensor model added to the measured torques (Isaac's are exact): white noise [Nm] and a
++    // per-joint offset [Nm] (FR3 torque sensors drift / have offsets; values assumed, to be measured on the robot)
++    double observer_torque_noise_{0.0};
++    Eigen::Matrix<double, 7, 1> observer_torque_bias_ = Eigen::Matrix<double, 7, 1>::Zero();
++    std::mt19937 observer_rng_{12345};
++    std::normal_distribution<double> observer_normal_{0.0, 1.0};
++    bool observer_gravity_{false};
++    double observer_gain_{30.0};
++    // rotor inertia added to M for the observer only (the impedance law keeps its tuned M / Lambda)
++    Eigen::Matrix<double, 7, 1> observer_armature_ = Eigen::Matrix<double, 7, 1>::Zero();
++    bool observer_initialized_{false};
++    Eigen::Matrix<double, 7, 7> observer_M_prev_ = Eigen::Matrix<double, 7, 7>::Zero();
++    Eigen::Matrix<double, 7, 1> observer_integral_ = Eigen::Matrix<double, 7, 1>::Zero();
++    Eigen::Matrix<double, 7, 1> observer_p0_ = Eigen::Matrix<double, 7, 1>::Zero();
++    Eigen::Matrix<double, 7, 1> tau_ext_hat_ = Eigen::Matrix<double, 7, 1>::Zero();
++    Eigen::Matrix<double, 6, 1> F_ext_hat_ = Eigen::Matrix<double, 6, 1>::Zero();
++    std::shared_ptr<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>> wrench_pub_;
++    int wrench_pub_every_{2};
++    void updateExternalWrench(const Eigen::Matrix<double, 7, 7>& M, const Eigen::Matrix<double, 7, 1>& coriolis,
++                              const Eigen::Matrix<double, 7, 1>& tau_applied);
+     ci_mpc_msgs::msg::MpcCommand::SharedPtr mpc_last_;
+     bool mpc_active_{false};
+     double mpc_age_{0.0};
+diff --git a/include/cartesian_impedance_control/pinocchio_model.hpp b/include/cartesian_impedance_control/pinocchio_model.hpp
+index 53b1c84..d6e0648 100644
+--- a/include/cartesian_impedance_control/pinocchio_model.hpp
++++ b/include/cartesian_impedance_control/pinocchio_model.hpp
+@@ -10,6 +10,8 @@
+ // Conventions match libfranka:
+ //   mass()      M(q), 7x7
+ //   coriolis()  C(q, dq) * dq, 7x1, gravity NOT included
++//   coriolis_transpose_dq()  C(q, dq)^T * dq (momentum observer)
++//   gravity()   g(q) (only for an observer on measured link torques, which include gravity on the FR3)
+ //   jacobian()  6x7, rows [linear; angular], expressed in the base frame,
+ //               reference point = end-effector frame origin  (= getZeroJacobian)
+ //   pose()      end-effector pose in the base frame          (= getPoseMatrix)
+@@ -47,6 +49,8 @@ class __attribute__((visibility("default"))) PinocchioModel {
+ 
+   const Eigen::Matrix<double, 7, 7>& mass() const { return M_; }
+   const Eigen::Matrix<double, 7, 1>& coriolis() const { return coriolis_; }
++  const Eigen::Matrix<double, 7, 1>& coriolis_transpose_dq() const { return coriolis_transpose_dq_; }
++  const Eigen::Matrix<double, 7, 1>& gravity() const { return gravity_; }
+   const Eigen::Matrix<double, 6, 7>& jacobian() const { return J_; }
+   const Eigen::Affine3d& pose() const { return pose_; }
+ 
+@@ -56,6 +60,8 @@ class __attribute__((visibility("default"))) PinocchioModel {
+ 
+   Eigen::Matrix<double, 7, 7> M_ = Eigen::Matrix<double, 7, 7>::Identity();
+   Eigen::Matrix<double, 7, 1> coriolis_ = Eigen::Matrix<double, 7, 1>::Zero();
++  Eigen::Matrix<double, 7, 1> coriolis_transpose_dq_ = Eigen::Matrix<double, 7, 1>::Zero();
++  Eigen::Matrix<double, 7, 1> gravity_ = Eigen::Matrix<double, 7, 1>::Zero();
+   Eigen::Matrix<double, 6, 7> J_ = Eigen::Matrix<double, 6, 7>::Zero();
+   Eigen::Affine3d pose_ = Eigen::Affine3d::Identity();
+ };
+diff --git a/package.xml b/package.xml
+index 31d4aa4..a348bd1 100644
+--- a/package.xml
++++ b/package.xml
+@@ -19,6 +19,7 @@
+   <depend>pinocchio</depend>
+   <depend>ci_mpc_msgs</depend>
+   <depend>realtime_tools</depend>
++  <depend>geometry_msgs</depend>
+ 
+ 
+   <exec_depend>franka_description</exec_depend>
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index c94a454..f0a1e3a 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -205,6 +205,11 @@ controller_interface::InterfaceConfiguration CartesianImpedanceController::state
+     state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/velocity");
+     //state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/effort");
+   }
++  if (usePinocchio() && observer_torque_source_ == "measured") {  // after all position / velocity interfaces
++    for (int i = 1; i <= num_joints; ++i) {
++      state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/effort");
++    }
++  }
+ 
+   if (!usePinocchio()) {
+     for (const auto& franka_robot_model_name : franka_robot_model_->get_state_interface_names()) {
+@@ -236,6 +241,13 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<bool>("integrator_freeze_on_saturation", false);
+      auto_declare<bool>("integrator_reset_on_target", true);
+      auto_declare<double>("mpc_timeout", 0.05);
++     auto_declare<double>("observer_gain", 30.0);
++     auto_declare<std::string>("observer_torque_source", "measured");
++     auto_declare<bool>("observer_gravity", false);
++     auto_declare<double>("observer_torque_noise", 0.0);
++     auto_declare<std::vector<double>>("observer_torque_bias", std::vector<double>{});
++     auto_declare<std::vector<double>>("observer_armature", std::vector<double>{});
++     auto_declare<int>("external_wrench_every", 2);
+      auto_declare<double>("mpc_integral_off_leak", 5.0);
+      auto_declare<std::string>("friction_compensation", "none");
+      auto_declare<bool>("friction_offsets", true);
+@@ -284,6 +296,35 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     integrator_freeze_on_saturation_ = get_node()->get_parameter("integrator_freeze_on_saturation").as_bool();
+     integrator_reset_on_target_ = get_node()->get_parameter("integrator_reset_on_target").as_bool();
+     mpc_timeout_ = get_node()->get_parameter("mpc_timeout").as_double();
++    observer_gain_ = get_node()->get_parameter("observer_gain").as_double();
++    observer_torque_source_ = get_node()->get_parameter("observer_torque_source").as_string();
++    observer_gravity_ = get_node()->get_parameter("observer_gravity").as_bool();
++    observer_torque_noise_ = get_node()->get_parameter("observer_torque_noise").as_double();
++    {
++      const auto bias = get_node()->get_parameter("observer_torque_bias").as_double_array();
++      if (bias.size() == 7) {
++        observer_torque_bias_ = Eigen::Map<const Eigen::Matrix<double, 7, 1>>(bias.data());
++      } else if (!bias.empty()) {
++        RCLCPP_ERROR(get_node()->get_logger(), "observer_torque_bias needs 7 entries");
++        return CallbackReturn::ERROR;
++      }
++    }
++    if (observer_torque_source_ != "measured" && observer_torque_source_ != "command") {
++      RCLCPP_ERROR(get_node()->get_logger(), "observer_torque_source must be measured or command");
++      return CallbackReturn::ERROR;
++    }
++    {
++      const auto arm = get_node()->get_parameter("observer_armature").as_double_array();
++      if (arm.size() == 7) {
++        observer_armature_ = Eigen::Map<const Eigen::Matrix<double, 7, 1>>(arm.data());
++      } else if (!arm.empty()) {
++        RCLCPP_ERROR(get_node()->get_logger(), "observer_armature needs 7 entries");
++        return CallbackReturn::ERROR;
++      }
++    }
++    wrench_pub_every_ = std::max<int>(1, get_node()->get_parameter("external_wrench_every").as_int());
++    wrench_pub_ = std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>>(
++        get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>("~/external_wrench", 10));
+     mpc_integral_off_leak_ = get_node()->get_parameter("mpc_integral_off_leak").as_double();
+     friction_compensation_ = get_node()->get_parameter("friction_compensation").as_string();
+     friction_offsets_ = get_node()->get_parameter("friction_offsets").as_bool();
+@@ -399,6 +440,48 @@ controller_interface::CallbackReturn CartesianImpedanceController::on_deactivate
+   return CallbackReturn::SUCCESS;
+ }
+ 
++void CartesianImpedanceController::updateExternalWrench(const Eigen::Matrix<double, 7, 7>& M_model,
++                                                       const Eigen::Matrix<double, 7, 1>& coriolis,
++                                                       const Eigen::Matrix<double, 7, 1>& tau_applied) {
++  const bool measured = observer_torque_source_ == "measured";
++  Eigen::Matrix<double, 7, 7> M = M_model;
++  if (!measured) {
++    M.diagonal() += observer_armature_;  // the commanded torque also accelerates the rotors
++  }
++  const Eigen::Matrix<double, 7, 1> p = M * dq_;
++  if (!observer_initialized_) {
++    observer_initialized_ = true;
++    observer_M_prev_ = M;
++    observer_p0_ = p;
++    observer_integral_.setZero();
++    tau_ext_hat_.setZero();
++    return;
++  }
++  observer_M_prev_ = M;
++  (void)coriolis;
++  const Eigen::Matrix<double, 7, 1> ct_dq = pinocchio_model_->coriolis_transpose_dq();
++  const Eigen::Matrix<double, 7, 1> g = observer_gravity_ ? pinocchio_model_->gravity()
++                                                          : Eigen::Matrix<double, 7, 1>::Zero();
++  observer_integral_ += (tau_applied + ct_dq - g + tau_ext_hat_) * dt_;
++  tau_ext_hat_ = observer_gain_ * (p - observer_integral_ - observer_p0_);
++  // wrench at the EE frame: tau_ext = J^T F_env  ->  F_env = (J J^T)^-1 J tau_ext; Franka sign: robot on environment
++  const Eigen::Matrix<double, 6, 6> JJt = J * J.transpose();
++  F_ext_hat_ = -JJt.ldlt().solve(J * tau_ext_hat_);
++  F_ext = F_ext_hat_;
++  if (wrench_pub_ && outcounter % wrench_pub_every_ == 0 && wrench_pub_->trylock()) {
++    auto& msg = wrench_pub_->msg_;
++    msg.header.stamp = get_node()->now();
++    msg.header.frame_id = arm_id_ + "_link0";
++    msg.wrench.force.x = F_ext_hat_(0);
++    msg.wrench.force.y = F_ext_hat_(1);
++    msg.wrench.force.z = F_ext_hat_(2);
++    msg.wrench.torque.x = F_ext_hat_(3);
++    msg.wrench.torque.y = F_ext_hat_(4);
++    msg.wrench.torque.z = F_ext_hat_(5);
++    wrench_pub_->unlockAndPublish();
++  }
++}
++
+ std::array<double, 6> CartesianImpedanceController::convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench) {
+     std::array<double, 6> result;
+     result[0] = wrench.wrench.force.x;
+@@ -472,6 +555,16 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+   Eigen::Matrix<double, 7, 1> coriolis;
+   Eigen::Affine3d transform;
+   computeModel(M, coriolis, transform);
++  if (usePinocchio()) {
++    Eigen::Matrix<double, 7, 1> tau = tau_J_d_M;  // command applied during the last period
++    if (observer_torque_source_ == "measured") {
++      for (int i = 0; i < num_joints; ++i) {
++        tau(i) = state_interfaces_.at(2 * num_joints + i).get_value() + observer_torque_bias_(i) +
++                 observer_torque_noise_ * observer_normal_(observer_rng_);
++      }
++    }
++    updateExternalWrench(M, coriolis, tau);
++  }
+   Eigen::Vector3d position(transform.translation());
+   Eigen::Quaterniond orientation(transform.rotation());
+   //orientation_d_target_ = Eigen::AngleAxisd(rotation_d_target_[0], Eigen::Vector3d::UnitX())
+diff --git a/src/pinocchio_model.cpp b/src/pinocchio_model.cpp
+index aa79ffd..fe89454 100644
+--- a/src/pinocchio_model.cpp
++++ b/src/pinocchio_model.cpp
+@@ -100,6 +100,8 @@ void PinocchioModel::compute(const Eigen::Matrix<double, 7, 1>& q,
+   // Coriolis/centrifugal vector C(q, dq) dq, without gravity.
+   pinocchio::computeCoriolisMatrix(m, d, impl_->q, impl_->v);
+   const Eigen::VectorXd c = d.C * impl_->v;
++  const Eigen::VectorXd ct = d.C.transpose() * impl_->v;  // for the momentum observer
++  const Eigen::VectorXd g = pinocchio::computeGeneralizedGravity(m, d, impl_->q);
+ 
+   // Kinematics, end-effector pose and Jacobian.
+   pinocchio::computeJointJacobians(m, d, impl_->q);  // also runs forward kinematics
+@@ -111,6 +113,8 @@ void PinocchioModel::compute(const Eigen::Matrix<double, 7, 1>& q,
+   for (int i = 0; i < 7; ++i) {
+     const int vi = impl_->v_idx[i];
+     coriolis_[i] = c[vi];
++    coriolis_transpose_dq_[i] = ct[vi];
++    gravity_[i] = g[vi];
+     J_.col(i) = impl_->J_full.col(vi);
+     for (int k = 0; k < 7; ++k) {
+       M_(i, k) = d.M(vi, impl_->v_idx[k]);
 -- 
 2.34.1
 

@@ -43,6 +43,34 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24: CI-MPC step 1, external wrench estimate in sim
+- **Controller** (`cartesian_impedance_control` 153c12b):
+  - generalized momentum observer r = K_O (M q̇ − ∫(τ + Cᵀq̇ − g + r)dt − p0), K_O 30
+  - wrench at the TCP = −pinv(Jᵀ) r in Franka's sign convention (robot on environment positive); published on
+    `/cartesian_impedance_controller/external_wrench` (WrenchStamped) and fed into F_ext (mode 1 now works in sim)
+  - Pinocchio model gained Cᵀq̇ and g(q).
+- **Torque source matters:**
+  - On the *commanded* torque, joint friction (stiction at rest) is indistinguishable from an external force: with
+    known wrenches at the TCP (sim hook) the estimate was 2–4.7 N off on the other axes.
+  - Isaac's joint effort state is the *link-side transmitted torque*, like the FR3 joint torque sensors: from it
+    the known wrenches come out exact (≤ 0.01 N / Nm), and in motion (circle) the error is ≤ 0.06 N.
+  - Config: `observer_torque_source: measured` (M without rotor inertia; `observer_gravity` true on the FR3,
+    whose τ_J includes gravity). Sensor model added in sim (Isaac's sensors are perfect): noise 0.05 Nm, fixed
+    offsets ≤ 0.15 Nm (assumed, to be measured on the robot).
+- **Ground truth for contact:**
+  - The PhysX contact report on the hole block was misleading. With a free peg resting in a hole it reads 2× the
+    weight (0.373 vs 0.186 N; factor unexplained), and it only carries normal impulses (no friction), so sideways
+    loads carried by friction are missing.
+  - Replaced by a simulated wrist F/T sensor (`WRIST_FT=1`, `scripts/isaac/wrist_ft.py`): the link incoming joint
+    force of fr3_hand. Calibrated with known wrenches: world force = R_hand · raw = Franka sign, torque about the
+    flange.
+- **Result** (`scripts/compare_wrench.py`, peg insertion with probes):
+  - estimate vs wrist F/T in contact: error RMS 0.17 / 0.31 / 0.80 N (true force RMS 0.5 / 1.6 / 4.1 N), mean
+    ≤ 0.24 N; up to 7 N briefly at impacts (observer bandwidth ~5 Hz)
+  - free motion 0.1–0.4 N RMS.
+- The insertion at 1 mm hole error failed in this run (it succeeded in two earlier ones): the hand-written strategy
+  is not reliable even at 1 mm, which sets the baseline for the CI-MPC.
+
 ### 2026-10-23 (night): Factory peg-in-hole benchmark in sim
 - **Assets:** Isaac Lab Factory / FORGE 8 mm round peg and hole (`~/ci_mpc_assets/factory/`, from the Isaac 6.2 asset
   server), meshes with PhysX SDF collision.

@@ -10,6 +10,7 @@
 # SCENE=/path/to/scene.usd overrides the scene (must sit next to the fr3/ asset folder).
 # PICK_PLACE=1 adds the table, cube and simulated gripper (scripts/isaac/pick_place_scene.py);
 #   OBJECT_SIZE=x,y,z [m] and OBJECT_YAW=deg change the object; BOXES='x,y,yaw;...' adds more boxes.
+# WRIST_FT=1 logs the simulated wrist F/T sensor to <sync>/wrist_ft.csv (scripts/isaac/wrist_ft.py).
 # CAMERA=1 adds the simulated Gemini 305 wrist camera (scripts/isaac/wrist_camera.py).
 # PEG=1 adds the Factory 8 mm peg-in-hole (scripts/isaac/peg_scene.py); PEG_HOLE_XY=x,y, PEG_DROP_TEST=1.
 # PUSH=1 adds the table, slider box and pusher rod (scripts/isaac/push_scene.py); PUSH_XY=x,y, PUSH_YAW=deg.
@@ -25,7 +26,7 @@ echo "sync dir $SYNC, Isaac log $LOG"
 env -i HOME="$HOME" USER="$USER" PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     ROS_DOMAIN_ID="$ROS_DOMAIN_ID" OMNI_KIT_ACCEPT_EULA=YES \
     ${GUI:+DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY"} \
-    "$HERE/../isaac_ros.sh" --python "$HERE/headless_impedance_sim.py" --sync-dir "$SYNC" ${CONTROLLER_CONFIG:+--config "$CONTROLLER_CONFIG"} ${GUI:+--gui} ${SCENE:+--scene "$SCENE"} ${PICK_PLACE:+--pick-place} ${OBJECT_SIZE:+--object-size "$OBJECT_SIZE"} ${OBJECT_YAW:+--object-yaw "$OBJECT_YAW"} ${BOXES:+--boxes "$BOXES"} ${CAMERA:+--camera} ${PEG:+--peg} ${PEG_HOLE_XY:+--peg-hole-xy "$PEG_HOLE_XY"} ${PEG_DROP_TEST:+--peg-drop-test} ${PUSH:+--push} ${PUSH_XY:+--push-xy "$PUSH_XY"} ${PUSH_YAW:+--push-yaw "$PUSH_YAW"} > "$LOG" 2>&1 &
+    "$HERE/../isaac_ros.sh" --python "$HERE/headless_impedance_sim.py" --sync-dir "$SYNC" ${CONTROLLER_CONFIG:+--config "$CONTROLLER_CONFIG"} ${GUI:+--gui} ${SCENE:+--scene "$SCENE"} ${PICK_PLACE:+--pick-place} ${OBJECT_SIZE:+--object-size "$OBJECT_SIZE"} ${OBJECT_YAW:+--object-yaw "$OBJECT_YAW"} ${BOXES:+--boxes "$BOXES"} ${WRIST_FT:+--wrist-ft} ${CAMERA:+--camera} ${PEG:+--peg} ${PEG_HOLE_XY:+--peg-hole-xy "$PEG_HOLE_XY"} ${PEG_DROP_TEST:+--peg-drop-test} ${PUSH:+--push} ${PUSH_XY:+--push-xy "$PUSH_XY"} ${PUSH_YAW:+--push-yaw "$PUSH_YAW"} > "$LOG" 2>&1 &
 ISAAC_PID=$!
 
 # ROS side

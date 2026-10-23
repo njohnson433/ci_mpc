@@ -34,6 +34,7 @@ from geometry_msgs.msg import Pose, PoseArray
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from ci_mpc_msgs.msg import MpcCommand
+from geometry_msgs.msg import WrenchStamped
 from std_msgs.msg import Bool, Float64
 from vision_msgs.msg import Detection3DArray
 
@@ -56,6 +57,8 @@ p.add_argument("--dither", default="0,0", help="lateral dither amplitude [m], fr
 p.add_argument("--engage", type=float, default=0.003, help="tip this far below the opening = in the hole [m]")
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
+p.add_argument("--probe", action="store_true", help="after inserting: hold and push with known feedforward forces "
+               "(checks the external wrench estimate and the PhysX contact report against each other)")
 p.add_argument("--pos-noise", type=float, default=0.0)
 p.add_argument("--size-noise", type=float, default=0.0)
 p.add_argument("--yaw-noise-deg", type=float, default=0.0)
@@ -126,6 +129,9 @@ def on_det(msg):
 
 node.create_subscription(JointState, "/joint_states", on_js, 100)
 node.create_subscription(Detection3DArray, "/perception/detections", on_det, 10)
+wrench_log = []  # (joint_states time, Franka-sign external wrench estimate)
+node.create_subscription(WrenchStamped, "/cartesian_impedance_controller/external_wrench",
+                         lambda m: wrench_log.append((state["t"], m.wrench.force.x, m.wrench.force.y, m.wrench.force.z)), 100)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
 path_pub = node.create_publisher(PoseArray, "/ci_mpc_planner/path", 10)
 width_pub = node.create_publisher(Float64, "/gripper/width", 10)
@@ -336,6 +342,9 @@ def command():
                   f"after {now - c['t_engage']:.2f} s", flush=True)
     if c["phase"] in ("done", "failed"):
         ff = 0.0
+    ff_xy = np.zeros(2)
+    if c["phase"] == "probe":
+        ff_xy, ff = c["probe_f"][:2], c["probe_f"][2]
     c["v"] = (c["p"] - p_prev) / dt if dt > 0 else np.zeros(3)
     p_out, v_out = c["p"].copy(), c["v"].copy()
     if c["phase"] in ("search", "insert") and dither[0] > 0:
@@ -348,12 +357,12 @@ def command():
     m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, p_out)
     m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat.x, quat.y, quat.z, quat.w
     m.twist.linear.x, m.twist.linear.y, m.twist.linear.z = map(float, v_out)
-    m.wrench.force.z = float(ff)
+    m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = float(ff_xy[0]), float(ff_xy[1]), float(ff)
     K = K_insert if c["phase"] in ("insert", "done") else K_search
     m.stiffness = K
     m.integral_enabled = False
     cmd_pub.publish(m)
-    f_est = np.array(K[:3]) * (c["p"] - x) + np.array([0, 0, ff])
+    f_est = np.array(K[:3]) * (c["p"] - x) + np.array([*ff_xy, ff])
     c["peak_f"] = max(c["peak_f"], float(np.linalg.norm(f_est)))
     c["log"].append((now, x.copy(), c["p"].copy(), f_est, c["phase"]))
 
@@ -366,6 +375,15 @@ if c["phase"] not in ("done", "failed"):
     c["phase"] = "failed"
     print(f"  contact phase timed out ({c['log'][-1][4] if c['log'] else '?'})", flush=True)
 spin_sim(0.3)
+if args.probe and c["phase"] == "done":
+    c["p"] = fk(state["q"]).translation.copy()  # hold here; the spring adds nothing at rest
+    print("PROBE (feedforward force, held 2 s each; times on the joint_states clock):", flush=True)
+    for fvec in ([0, 0, -8.0], [4.0, 0, -6.0], [0, -4.0, -6.0], [0, 0, -2.0]):
+        c["probe_f"], c["phase"] = np.array(fvec), "probe"
+        t_a = state["t"]
+        spin_sim(2.0)
+        print(f"  probe {fvec} from {t_a + 1.0:.2f} to {state['t']:.2f}", flush=True)
+    c["phase"] = "done"
 tr = truth()
 peg_o, hole_o = np.array(tr["peg"]["origin"]), np.array(tr["hole"]["origin"])  # peg bottom, hole bottom
 depth_err = peg_o[2] - hole_o[2]
@@ -390,6 +408,11 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
 print("RESULT " + ", ".join(f"{k} {v:.2f}" if isinstance(v, float) else f"{k} {v}" for k, v in res.items()), flush=True)
 if args.out:
     json.dump(res, open(args.out, "w"), indent=1)
+np.save(os.path.join(args.log_dir, "external_wrench.npy"), np.array(wrench_log))
+import shutil
+for fname in ("hole_contact.csv", "wrist_ft.csv"):
+    if os.path.exists(sync(fname)):
+        shutil.copy(sync(fname), os.path.join(args.log_dir, fname))
 np.savez(os.path.join(args.log_dir, "peg_contact.npz"), t=[l[0] for l in c["log"]], x=[l[1] for l in c["log"]],
          p=[l[2] for l in c["log"]], f=[l[3] for l in c["log"]], phase=[l[4] for l in c["log"]])
 node.destroy_node()
