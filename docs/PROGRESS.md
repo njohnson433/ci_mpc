@@ -43,6 +43,31 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (later): CI-MPC step 3, amortized C3 (student) — stopped, teacher not good enough
+- **Pipeline (kept, works):**
+  - `scripts/c3_teacher_data.py`: teacher = 3D C3+ with the rollout warm start every solve; random engaged starts
+    0.3–1.8 mm, estimate error σ 0.2 mm, 30 % perturbed commands (DART); 16 workers, 80 episodes, 4622 samples.
+  - `scripts/train_c3_student.py`: PyTorch (Isaac venv; pytorch-patterns: seeds, train/eval modes, set_to_none,
+    grad clipping, state-dict checkpoint) → .npz.
+  - `ci_mpc_planner/c3_student.py`: NumPy inference, so the controller side needs no PyTorch.
+- **Result (negative):**
+  - **The teacher is not reliable once the starts are randomized:** it entered the bore (tip < −5 mm) in only 8 of
+    80 episodes within 60 steps (median 35 steps). The rest stall on the chamfer at −0.4…−1.4 mm. The earlier "2 of
+    2" were two hand-picked starts without perturbation or estimate error.
+  - Its actions are noisy (the z command changes 0.47 mm step to step, mean |z| 1.1 mm: ADMM variability).
+  - Student: best validation at epoch 40, then overfits; validation R² 0.36 / 0.39 / −0.35 / 0.29 / 0.41 (x, y,
+    z, rx, ry); RMSE z 3 mm.
+  - Imitating a teacher that mostly stalls cannot beat the heuristic, so it was not evaluated further.
+- **What this says about the CI-MPC (steps 2–3):**
+  - The 3D C3 yields lower contact forces (2–3×) when its ADMM converges to the right mode sequence.
+  - It is too local and warm-start sensitive to be the reliable layer.
+  - The reliable parts of the stack are the belief / probing (localization) and the force-limited centering.
+  - Next options, if pursued:
+    - a global mode-sequence search on top of C3 (MIQP over a few modes per contact, or sampling the warm starts),
+      as C3+ does with sampled initial conditions;
+    - a C++ C3 (the C3 papers' speed);
+    - a student trained on a better teacher (e.g. MIQP or sampled C3, offline, any speed).
+
 ### 2026-10-24 (later): CI-MPC plan, steps 1-2: 3D model, probing localization, 3D C3
 - **User question: model the hole with a NN for a convex contact problem?** My answer:
   - The linearized contact force problem is already convex (Anitescu QP) whatever the geometry representation;

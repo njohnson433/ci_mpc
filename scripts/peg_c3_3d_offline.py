@@ -9,14 +9,17 @@ import time
 import numpy as np
 
 from ci_mpc_planner.c3_3d import C33Config, PegHoleC3_3D
+from ci_mpc_planner.c3_student import C3Student
 from ci_mpc_planner.peg_hole_3d import PegHole3D
 
 p = argparse.ArgumentParser()
 p.add_argument("--offset", default="1.5,0")
 p.add_argument("--est-error", default="0,0")
-p.add_argument("--policy", default="c3", choices=["c3", "follow"])
+p.add_argument("--policy", default="c3", choices=["c3", "follow", "student"])
+p.add_argument("--student", default="", help="student weights (.npz) for --policy student")
 p.add_argument("--steps", type=int, default=80)
 p.add_argument("--warm-start", default="rollout")
+p.add_argument("--success-depth", type=float, default=0.024, help="[m] tip depth counted as success (0.005: entered)")
 p.add_argument("--verbose", action="store_true")
 args = p.parse_args()
 
@@ -39,12 +42,20 @@ cfg.warm_start = args.warm_start
 mpc = PegHoleC3_3D(model, comp, cfg)
 peak_f, peak_tau, ms, viol = 0.0, 0.0, [], []
 F = np.zeros(3)
+w = plant.contact_wrench(lam) if nc else np.zeros(5)
+student = C3Student(args.student) if args.policy == "student" else None
+rng = np.random.default_rng(1)
 for k in range(args.steps):
     if args.policy == "c3":
         t0 = time.perf_counter()
         u, info = mpc.solve(x, goal, u)
         ms.append((time.perf_counter() - t0) * 1000)
         viol.append(info.get("viol", np.nan))
+        ff = np.zeros(5)
+    elif args.policy == "student":
+        t0 = time.perf_counter()
+        u = student.command(x, -off + err, w + rng.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01]), tb)
+        ms.append((time.perf_counter() - t0) * 1000)
         ff = np.zeros(5)
     else:  # follow the chamfer's lateral push with a light normal force, else press (as in Isaac)
         lat = F[:2]
@@ -62,11 +73,12 @@ for k in range(args.steps):
     tip = plant.tip(x)
     if args.verbose and k % 5 == 0:
         print(f"k {k:3d} tip {np.round(tip * 1000, 2)} mm, contact force {np.round(F, 2)} N, torque {np.round(w[3:], 3)}"
-              + (f", {ms[-1]:.0f} ms, viol {viol[-1]:.2f}, m {info['m']}" if ms else ""))
-    if tip[2] < -plant.g.depth + 0.001:
+              + (f", {ms[-1]:.0f} ms, viol {viol[-1]:.2f}, m {info['m']}" if viol else ""))
+    if tip[2] < -args.success_depth:
         break
 tip = plant.tip(x)
-ok = tip[2] < -plant.g.depth + 0.001
+ok = tip[2] < -args.success_depth
 print(f"{args.policy} offset {args.offset} est-error {args.est_error}: {'OK' if ok else 'FAIL'} after {k + 1} steps, "
       f"tip {np.round(tip * 1000, 2)} mm; peak contact force {peak_f:.2f} N, torque {peak_tau:.3f} N m"
-      + (f"; solve {np.mean(ms):.0f} ms mean {np.max(ms):.0f} max, violation {np.nanmean(viol):.3f}" if ms else ""))
+      + (f"; solve {np.mean(ms):.2f} ms mean {np.max(ms):.2f} max" if ms else "")
+      + (f", violation {np.nanmean(viol):.3f}" if viol else ""))
