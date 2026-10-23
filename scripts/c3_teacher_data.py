@@ -14,6 +14,7 @@ import numpy as np
 
 from ci_mpc_planner.c3_3d import C33Config, PegHoleC3_3D
 from ci_mpc_planner.peg_hole_3d import PegHole3D
+from ci_mpc_planner.sampled_teacher import SampledTeacher
 
 p = argparse.ArgumentParser()
 p.add_argument("--out", required=True)
@@ -21,6 +22,9 @@ p.add_argument("--episodes", type=int, default=6)
 p.add_argument("--steps", type=int, default=60)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--perturb", type=float, default=0.3)
+p.add_argument("--teacher", default="sampled", choices=["sampled", "single"],
+               help="sampled: SampledTeacher (9 warm starts + heuristic, privileged true hole); single: one C3 with "
+                    "the rollout warm start (entered only 8 of 80 episodes)")
 args = p.parse_args()
 
 rng = np.random.default_rng(args.seed)
@@ -43,12 +47,19 @@ for ep in range(args.episodes):
     cfg.rollout_every = 1
     mpc = PegHoleC3_3D(model, comp, cfg)
     goal = np.array([*(-off + err), tb - plant.g.depth, 0.0, 0.0])
+    teacher = SampledTeacher(PegHole3D(hole_xy=-off, n_ring=8, n_rim=12), comp, fa) if args.teacher == "sampled" else None
+    goal_true = np.array([*(-off), tb - plant.g.depth, 0.0, 0.0])
     u = x.copy()
     for k in range(args.steps):
         est = -off + err
         f = np.concatenate([(x[:2] - est) * 1000, [(x[2] - tb) * 1000], x[3:] * 1000,
                             w + rng.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])])
-        u_t, info = mpc.solve(x, goal, u)
+        if teacher is not None:
+            u_c, ff, info = teacher.act(plant, x, goal_true, u, w)
+            u_t = u_c + comp * ff  # feedforward as an equivalent set-point offset (as the plant applies it)
+        else:
+            u_t, info = mpc.solve(x, goal, u)
+            u_c = u_t
         feats.append(f)
         targets.append((u_t - x) * SC)
         meta.append((ep, k))

@@ -50,7 +50,9 @@ class PegHoleC3_3D:
         self.compliance = np.asarray(compliance, float)
         self.prev = None
 
-    def solve(self, x0, goal, u_prev):
+    def solve(self, x0, goal, u_prev, nominal=None):
+        """nominal: optional (horizon, 5) command sequence for the warm-start rollout (sampled teachers try several);
+        default: straight to the goal, step-limited. info["U"] is the planned command sequence."""
         cfg, mdl = self.cfg, self.model
         S1 = np.full(5, 1000.0)
         x0s, goals, ups = x0 * S1, goal * S1, u_prev * S1
@@ -184,7 +186,7 @@ class PegHoleC3_3D:
                 delta[:-per_stage] = d_prev[per_stage:]
                 delta[-per_stage:] = d_prev[-per_stage:]
             else:
-                delta = self._rollout_targets(x0, goal, u_prev, pairs, ix, il, ig, ie, ia, m, Nh, Fs)
+                delta = self._rollout_targets(x0, goal, u_prev, pairs, ix, il, ig, ie, ia, m, Nh, Fs, nominal)
         omega = np.zeros(len(flat))
         rho = cfg.rho0
         solver = osqp.OSQP()
@@ -218,16 +220,17 @@ class PegHoleC3_3D:
         u0 = z[iu(0):iu(0) + nq] / S1
         X = np.array([z[ix(k):ix(k) + nq] for k in range(Nh)]) / S1
         viol = np.abs(z[flat] - delta).max() if len(flat) else 0.0
-        return u0, {"status": "ok", "m": m, "X": X, "viol": viol, "wrench0": W @ z[il(0):il(0) + nl]}
+        U = np.array([z[iu(k):iu(k) + nq] for k in range(Nh)]) / S1
+        return u0, {"status": "ok", "m": m, "X": X, "U": U, "viol": viol, "wrench0": W @ z[il(0):il(0) + nl]}
 
-    def _rollout_targets(self, x0, goal, u_prev, pairs, ix, il, ig, ie, ia, m, Nh, Fs):
+    def _rollout_targets(self, x0, goal, u_prev, pairs, ix, il, ig, ie, ia, m, Nh, Fs, nominal=None):
         """Projection targets from a rollout of a nominal command through the convex plant."""
         mdl, cfg = self.model, self.cfg
         x, u = x0.copy(), u_prev.copy()
         S1 = 1000.0
         target = {}
         for k in range(Nh):
-            u = u + np.clip(goal - u, -cfg.du_max / S1, cfg.du_max / S1)
+            u = nominal[k] if nominal is not None else u + np.clip(goal - u, -cfg.du_max / S1, cfg.du_max / S1)
             xn, lam, nc = mdl.step(x, u, self.compliance, Fs, eps=1e-5, max_iter=2000)
             dx = (xn - x) * S1
             # arm friction: sliding where the rollout moved (f at the limit against the motion, gamma = |dx|)
