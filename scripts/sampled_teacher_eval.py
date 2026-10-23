@@ -18,7 +18,8 @@ p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "
 p.add_argument("--student", default="")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
-rng = np.random.default_rng(args.seed)
+rng = np.random.default_rng(args.seed)          # start states only: identical for every policy
+rng_noise = np.random.default_rng(args.seed + 10000)  # measurement noise (the selector / student draw from it)
 comp = np.array([1 / 1500, 1 / 1500, 1 / 500, 1 / 130, 1 / 130])
 fa = np.array([2.0, 2.0, 3.5, 0.05, 0.05])
 for ep in range(args.episodes):
@@ -44,7 +45,7 @@ for ep in range(args.episodes):
             u, ff, info = teacher.act(plant, x, goal, u, w)
             srcs[info["source"]] = srcs.get(info["source"], 0) + 1
         elif args.policy == "selector":
-            wm = w + rng.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
+            wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
             choice = selector.choose(C3Selector.features(x, -off + err, wm, tb))
             o = runtime.option(choice, x, goal_est, u, wm)
             if o is None:
@@ -52,7 +53,7 @@ for ep in range(args.episodes):
             u, ff = o[0], o[1]
             srcs[choice] = srcs.get(choice, 0) + 1
         elif args.policy == "student":
-            u = student.command(x, -off + err, w + rng.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01]), tb)
+            u = student.command(x, -off + err, w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01]), tb)
             ff = np.zeros(5)
         else:
             u, ff = heuristic_command(x, w)

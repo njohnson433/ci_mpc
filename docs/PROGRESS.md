@@ -43,6 +43,39 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (night): sampled C3 teacher, option selector + DAgger (step 3, second attempt)
+- **Sampled teacher** (`sampled_teacher.py`): per step, C3 from 9 warm starts (rollouts of different nominal
+  command sequences: centering with a light / firm press, press only, ±x / ±y lateral, ±tilt) plus the heuristic,
+  each executed 4 steps in a plant copy and scored (depth, centering, force above 3 N). Privileged (true hole).
+  Same 10 random engaged starts:
+
+  | policy | entered | steps | peak force | time / step |
+  |---|---|---|---|---|
+  | force-following heuristic | 8/10 | 14–58 | 2.2–5.8 N | 0.1 s |
+  | single C3 (rollout warm start), data runs | 8/80 episodes | | | 1.5 s |
+  | **sampled teacher** | **9/10** | 8–53 | **1.4–2.35 N** | 1–6 s |
+
+  With randomized data (30 % perturbed commands) it entered 70/80.
+- **Command regression student (MSE): 1/10 entered.** NumPy export verified identical to the torch model. The
+  causes are the teacher's multimodal actions (≈40 % heuristic, otherwise C3 options; z spread 3.5 mm, MSE
+  averages them, mostly losing contact), 1775 samples, and no DAgger.
+- **Option selector** (`C3Selector`, `train_c3_selector.py`): MLP → logits over the 10 options, soft targets
+  softmax(score / 0.3); at runtime only the chosen option runs (heuristic, or one C3 with its warm start, on the
+  *estimated* hole). DAgger (`selector_dagger.py`): the teacher labels every visited state with all option scores.
+  - round 0 (teacher drives): validation top-1 0.52, score regret 0.18 (always heuristic: 2.18). Closed loop
+    8/10, peak 2.1–2.5 N, 0.2–0.5 s/step.
+  - round 1 (β 0.5): 8/10, peak 2.2–2.4 N; still stuck at one start (picks the same C3 option 60 times, light
+    contact).
+  - Evaluations so far shared one RNG for starts and noise, so only the first episode per seed matched the
+    heuristic's start → separate RNGs, 30 starts.
+- **Infra:**
+  - CPU split: teacher / DAgger workers `taskset` 16–31, Isaac + ROS 0–15. The first final benchmark ran next to 16
+    unpinned workers; its ROS side lagged (contact phases 27 s instead of 3 s at 0,0).
+  - The estimator baseline in that run: 2/10 (planar model, x only: expected on 2D offsets).
+  - Clean pinned rerun of probe / spiral running.
+  - A wait loop after a session restart used `pgrep -f` on a pattern in its own command line (never ends); stopped
+    by PID, replaced by a file check.
+
 ### 2026-10-24 (later): CI-MPC step 3, amortized C3 (student) — stopped, teacher not good enough
 - **Pipeline (kept, works):**
   - `scripts/c3_teacher_data.py`: teacher = 3D C3+ with the rollout warm start every solve; random engaged starts
