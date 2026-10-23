@@ -6,6 +6,7 @@
 #   contact   p_y drift (the contact sliding along the face), largest rod-face gap, lost-contact solves.
 #   push_test.py --sync-dir DIR [--task line|arc] [--push-args name:=value ...] [--pos-noise ...] [--out x.json]
 import argparse
+import atexit
 import json
 import os
 import signal
@@ -39,6 +40,15 @@ def sync(name):
 
 
 procs = []
+
+
+def _kill_children():  # also on a crash: orphaned detector / MPC nodes would keep publishing into the next run
+    for pr in procs:
+        if pr.poll() is None:
+            pr.kill()
+
+
+atexit.register(_kill_children)
 
 
 def finish(code):

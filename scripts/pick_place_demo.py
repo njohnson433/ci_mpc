@@ -12,6 +12,7 @@
 # points and stops only where the gripper acts; --mode stops sends one goal pose at a time (previous demo).
 # Gripper: sim stand-in ci_mpc_sim_gripper (/gripper/width); on the robot: franka_gripper (docs/REAL_ROBOT.md 4b).
 import argparse
+import atexit
 import json
 import os
 import signal
@@ -63,6 +64,15 @@ def sync(name):
 
 
 procs = []
+
+
+def _kill_children():  # also on a crash: orphaned detector / MPC nodes would keep publishing into the next run
+    for pr in procs:
+        if pr.poll() is None:
+            pr.kill()
+
+
+atexit.register(_kill_children)
 
 
 def finish(code):

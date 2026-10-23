@@ -43,6 +43,50 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24: CI-MPC step 3, Isaac: localization / C3 on the Factory peg (planar model along x)
+- `scripts/peg_insert_demo.py --strategy spiral|estimate|c3`: 10 Hz model-based contact phase. The TCP pose comes
+  from FK, the contact wrench from the controller's estimate (sign flipped, peg weight removed), plus the particle
+  filter. estimate = localization + straight down; c3 = localization + C3+. Hole offset along world x only (planar
+  model). `mpc_timeout` 0.2 s in the pick-place controller config (planning blocks the command stream briefly).
+- **Bugs / traps found on the way (each was a wrong conclusion until fixed):**
+  - The `model` name clash crashed two runs. Their orphaned `sim_object_detector` / `mpc_node` kept publishing stale
+    detections on the same ROS domains, so later runs "saw" a peg above the hole and the grasp failed. Killed by
+    PID; all demo scripts now kill their children with `atexit` (also on a crash).
+  - Flat-belief estimate = the argmax of uniform weights = the first particle (−5.6 mm). It moved the peg there
+    before any contact; that happened to make +3…+5 mm "succeed" and 0–2 mm fail → mean until the belief has a
+    peak.
+  - The straight-down press was limited relative to the hole bottom → up to 15 N while the peg sat at the
+    opening; the peg slid up in the fingers at ~6–8 N (TCP 18 mm "deep", peg not inserted) → press at most 6 mm
+    below the current TCP. C3 grasp axial limit 10 → 4 N.
+  - 3 N of spring did not move the arm in free space (z stiction > 3 N at K_z 500, integral off) → 3 N
+    feedforward along the descent, press stopped above 4 N measured contact force; the estimator gets the
+    feedforward as an equivalent set-point offset.
+- **Results** (Isaac, hole error along x; ✅ = peg bottom within 1 mm of the hole bottom):
+
+  | strategy | −5 | −3 | −2 | 0 | 1 | 2 | 3 | 4 | 5 mm |
+  |---|---|---|---|---|---|---|---|---|---|
+  | spiral (hand-written) | | | | ✅/❌ | ✅/❌ | ❌ | ❌ | | |
+  | localization + down, before the press / stiction fixes | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+  | + stiction feedforward, force-limited press | | ❌ | | ✅ 19 s | | ✅ 7.9 s | ❌ | | ❌ |
+  | + following the rim's lateral push (light normal force) | | ✅ 28 s | | ✅ 7.8 s | | ✅ 7.7 s | ❌ | | ❌ |
+  | localization + C3 (arm stiction in the model) | | | | | | | ❌ stays in free space | | |
+
+- **Why ≥ 3 mm still fails (mechanisms):**
+  - **The planar model is wrong in 3D.** The round tip resting off-center on the round chamfer ring touches the
+    cone at two points; their resultant pushes the peg sideways toward the axis. The planar cross-section sees
+    a corner on the flat top face (no lateral force), so the particle filter converged to the wrong side
+    (+1.8 mm, true −3).
+  - **Friction cone:** pressing at ~6.5 N on the rim locks sideways motion (μ·F_n ≈ 4.9 N > spring +
+    feedforward). Sliding needs a light normal force, which is exactly the trade-off a CI-MPC should make.
+  - **Signal level:** the rim's lateral push is ~0.3–1.5 N, about the observer's contact error (0.2–0.3 N RMS)
+    plus bias. Following it is asymmetric (−3 ✅, +3 ❌).
+  - **C3 with arm stiction:** "stick, nothing moves" is a valid complementarity solution, and the ADMM settles
+    there (local minimum); without stiction in the model it plans forces that never break it.
+- **Next (decision):**
+  - a 3D contact model (cylinder tip vs conical chamfer and bore) for the estimator, with 2D hole position
+    particles; that is what makes the rim's push informative
+  - then C3 on it with a mode-aware initialization (warm-start ADMM in "slide", not "stick").
+
 ### 2026-10-24: CI-MPC step 2, planar peg-hole model, C3+ and hole localization (offline)
 - **Model** (`ci_mpc_planner/peg_hole.py`):
   - planar (x-z, tilt about y) Factory peg and hole: hole r 4.5 mm with a 1 mm chamfer, peg half width 3.993 mm

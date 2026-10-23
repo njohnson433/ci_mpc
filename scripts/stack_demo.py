@@ -14,6 +14,7 @@
 #   motion  = blended MPC paths (lift -> above the stack -> place), safe height above the current stack.
 # Score: per level xy offset to the box below and to the base, yaw difference, height (standing / fallen).
 import argparse
+import atexit
 import json
 import os
 import signal
@@ -72,6 +73,15 @@ def sync(name):
 
 
 procs = []
+
+
+def _kill_children():  # also on a crash: orphaned detector / MPC nodes would keep publishing into the next run
+    for pr in procs:
+        if pr.poll() is None:
+            pr.kill()
+
+
+atexit.register(_kill_children)
 
 
 def finish(code):

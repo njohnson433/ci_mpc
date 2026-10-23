@@ -145,12 +145,15 @@ class PegHole:
         return phi, N, T, W
 
     # --- quasi-static step (offline plant): convex contact model (Anitescu relaxation)
-    def step(self, x, u, compliance):
+    def step(self, x, u, compliance, arm_friction=None):
         """One quasi-static step from x with commanded pose u: contact forces from the convex dual QP
             min_l 1/2 l^T (W^T C W) l + l^T b,   b = [phi_i + N_i (u - x), +-T_i (u - x)],
             s.t. ln >= 0, lt+- >= 0, lt+ + lt- <= mu ln
         whose KKT conditions are non-penetration with Coulomb friction (sliding contacts separate by mu * slip;
         negligible at quasi-static speeds). Always solvable (Lemke on the Stewart-Trinkle LCP was not).
+        arm_friction (Fx, Fz, torque): the arm's static friction in TCP coordinates (box friction: the TCP does not
+        move while the spring force stays below it; joint stiction of the FR3, which the velocity-based friction
+        compensation does not remove at rest).
         Returns (x+, lambda, number of contacts)."""
         import osqp
         import scipy.sparse as sp
@@ -158,26 +161,33 @@ class PegHole:
         C = np.diag(compliance)
         phi, N, T, W = self.matrices(x, compliance)
         m = len(phi)
-        if m == 0:
-            return np.asarray(u, float).copy(), np.zeros(0), 0
         du = np.asarray(u, float) - np.asarray(x, float)
+        fa = np.zeros(3) if arm_friction is None else np.asarray(arm_friction, float)
+        if m == 0 and not fa.any():
+            return np.asarray(u, float).copy(), np.zeros(0), 0
+        # variables [lambda (3m), f_arm (3)]; f_arm acts on the TCP like a contact with T = identity, |f| <= fa
+        Wf = np.hstack([W, np.eye(3)])
         sc = 1000.0  # displacements in mm (conditioning)
-        A = sc * (W.T @ C @ W) + 1e-9 * np.eye(3 * m)
-        b = np.zeros(3 * m)
-        b[0::3] = sc * (phi + N @ du)
-        b[1::3] = sc * (T @ du)
-        b[2::3] = -sc * (T @ du)
-        G = np.zeros((4 * m, 3 * m))
-        lo, hi = np.zeros(4 * m), np.full(4 * m, np.inf)
+        A = sc * (Wf.T @ C @ Wf) + 1e-9 * np.eye(3 * m + 3)
+        b = np.zeros(3 * m + 3)
+        b[0:3 * m:3] = sc * (phi + N @ du)
+        b[1:3 * m:3] = sc * (T @ du)
+        b[2:3 * m:3] = -sc * (T @ du)
+        b[3 * m:] = sc * du
+        G = np.zeros((4 * m + 3, 3 * m + 3))
+        lo, hi = np.zeros(4 * m + 3), np.full(4 * m + 3, np.inf)
         G[:3 * m, :3 * m] = np.eye(3 * m)
         for i in range(m):
             G[3 * m + i, 3 * i:3 * i + 3] = [self.g.mu, -1.0, -1.0]
+        G[4 * m:, 3 * m:] = np.eye(3)
+        lo[4 * m:], hi[4 * m:] = -fa, fa
         solver = osqp.OSQP()
         solver.setup(sp.csc_matrix(np.triu(A)), b, sp.csc_matrix(G), lo, hi, verbose=False, eps_abs=1e-9,
                      eps_rel=1e-9, polish=True, max_iter=20000)
         res = solver.solve(raise_error=False)
-        lam = np.maximum(res.x, 0.0) if res.x is not None else np.zeros(3 * m)
-        return np.asarray(u, float) + C @ W @ lam, lam, m
+        z = res.x if res.x is not None else np.zeros(3 * m + 3)
+        lam = np.maximum(z[:3 * m], 0.0)
+        return np.asarray(u, float) + C @ (W @ lam + z[3 * m:]), lam, m
 
     def contact_wrench(self, x, lam, compliance):
         """Generalized force (Fx, Fz, torque about y at the TCP) the contacts apply to the peg."""

@@ -22,6 +22,7 @@ p.add_argument("--kz", type=float, default=500.0)
 p.add_argument("--kphi", type=float, default=130.0)
 p.add_argument("--set", nargs="*", default=[], help="C3Config overrides name=value")
 p.add_argument("--verbose", action="store_true")
+p.add_argument("--arm-friction", default="0,0,0", help="plant arm stiction Fx,Fz,torque (Isaac-like: 1.5,1.5,0.05)")
 p.add_argument("--estimate", action="store_true", help="localize the hole from contact (particle filter)")
 p.add_argument("--wrench-noise", type=float, default=0.3, help="std of the measured force [N] (torque: /60 N m)")
 args = p.parse_args()
@@ -41,7 +42,8 @@ u = x.copy()
 goal = np.array([args.est_x, tip_below - plant.g.depth, 0.0])
 ms, viol = [], []
 rng = np.random.default_rng(1)
-est = HoleEstimator(plant.g, compliance, args.est_x) if args.estimate else None
+arm_fric = np.array([float(v) for v in args.arm_friction.split(",")])
+est = HoleEstimator(plant.g, compliance, args.est_x, arm_friction=arm_fric) if args.estimate else None
 for k in range(args.steps):
     if args.policy == "c3":
         t0 = time.perf_counter()
@@ -51,9 +53,9 @@ for k in range(args.steps):
     else:  # straight down at the (estimated) hole x, pressing at most 6 mm into the spring
         u = u.copy()
         u[0] += np.clip(goal[0] - u[0], -0.0005, 0.0005)
-        u[1] = max(u[1] - 0.0005, goal[1] - 0.006)
+        u[1] = max(u[1] - 0.0005, goal[1], x[1] - 0.006)
     x_prev = x
-    x, lam, nc = plant.step(x, u, compliance)
+    x, lam, nc = plant.step(x, u, compliance, arm_fric)
     tip = plant.tip(x)
     if est is not None:
         w_meas = (plant.contact_wrench(x_prev, lam, compliance) if nc else np.zeros(3)) + rng.normal(

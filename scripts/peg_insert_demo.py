@@ -18,6 +18,7 @@
 # Integral off in contact. Success (Factory): peg bottom within 1 mm (4 % of the 25 mm depth) of the hole bottom,
 # from the sim ground truth. Contact force estimate: K (x_cmd - x) + feedforward (no F/T sensor yet).
 import argparse
+import atexit
 import json
 import os
 import signal
@@ -57,6 +58,22 @@ p.add_argument("--dither", default="0,0", help="lateral dither amplitude [m], fr
 p.add_argument("--engage", type=float, default=0.003, help="tip this far below the opening = in the hole [m]")
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
+p.add_argument("--strategy", default="spiral", choices=["spiral", "estimate", "c3"],
+               help="contact phase: spiral search (hand-written); estimate = hole localization from contact "
+                    "(particle filter on the measured wrench) + straight down; c3 = localization + C3+ CI-MPC")
+p.add_argument("--particles", type=int, default=30)
+p.add_argument("--follow-force", type=float, default=0.0,
+               help="[m/N per step] admittance along the measured lateral contact force (the round rim pushes the "
+                    "peg towards the hole axis); 0 = off")
+p.add_argument("--lateral-stiction-ff", type=float, default=2.0,
+               help="[N] feedforward along the measured lateral contact force when following it")
+p.add_argument("--stiction-ff", type=float, default=3.0,
+               help="[N] feedforward force along the descent that cancels the arm's static friction in z (estimate "
+                    "strategy; 3 N of spring alone did not move the arm in free space)")
+p.add_argument("--max-contact-force", type=float, default=4.0,
+               help="[N] stop pressing further when the measured contact force exceeds this (the peg slid in the "
+                    "fingers at 6-8 N)")
+p.add_argument("--plan-period", type=float, default=0.1, help="[s] sim time per planning step")
 p.add_argument("--probe", action="store_true", help="after inserting: hold and push with known feedforward forces "
                "(checks the external wrench estimate and the PhysX contact report against each other)")
 p.add_argument("--pos-noise", type=float, default=0.0)
@@ -87,6 +104,15 @@ def sync(name):
 
 
 procs = []
+
+
+def _kill_children():  # also on a crash: orphaned detector / MPC nodes would keep publishing into the next run
+    for pr in procs:
+        if pr.poll() is None:
+            pr.kill()
+
+
+atexit.register(_kill_children)
 
 
 def finish(code):
@@ -129,9 +155,10 @@ def on_det(msg):
 
 node.create_subscription(JointState, "/joint_states", on_js, 100)
 node.create_subscription(Detection3DArray, "/perception/detections", on_det, 10)
-wrench_log = []  # (joint_states time, Franka-sign external wrench estimate)
+wrench_log = []  # (joint_states time, Franka-sign external wrench estimate: force xyz, torque xyz)
 node.create_subscription(WrenchStamped, "/cartesian_impedance_controller/external_wrench",
-                         lambda m: wrench_log.append((state["t"], m.wrench.force.x, m.wrench.force.y, m.wrench.force.z)), 100)
+                         lambda m: wrench_log.append((state["t"], m.wrench.force.x, m.wrench.force.y, m.wrench.force.z,
+                                                      m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z)), 100)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
 path_pub = node.create_publisher(PoseArray, "/ci_mpc_planner/path", 10)
 width_pub = node.create_publisher(Float64, "/gripper/width", 10)
@@ -369,8 +396,121 @@ def command():
 
 active_pub.publish(Bool(data=False))
 spin_sim(0.05)
-timer = node.create_timer(0.005, command)
-spin_until(lambda: c["phase"] in ("done", "failed") or state["t"] - c["t0"] > args.timeout_contact, 600)
+if args.strategy == "spiral":
+    timer = node.create_timer(0.005, command)
+    spin_until(lambda: c["phase"] in ("done", "failed") or state["t"] - c["t0"] > args.timeout_contact, 600)
+else:
+    # model-based contact phase (planar x-z model along world x; the hole offset is along x in these tests)
+    from ci_mpc_planner.c3 import C3Config, PegHoleC3
+    from ci_mpc_planner.hole_estimator import HoleEstimator
+    from ci_mpc_planner.peg_hole import PegHole, PegHoleGeometry
+
+    Kc = np.array([K_search[0], K_search[2], K_search[4] / 2.0])  # rotational: K/2 per rad (quaternion error)
+    comp = 1.0 / Kc
+    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp)
+    O = np.array([hole_est[0], hole_est[1], hole_tip_z])  # model frame: estimated hole axis, opening plane
+    peg_model = PegHole(geo, 0.0)
+    arm_fric = np.array([2.0, 3.5, 0.05])  # the arm's stiction in TCP coordinates (z: 3 N of spring did not move it)
+    cfg_c3 = C3Config()
+    cfg_c3.arm_friction = arm_fric
+    est = HoleEstimator(geo, comp, 0.0, n=args.particles, sigma_x=(1e-3, 1e-3, 5e-3), sigma_w=(1.0, 1.0, 0.03),
+                        arm_friction=arm_fric)
+    mpc = PegHoleC3(peg_model, comp, cfg_c3)
+
+    def measure():
+        T = fk(state["q"])
+        Rrel = T.rotation @ R.T
+        return np.array([T.translation[0] - O[0], T.translation[2] - O[2], np.arctan2(Rrel[0, 2], Rrel[2, 2])]), T.translation
+
+    def contact_wrench(window=0.1):
+        rows = np.array([r[1:] for r in wrench_log if r[0] > state["t"] - window])
+        if not len(rows):
+            return np.zeros(3)
+        f = rows.mean(0)
+        # Franka sign (robot on environment) -> contact wrench on the peg; the robot also carries the peg's weight
+        return np.array([-f[0], -(f[2] - 0.019 * 9.81), -f[4]])
+
+    def to_world(u):
+        cphi, sphi = np.cos(u[2]), np.sin(u[2])
+        Ry = np.array([[cphi, 0, sphi], [0, 1, 0], [-sphi, 0, cphi]])
+        return np.array([O[0] + u[0], O[1], O[2] + u[1]]), Ry @ R
+
+    c["u_cmd"] = to_world(measure()[0])
+
+    c["ff"] = np.zeros(3)
+
+    def command_model():
+        pos, Rc = c["u_cmd"]
+        qc = pin.Quaternion(Rc)
+        m = MpcCommand()
+        m.header.stamp = node.get_clock().now().to_msg()
+        m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, pos)
+        m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = qc.x, qc.y, qc.z, qc.w
+        m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, c["ff"])
+        m.stiffness = K_search
+        m.integral_enabled = False
+        cmd_pub.publish(m)
+
+    timer = node.create_timer(0.005, command_model)
+    x_prev, _ = measure()
+    u = x_prev.copy()
+    goal = np.array([0.0, tip_below_tcp - geo.depth, 0.0])
+    c["phase"], c["log2"], solve_ms = "model", [], []
+    while state["t"] - c["t0"] < args.timeout_contact:
+        spin_sim(args.plan_period)
+        xm, p_w = measure()
+        wm = contact_wrench()
+        # the model's command: spring set-point u plus the feedforward force as an equivalent set-point offset C ff
+        u_eff = u + comp * np.array([c["ff"][0], c["ff"][2], 0.0]) if "ff" in c else u
+        est.update(x_prev, u_eff, xm, wm)
+        h, h_std = est.estimate()
+        peg_model.hole_x = goal[0] = h
+        t0w = time.perf_counter()
+        if args.strategy == "c3":
+            u, info = mpc.solve(xm, goal, u)
+        else:
+            u = u.copy()
+            following = args.follow_force > 0 and abs(wm[0]) > 0.3 and wm[1] > 1.0
+            if following:  # on the rim: follow its push towards the hole axis with a light normal force
+                c["follow_dir"] = np.sign(wm[0])
+            elif args.follow_force > 0 and c.get("follow_dir") and wm[1] > 1.0 and abs(wm[0]) <= 0.3:
+                following = True  # keep the direction while the lateral reading dips
+            if following:
+                u[0] += np.clip(args.follow_force * 3.0 * c["follow_dir"], -5e-4, 5e-4)
+                ff_x = args.lateral_stiction_ff * c["follow_dir"]
+            else:
+                if h_std < 0.001:  # steer by the estimator only once it is confident
+                    u[0] += np.clip(goal[0] - u[0], -5e-4, 5e-4)
+                ff_x = 0.0
+            # press at most 6 mm below the current TCP (3 N at k_z 500); limiting it relative to the goal at the hole
+            # bottom gave up to 15 N while the peg sat at the opening, and the peg slid up in the fingers (~6-8 N)
+            ff_z = -args.stiction_ff
+            if following:  # light normal force so the rim friction (mu * F_n) does not lock the sideways motion
+                u[1] = xm[1]
+                ff_z = -1.5
+            elif wm[1] < args.max_contact_force:
+                u[1] = max(u[1] - 5e-4, goal[1], xm[1] - 0.006)
+            else:  # pressing hard enough: hold the spring where the TCP is (peg must not slide in the fingers)
+                u[1] = max(u[1], xm[1] - 0.002)
+            u[2] = 0.0
+            c["ff"] = np.array([ff_x, 0.0, ff_z])
+        solve_ms.append((time.perf_counter() - t0w) * 1000)
+        c["u_cmd"] = to_world(u)
+        x_prev = xm
+        tip_z = p_w[2] - tip_below_tcp
+        c["log2"].append((state["t"], *xm, *u, h, h_std, *wm))
+        if len(c["log2"]) % 10 == 0:
+            print(f"  t {state['t'] - c['t0']:5.1f} s: tip {(xm[0] - geo.tip_below_tcp * np.sin(xm[2])) * 1000:+.2f} / "
+                  f"{(tip_z - hole_tip_z) * 1000:+.2f} mm, tilt {np.degrees(xm[2]):+.1f} deg, hole estimate "
+                  f"{h * 1000:+.2f} mm (std {h_std * 1000:.2f}; true {-offset[0] * 1000:+.2f}), contact wrench "
+                  f"{np.round(wm, 2)}", flush=True)
+        if hole_tip_z - tip_z > geo.depth - 0.001:
+            c["phase"], c["t_done"] = "done", state["t"]
+            c["t_engage"] = c["t_contact"] = c["t0"]
+            break
+    print(f"  model-based contact phase ({args.strategy}): {c['phase']}, planning {np.mean(solve_ms):.0f} ms mean, "
+          f"{np.max(solve_ms):.0f} max (+ estimator)", flush=True)
+    np.save(os.path.join(args.log_dir, "peg_model_log.npy"), np.array(c["log2"]))
 if c["phase"] not in ("done", "failed"):
     c["phase"] = "failed"
     print(f"  contact phase timed out ({c['log'][-1][4] if c['log'] else '?'})", flush=True)

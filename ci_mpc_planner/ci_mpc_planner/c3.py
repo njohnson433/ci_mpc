@@ -1,11 +1,13 @@
 """Contact-implicit MPC for the planar peg-in-hole with C3+ (ADMM over complementarity constraints, OSQP).
 
 Model (peg_hole.PegHole, linearized at the current state x0 with its contact set):
-    x_{k+1} = u_k + C W lam_k                                  (quasi-static impedance, C = K^-1)
+    x_{k+1} = u_k + C (W lam_k + f+_k - f-_k)                  (quasi-static impedance, C = K^-1; f: arm friction)
     eta_n   = phi + N (x_{k+1} - x0)                           (normal gap at the next state)
     eta_t+- = gamma_k +- T (x_{k+1} - x_k)                     (sliding)
     eta_g   = mu lam_n - lam_t+ - lam_t-                       (friction cone)
-    complementarity  0 <= (lam_n, lam_t+, lam_t-, gamma) _|_ (eta_n, eta_t+, eta_t-, eta_g) >= 0
+    eta_a+- = gamma_a +- (x_{k+1} - x_k),  eta_ag = F_s - f+ - f-  (arm stiction per TCP coordinate)
+    complementarity  0 <= (lam_n, lam_t+, lam_t-, gamma, f+, f-, gamma_a) _|_ (eta_n, eta_t+, eta_t-, eta_g,
+                     eta_a+, eta_a-, eta_ag) >= 0
 C3+ (Bui et al. 2024): the complementarity is enforced by alternating
     QP:      min cost(z) + rho/2 |S z - delta + omega|^2  s.t. the linear equations above + convex limits
     project: (lam_i, eta_i) <- (max(a, 0), 0) if a > b else (0, max(b, 0))   with (a, b) = S z + omega, per pair
@@ -33,13 +35,17 @@ class C3Config:
     r_force: np.ndarray = field(default_factory=lambda: np.array([0.05, 0.05, 0.01]))  # on u - x+ (mm / mrad)
     r_rate: np.ndarray = field(default_factory=lambda: np.array([0.1, 0.1, 0.01]))    # on u_k - u_{k-1}
     du_max: np.ndarray = field(default_factory=lambda: np.array([0.5, 0.5, 20.0]))   # per stage, mm / mrad
-    grasp_axial: float = 10.0    # [N] peg axial load before it slips in the fingers (2 x 0.75 x ~8 N grip, margin)
+    grasp_axial: float = 4.0     # [N] peg axial load before it slips in the fingers (Isaac: slid at 6-8 N)
     grasp_lateral: float = 6.0   # [N]
     grasp_torque: float = 0.08   # [N m] about the TCP before the peg turns in the fingers
     rho0: float = 10.0          # 1: complementarity violation 3.0 after 12 iterations, 10: 0.14 (offline)
     rho_growth: float = 1.8
     admm_iters: int = 12
     contact_radius: float = 0.004
+    # arm static friction in TCP coordinates (Fx [N], Fz [N], torque [N m]): box friction, stick / slide chosen by
+    # the solver like a contact (Isaac: without it the plan commanded 0.5 N spring forces that never broke the
+    # joint stiction); 0 = frictionless arm
+    arm_friction: np.ndarray = field(default_factory=lambda: np.array([1.5, 1.5, 0.05]))
 
 
 class PegHoleC3:
@@ -67,15 +73,18 @@ class PegHoleC3:
         Ts = T * 1000.0 / S1[None, :]
         phis = phi * 1000.0
         mu = mdl.g.mu
-        # variable layout per stage k: x_{k+1} (3), u_k (3), lam_k (3m), gam_k (m), eta_k (4m)
+        # variable layout per stage k: x_{k+1} (3), u_k (3), lam_k (3m), gam_k (m), eta_k (4m),
+        # arm friction f+ (3), f- (3), gamma_a (3), eta_a (9)
         nl, ng, ne = 3 * m, m, 4 * m
-        nv = 3 + 3 + nl + ng + ne
+        nv = 3 + 3 + nl + ng + ne + 18
         n = Nh * nv
         ix = lambda k: k * nv  # noqa: E731
         iu = lambda k: k * nv + 3  # noqa: E731
         il = lambda k: k * nv + 6  # noqa: E731
         ig = lambda k: k * nv + 6 + nl  # noqa: E731
         ie = lambda k: k * nv + 6 + nl + ng  # noqa: E731
+        ia = lambda k: k * nv + 6 + nl + ng + ne  # noqa: E731  f+ (3), f- (3), gamma_a (3), eta_a (9)
+        Fs = np.asarray(cfg.arm_friction, float)
         # --- cost
         P = sp.lil_matrix((n, n))
         q = np.zeros(n)
@@ -113,6 +122,7 @@ class PegHoleC3:
             lam_order += list(range(ig(k), ig(k) + ng))
             eta_order = list(range(ie(k), ie(k) + ne))
             sel += list(zip(lam_order, eta_order))
+            sel += [(ia(k) + j, ia(k) + 9 + j) for j in range(9)]  # (f+, eta_a+), (f-, eta_a-), (gamma_a, eta_ag)
             del a_idx
         sel = np.array(sel, dtype=int).reshape(-1, 2)
         for a, b in sel:  # explicit diagonal entries for the rho term (same sparsity for every rho)
@@ -128,12 +138,25 @@ class PegHoleC3:
             Al.append((coeffs, l, h))
 
         for k in range(Nh):
-            for j in range(3):  # dynamics x_{k+1} - u_k - CW lam_k = 0
-                c = {ix(k) + j: 1.0, iu(k) + j: -1.0}
+            for j in range(3):  # dynamics x_{k+1} - u_k - C (W lam_k + f+ - f-) = 0
+                c = {ix(k) + j: 1.0, iu(k) + j: -1.0, ia(k) + j: -C_s[j, j], ia(k) + 3 + j: C_s[j, j]}
                 for col in range(nl):
                     if abs(CW[j, col]) > 0:
                         c[il(k) + col] = -CW[j, col]
                 add(c, 0.0, 0.0)
+            for j in range(3):  # arm stiction: eta_a+- - gamma_a -+ (x_{k+1} - x_k) = 0 ; eta_ag + f+ + f- = F_s
+                for sgn, off in ((1.0, 0), (-1.0, 3)):
+                    c = {ia(k) + 9 + off + j: 1.0, ia(k) + 6 + j: -1.0, ix(k) + j: -sgn}
+                    rhs = 0.0
+                    if k == 0:
+                        rhs = -sgn * x0s[j]
+                    else:
+                        c[ix(k - 1) + j] = sgn
+                    add(c, rhs, rhs)
+                Fs_s = Fs[j]
+                add({ia(k) + 15 + j: 1.0, ia(k) + j: 1.0, ia(k) + 3 + j: 1.0}, Fs_s, Fs_s)
+            for col in range(9):  # f+-, gamma_a >= 0
+                add({ia(k) + col: 1.0}, 0.0, np.inf)
             for i in range(m):
                 # eta_n - N (x_{k+1} - x0) = phi
                 c = {ie(k) + i: 1.0}

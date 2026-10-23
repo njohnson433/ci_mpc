@@ -30,6 +30,9 @@ cartesian_impedance_controller:
     # external wrench estimate (momentum observer, ~/external_wrench, Franka sign convention) on the measured link-side
     # joint torques (Isaac effort state = torque transmitted through the joint, like the FR3 torque sensors; known
     # wrench at rest: exact). observer_armature only applies to observer_torque_source: command.
+    # model-based contact phases (peg demo, Python planning at 10 Hz, up to ~70 ms per step) block the command
+    # stream briefly; hold the last command longer before falling back to holding the current pose
+    mpc_timeout: 0.2
     observer_gain: 30.0
     observer_torque_source: measured
     observer_gravity: false
