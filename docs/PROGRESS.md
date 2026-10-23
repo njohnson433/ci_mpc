@@ -43,6 +43,38 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24: CI-MPC step 2, planar peg-hole model, C3+ and hole localization (offline)
+- **Model** (`ci_mpc_planner/peg_hole.py`):
+  - planar (x-z, tilt about y) Factory peg and hole: hole r 4.5 mm with a 1 mm chamfer, peg half width 3.993 mm
+    with a 0.5 mm chamfer
+  - contacts: 4 peg vertices vs the hole segments, 4 hole rim vertices vs the peg sides
+  - quasi-static impedance x+ = u + C W λ (C = controller compliance)
+  - Stewart-Trinkle complementarity for the MPC.
+- **Offline plant:** Lemke on that LCP failed on most steps (ray termination with the friction rows, even after
+  scaling to mm), so the plant uses the convex Anitescu relaxation (dual QP with OSQP: always solvable; sliding
+  contacts separate by μ·slip). It reproduces the Isaac failure: at 1–2 mm offset a straight push jams on the
+  chamfer (K_x 1500, μ 0.75 on a 45° chamfer), at 3 mm the peg rests on the top face.
+- **C3+** (`ci_mpc_planner/c3.py`):
+  - ADMM: OSQP QP plus a closed-form projection per complementarity pair, N 8, 12 iterations
+  - grasp wrench limits and command steps as convex constraints
+  - 20–25 ms per solve
+  - ρ0 1 → 10: complementarity violation 3.0 → 0.14.
+- **Hole localization** (`ci_mpc_planner/hole_estimator.py`): particle filter over the hole x; each particle predicts
+  the step with the contact model, weighted by the measured TCP pose and contact wrench.
+- **Results** (offline, true hole at +h, estimate 0; success = tip within 1 mm of the bottom):
+
+  | policy | 1 mm | 2 mm | 3 mm | 4 mm | 5 mm | −3 mm |
+  |---|---|---|---|---|---|---|
+  | straight down, no localization | ✅ | ❌ jam | ❌ on top | | | |
+  | C3, model at the wrong hole, no localization | ❌ 3 mm short | ❌ | ❌ | | | |
+  | **straight down + localization** | | ✅ 53 steps | ✅ 52 | | ✅ 53 | |
+  | **C3 + localization** | ✅ 63 | ✅ 91 | ✅ 92 | ✅ 126 | ✅ 95 | ✅ 68 |
+
+- **Honest reading:** offline, localization from contact is what fixes it; the CI-MPC adds nothing on top (it is
+  slower). The offline plant has a rigid grasp, no joint stiction and no tilt jamming, which are the effects the
+  CI-MPC's force and grasp limits target and that broke the Isaac runs. Next: Isaac with three contact strategies
+  (spiral / localization + straight down / localization + C3) on the same offsets.
+
 ### 2026-10-24: CI-MPC step 1, external wrench estimate in sim
 - **Controller** (`cartesian_impedance_control` 153c12b):
   - generalized momentum observer r = K_O (M q̇ − ∫(τ + Cᵀq̇ − g + r)dt − p0), K_O 30
