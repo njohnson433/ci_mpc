@@ -217,7 +217,8 @@ else:
     for exe_name in ("depth_noise", "box_detector"):
         procs.append(subprocess.Popen([os.path.join(perc, exe_name), "--ros-args", "-p", "use_sim_time:=true",
                                        "-p", f"seed:={args.seed}"] if exe_name == "depth_noise" else
-                                      [os.path.join(perc, exe_name), "--ros-args", "-p", "use_sim_time:=true"],
+                                      [os.path.join(perc, exe_name), "--ros-args", "-p", "use_sim_time:=true",
+                                       "-p", f"debug_dir:={os.path.join(args.log_dir, 'camera_debug')}"],
                                       stdout=det_log, stderr=subprocess.STDOUT))
 exe = os.path.join(get_package_prefix("ci_mpc_planner"), "lib", "ci_mpc_planner", "mpc_node")
 cfg = os.path.join(get_package_share_directory("ci_mpc_planner"), "config", "mpc_sim.yaml")

@@ -4,11 +4,14 @@
 Pipeline per frame (color and depth paired by stamp, camera pose from /joint_states at that stamp via Pinocchio FK of
 the hand and the mount in the camera config; on the real robot: the hand-eye calibration):
   1. 2D: colored-object masks (HSV thresholds; the stand-in for a learned detector such as YOLO + its class ->
-     box name), largest connected component per color, at least `min_pixels`.
+     box name), largest connected component per color, at least `min_pixels`; then grown by depth: all pixels at
+     the mask's top height that connect to it (lit faces lose saturation, the depth is still there).
   2. 3D: the mask's valid depth pixels back-projected into the base frame.
   3. Box fit: top face = points within `top_band` of the highest; center xy, yaw (mod 90 deg) and xy extent from
      the minimum-area rectangle of the top face (cv2.minAreaRect); height = top - lowest visible point of the box
      (its sides; 2nd percentile); if too few side points: top - table height (`table_z`). Center z = top - h / 2.
+     Top faces thinner than `min_extent` are dropped (a sliver means a bad mask), and so are boxes under a higher
+     detected box (covered: only their sides are visible).
 Assumes boxes lie flat (yaw only). Parameters: config, colors (name:color pairs), min_pixels, top_band, joint_stamp.
 """
 import bisect
@@ -43,17 +46,21 @@ class BoxDetector(Node):
         dp("min_pixels", 150)
         dp("top_band", 0.006)
         dp("table_z", 0.2)
-        dp("min_saturation", 90)
+        dp("min_saturation", 50)  # 90: sunlit top faces (saturation 90-110) dropped out with the GUI's exposure
+        dp("min_extent", 0.01)    # [m] smaller top-face extents are rejected (sliver = bad mask), not published
         # joint states timed by their header stamp ("header", real robot) or by arrival on this node's clock
         # ("arrival", sim: Isaac's in-process controller manager stamps /joint_states ~0.24 s behind /clock)
         dp("joint_stamp", "arrival")
+        dp("debug_dir", "")  # save color + mask overlays here every debug_period seconds (sim time)
+        dp("debug_period", 2.0)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         cfg = yaml.safe_load(open(gp("config")))["camera"]
         self.T_hand_cam = optical_in_hand(cfg)
         self.colors = dict(kv.split(":") for kv in gp("colors"))
         self.min_pixels, self.top_band, self.table_z = gp("min_pixels"), gp("top_band"), gp("table_z")
-        self.min_sat = gp("min_saturation")
+        self.min_sat, self.min_extent = gp("min_saturation"), gp("min_extent")
         self.joint_stamp = gp("joint_stamp")
+        self.debug_dir, self.debug_period, self.t_debug = gp("debug_dir"), gp("debug_period"), -1e9
         full = pin.buildModelFromUrdf(gp("urdf_path"))
         lock = [j for j in range(1, full.njoints) if full.names[j] not in ARM]
         self.model = pin.buildReducedModel(full, lock, pin.neutral(full))
@@ -123,9 +130,16 @@ class BoxDetector(Node):
         fx, fy, cx, cy = self.info.k[0], self.info.k[4], self.info.k[2], self.info.k[5]
         hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
         sat_ok = (hsv[..., 1] > self.min_sat) & (hsv[..., 2] > 40)
+        debug = self.debug_dir and t - self.t_debug >= self.debug_period
+        overlay = rgb.copy() if debug else None
+        # all pixels in the base frame (for growing the top faces by height)
+        vv, uu = np.mgrid[0:z.shape[0], 0:z.shape[1]]
+        P = np.stack([(uu - cx) * z / fx, (vv - cy) * z / fy, z], axis=-1) @ T[:3, :3].T + T[:3, 3]
+        Zb = np.where(z > 0, P[..., 2], np.nan)
         out = Detection3DArray()
         out.header.frame_id = "base"
         out.header.stamp = msg.header.stamp
+        found = []
         for name, color in self.colors.items():
             mask = np.zeros(z.shape, bool)
             for lo, hi in HUES[color]:
@@ -139,20 +153,43 @@ class BoxDetector(Node):
             k = int(np.argmax(sizes)) + 1
             if sizes[k - 1] < self.min_pixels:
                 continue
-            v, u = np.nonzero((lab == k) & (z > 0))
-            if len(u) < self.min_pixels // 2:
+            obj = (lab == k) & (z > 0)
+            if obj.sum() < self.min_pixels // 2:
                 continue
-            d = z[v, u]
-            pc = np.column_stack([(u - cx) * d / fx, (v - cy) * d / fy, d])
-            pb = pc @ T[:3, :3].T + T[:3, 3]
+            # grow the top face by height: pixels at the top's height connected to the color mask, any color
+            # (a brightly lit face loses saturation; its depth is still there)
+            top = np.percentile(Zb[obj], 98)
+            plane = (np.abs(np.nan_to_num(Zb, nan=-1.0) - top) < self.top_band) & (top > self.table_z + 0.01)
+            plab, pn = ndimage.label(plane)
+            hit = np.unique(plab[obj & plane])
+            obj |= np.isin(plab, hit[hit > 0])
+            if debug:
+                overlay[obj] = (0.5 * overlay[obj] + [127, 127, 0]).astype(np.uint8)
+            pb = P[obj]
             det = self.fit_box(pb)
             if det is None:
                 continue
-            center, yaw, size = det
+            found.append((name, *det))
+        # covered boxes: center under the footprint of a higher detected box -> only its sides are seen and the fit
+        # is wrong (a box under another one was 16-20 mm off): not published
+        for name, center, yaw, size in found:
+            top = center[2] + size[2] / 2
+            covered = any(np.linalg.norm(center[:2] - c2[:2]) < 0.5 * max(s2[:2]) and c2[2] + s2[2] / 2 > top + 0.01
+                          for n2, c2, _, s2 in found if n2 != name)
+            if covered:
+                self.drops["covered"] += 1
+                continue
             out.detections.append(self.detection(name, center, yaw, size, out.header))
             self.seen[name] += 1
         self.frames += 1
         self.pub.publish(out)
+        if debug:
+            self.t_debug = t
+            import os
+            os.makedirs(self.debug_dir, exist_ok=True)
+            cv2.imwrite(os.path.join(self.debug_dir, f"{t:08.2f}_color.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(self.debug_dir, f"{t:08.2f}_masks.png"), cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(self.debug_dir, f"{t:08.2f}_sat.png"), hsv[..., 1])
 
     def fit_box(self, pb):
         top = np.percentile(pb[:, 2], 98)
@@ -160,6 +197,9 @@ class BoxDetector(Node):
         if len(face) < 20:
             return None
         (cxm, cym), (w, h), ang = cv2.minAreaRect((face[:, :2] * 1000.0).astype(np.float32))
+        if min(w, h) < self.min_extent * 1000.0:
+            self.drops["top face too thin"] += 1
+            return None
         yaw = (np.radians(ang) + np.pi / 4) % (np.pi / 2) - np.pi / 4  # box yaw mod 90 deg, in [-45, 45)
         k = int(round((np.radians(ang) - yaw) / (np.pi / 2)))
         sx, sy = (w, h) if k % 2 == 0 else (h, w)  # w lies along the rectangle angle

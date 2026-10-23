@@ -78,6 +78,16 @@ Read this before starting work (and before re-investigating something "new").
   21.9 s sim (2 viewing moves). Sizes are 2–5 mm small: the edge holes eat the top face's border. Once box0 is on
   box1, box1's estimate is off by 20 mm (only a 4 mm strip visible). It isn't used (the demo places on the top
   box), but a real pipeline needs occlusion handling. Camera runs: RTF ~0.6 (render + physics).
+- **GUI run failed, headless passed (user run):**
+  - With the Isaac window open, the sunlit top faces render a bit brighter (saturation 90-110, the threshold was
+    90). Green's mask was only its shaded side (a 1.2 mm sliver), so its center was 19.6 mm off. box0 was placed on
+    it and fell off; box2's mask (17 mm) gave too small an opening, and the fingers landed on it (TCP stuck 24 mm).
+  - Fix: saturation threshold 50 and the top face grown by depth (all pixels at the mask's top height connected
+    to it, any color).
+  - Also: slivers (< 1 cm top face) are dropped, and covered boxes (center under a higher detected box) are not
+    published.
+  - After the fix the window and headless runs are identical: base 2.6 mm, tower top 1.9 / 2.0 mm off the base.
+  - The ~1.45 mm "TCP error" per segment is the segment end tolerance (1.5 mm), not a tracking error.
 
 ### 2026-10-23 (evening): box stacking demo (stage-1 MPC)
 - `scripts/demo_stack.sh [--noise] [--headless]` → `scripts/stack_demo.py`:
