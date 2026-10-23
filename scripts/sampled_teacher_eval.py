@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 
+from ci_mpc_planner.peg_hole import PegHoleGeometry
 from ci_mpc_planner.peg_hole_3d import PegHole3D
 from ci_mpc_planner.c3_student import C3Selector, C3Student
 from ci_mpc_planner.sampled_teacher import SampledTeacher, heuristic_command
@@ -16,6 +17,9 @@ p.add_argument("--seed", type=int, default=0)
 p.add_argument("--steps", type=int, default=60)
 p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu"])
 p.add_argument("--student", default="")
+p.add_argument("--plant-mu", type=float, default=None, help="held-out H4: true friction (model keeps 0.75)")
+p.add_argument("--plant-R", type=float, default=None, help="held-out H4: true hole radius [mm] (model 4.5)")
+p.add_argument("--plant-fa-scale", type=float, default=1.0, help="held-out H4: true arm stiction scale")
 p.add_argument("--gpu-wforce", type=float, default=0.5, help="gpu policy: weight of the force penalty above f_soft")
 p.add_argument("--gpu-fsoft", type=float, default=3.0, help="gpu policy: force [N] above which it is penalized")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
@@ -27,11 +31,17 @@ fa = np.array([2.0, 2.0, 3.5, 0.05, 0.05])
 for ep in range(args.episodes):
     r, a = rng.uniform(0.3, 1.8), rng.uniform(0, 2 * np.pi)
     off = np.array([r * np.cos(a), r * np.sin(a)]) / 1000.0
-    plant = PegHole3D(hole_xy=-off, n_ring=8, n_rim=12)
+    geo_true = PegHoleGeometry()
+    if args.plant_mu is not None:
+        geo_true.mu = args.plant_mu
+    if args.plant_R is not None:
+        geo_true.R = args.plant_R / 1000.0
+    plant = PegHole3D(geo_true, hole_xy=-off, n_ring=8, n_rim=12)
+    fa_true = fa * args.plant_fa_scale
     tb = plant.g.tip_below_tcp
     x = np.array([0.0, 0.0, tb + 0.0005, 0.0, 0.0])
     for _ in range(10):
-        x, lam, nc = plant.step(x, np.array([0, 0, x[2] - 0.004, 0, 0]) + comp * np.array([0, 0, -3.0, 0, 0]), comp, fa)
+        x, lam, nc = plant.step(x, np.array([0, 0, x[2] - 0.004, 0, 0]) + comp * np.array([0, 0, -3.0, 0, 0]), comp, fa_true)
     w = plant.contact_wrench(lam) if nc else np.zeros(5)
     err = rng.normal(0, args.est_error, 2) / 1000.0
     student = C3Student(args.student) if args.policy == "student" else None
@@ -67,7 +77,7 @@ for ep in range(args.episodes):
             ff = np.zeros(5)
         else:
             u, ff = heuristic_command(x, w)
-        x, lam, nc = plant.step(x, u + comp * ff, comp, fa)
+        x, lam, nc = plant.step(x, u + comp * ff, comp, fa_true)
         w = plant.contact_wrench(lam) if nc else np.zeros(5)
         peak = max(peak, np.linalg.norm(w[:3]))
         if plant.tip(x)[2] < -0.005:
