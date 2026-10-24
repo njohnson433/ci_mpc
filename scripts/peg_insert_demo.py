@@ -556,9 +556,12 @@ elif args.strategy == "probe":
                 c["u_cmd"] = (np.array([O[0] + ug[0], O[1] + ug[1], O[2] + ug[2] + c["z_bias"]]), R)
                 c["ff"] = np.zeros(3)  # the MPC's set-point already contains the feedforward as an offset
                 spin_sim(dt)
-                belief.update(measure5(), force3(0.1))  # the engaged contact informs the belief too
                 if tip_z(measure5()) < -0.005:
                     break
+            # the engaged contact informs the belief once, like a probe (2026-10-24: one update per GPU step counted up
+            # to 80 correlated measurements as independent; the belief collapsed to 0.02 mm on a wrong spot and the
+            # MPC chased it: track B 4/10 vs probe 24/30)
+            belief.update(measure5(), force3(0.3))
             print(f"    GPU MPC: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
                   f"{np.mean(c['mpc_ms']):.0f} ms per decision", flush=True)
         elif engaged:
