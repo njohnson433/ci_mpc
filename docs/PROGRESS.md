@@ -122,6 +122,24 @@ Read this before starting work (and before re-investigating something "new").
     - C3 refine works for a different reason: its own force-regularized, physics-constrained objective.
   - Conclusion: a learned convex surrogate of the same cost cannot beat exact sampling of it. Its only possible
     gain is speed, at the sampler's quality, which it does not reach.
+- **H2 (held out, Isaac gear mesh) done:**
+
+  | condition | spiral | probe | probe + GPU entry |
+  |---|---|---|---|
+  | nominal (5 random 1–4 mm errors) | 1/5 | 3/5 | 2/5 |
+  | gear 1° off the meshing yaw | 0/3 | 0/3 | – |
+  | gear 3° off | 0/3 | 0/3 | – |
+
+  - **Main failure: tooth-on-tooth.** The gear is centred on the shaft axis (xy error ~0.25 mm) but stops 9–12 mm
+    above the seat, the height where the 2° drop test jammed.
+  - Even 1° fails, although it is inside the drop test's tolerance; the search motion probably adds rotation
+    (gear yaw at the stall is not logged: unverified).
+  - The rest are misses of the shaft at 3–4 mm errors.
+  - **Mechanism:** our strategies find the shaft but never command rotation about it (the 5-D command has no
+    yaw). A gear task needs a yaw search or compliance, e.g. a small yaw dither while pressing, or low rotational
+    stiffness about z.
+  - The GPU entry does not help here (2/5 vs 3/5). Its contact model is a round peg, so it has no notion of the
+    teeth.
 - **H1 (held out, Isaac; 5 conditions × 3 random 1–4 mm errors): probe 14/15, spiral 7/15.**
   - Probe per condition: friction 0.5 3/3, friction 1.0 2/3, grasp offset 3/3, hole elsewhere 3/3, hole tilt
     2° 3/3.
