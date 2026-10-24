@@ -70,7 +70,11 @@ Read this before starting work (and before re-investigating something "new").
   - **Mechanism:** a division of labour. The sampler picks the mode, which prevents C3's mode failures (C3 alone
     enters 4/30). C3's force-regularized QP smooths the commands inside that mode, cutting the force tail.
   - Below −1, C3 overrides even good samples and gets stuck again (−2: 23/30).
-  - The max (~6 N) is probably the start transient (not verified for this policy yet).
+  - **The max is the start transient (verified):** the run reproduces exactly (p90 3.71 N), and the two largest
+    peaks (6.42 / 5.65 N) both come at step 1 (10/30 episodes peak there).
+    - Likely mechanism: the eval's engaging press preloads ~5 N (4 mm × 500 N/m + 3 N ff) before the policy
+      acts, so step 1 reads the eval setup, not policy behaviour.
+    - The largest mid-episode peak is 4.31 N (step 5). The eval now logs the peak step.
 - **Sampler-seed check** (same 30 starts; sampler seed offsets 0 / 1 / 2; all 30/30):
 
   | policy | p90 per seed | mean p90 | mean peak median | steps median |

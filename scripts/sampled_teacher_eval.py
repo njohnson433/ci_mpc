@@ -57,7 +57,7 @@ for ep in range(args.episodes):
     goal_est = np.array([*(-off + err), plant.g.tip_below_tcp - plant.g.depth, 0.0, 0.0])
     teacher = SampledTeacher(PegHole3D(hole_xy=-off, n_ring=8, n_rim=12), comp, fa)
     goal = np.array([*(-off), tb - plant.g.depth, 0.0, 0.0])
-    u, peak, srcs, t0 = x.copy(), 0.0, {}, time.perf_counter()
+    u, peak, peak_step, srcs, t0 = x.copy(), 0.0, 0, {}, time.perf_counter()
     for k in range(args.steps):
         if args.policy == "teacher":
             u, ff, info = teacher.act(plant, x, goal, u, w)
@@ -100,10 +100,11 @@ for ep in range(args.episodes):
             u, ff = heuristic_command(x, w)
         x, lam, nc = plant.step(x, u + comp * ff, comp, fa_true)
         w = plant.contact_wrench(lam) if nc else np.zeros(5)
-        peak = max(peak, np.linalg.norm(w[:3]))
+        if np.linalg.norm(w[:3]) > peak:
+            peak, peak_step = np.linalg.norm(w[:3]), k + 1
         if plant.tip(x)[2] < -0.005:
             break
     tip = plant.tip(x)
     print(f"{args.policy} ep {ep}: offset {np.round(off * 1000, 2)} mm: {'ENTERED' if tip[2] < -0.005 else 'stuck'} after "
-          f"{k + 1} steps, tip z {tip[2] * 1000:+.2f} mm, peak force {peak:.2f} N, {(time.perf_counter() - t0) / (k + 1):.1f} s/step, "
+          f"{k + 1} steps, tip z {tip[2] * 1000:+.2f} mm, peak force {peak:.2f} N (step {peak_step}), {(time.perf_counter() - t0) / (k + 1):.1f} s/step, "
           f"sources {srcs}", flush=True)
