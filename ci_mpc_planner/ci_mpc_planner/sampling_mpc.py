@@ -16,14 +16,17 @@ import math
 import numpy as np
 import torch
 
+from ci_mpc_planner.peg_hole import PegHoleGeometry
 from ci_mpc_planner.peg_hole_3d_torch import BatchedPegHole3D
 
 
 class SamplingMPC:
     def __init__(self, compliance, arm_friction, horizon=4, n_random=192, iters=200, f_soft=3.0, w_depth=1.0,
                  w_center=1.0, w_force=0.5, du_max=(5e-4, 5e-4, 5e-4, 0.01, 0.01), device="cuda",
-                 dtype=torch.float32, seed=0):
-        self.plant = BatchedPegHole3D(n_ring=8, n_rim=12, device=device, dtype=dtype, compiled=True)
+                 dtype=torch.float32, seed=0, geo=None):
+        """geo: PegHoleGeometry (default: the Factory 8 mm peg)."""
+        self.plant = BatchedPegHole3D(geo or PegHoleGeometry(), n_ring=8, n_rim=12, device=device, dtype=dtype,
+                                      compiled=True)
         self.comp, self.fa = np.asarray(compliance), np.asarray(arm_friction)
         self.H, self.n_random, self.iters = horizon, n_random, iters
         self.f_soft, self.w = f_soft, (w_depth, w_center, w_force)

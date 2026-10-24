@@ -25,6 +25,7 @@ parser.add_argument("--peg-drop-test", action="store_true", help="peg: also drop
 parser.add_argument("--peg-friction", type=float, default=None, help="peg: contact friction (default 0.75)")
 parser.add_argument("--gear", action="store_true", help="add the Factory gear mesh (held-out H2, SDF)")
 parser.add_argument("--gear-base-xy", default="0.5,0.05", help="gear: base x,y [m]")
+parser.add_argument("--gear-yaw-error", type=float, default=0.0, help="gear: yaw off the meshing yaw [deg]")
 parser.add_argument("--gear-drop-test", action="store_true", help="gear: also drop free gears onto extra shafts")
 parser.add_argument("--peg-hole-tilt", type=float, default=0.0, help="peg: hole block tilt about x [deg]")
 parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
@@ -72,7 +73,8 @@ if pick_lib:
 if cam_lib:
     cam_lib["add_camera"](stage)
 if gear_lib:
-    gear_lib["add_objects"](stage, [float(v) for v in args.gear_base_xy.split(",")], drop_test=args.gear_drop_test)
+    gear_lib["add_objects"](stage, [float(v) for v in args.gear_base_xy.split(",")], drop_test=args.gear_drop_test,
+                            yaw_error_deg=args.gear_yaw_error)
 if peg_lib:
     peg_lib["add_objects"](stage, [float(v) for v in args.peg_hole_xy.split(",")], drop_test=args.peg_drop_test,
                            friction=args.peg_friction, hole_tilt_deg=args.peg_hole_tilt)

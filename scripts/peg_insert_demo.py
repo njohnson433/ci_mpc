@@ -87,6 +87,11 @@ p.add_argument("--pos-noise", type=float, default=0.0)
 p.add_argument("--size-noise", type=float, default=0.0)
 p.add_argument("--yaw-noise-deg", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
+p.add_argument("--grasp-depth", type=float, default=0.010, help="TCP this far below the object top [m] (gear: 0.004, "
+               "the finger pads must stay on the hub, above the teeth)")
+p.add_argument("--open-width", type=float, default=0.03, help="gripper opening before the grasp [m] (gear: 0.05)")
+p.add_argument("--geo", default="", help="contact model geometry R,c,depth,a,pc [m] (default: the Factory 8 mm peg; "
+               "gear on its shaft: 0.005,0.0005,0.020,0.00475,0.0001)")
 args = p.parse_args()
 
 PLACE = np.array([0.45, 0.12])
@@ -270,6 +275,9 @@ if not spin_until(lambda: "start pose" in open(mpc_log.name).read() and state["d
     finish(2)
 
 # --- peg-in-hole
+GEO = dict(zip(("R", "c", "depth", "a", "pc"), map(float, args.geo.split(",")))) if args.geo else {}
+
+
 def parse(d):
     c = d.bbox.center
     return np.array([c.position.x, c.position.y, c.position.z]), np.array([d.bbox.size.x, d.bbox.size.y, d.bbox.size.z])
@@ -287,7 +295,7 @@ hole_est = hole_top + offset
 tr0 = truth()
 R = T_home.rotation
 peg_top = peg_c[2] + peg_size[2] / 2
-z_grasp = peg_top - 0.010
+z_grasp = peg_top - args.grasp_depth
 tip_below_tcp = z_grasp - (peg_c[2] - peg_size[2] / 2)  # nominal: what the controller assumes
 g_off = np.array([float(v) for v in args.grasp_offset.split(",")]) / 1000.0
 grasp_xy = peg_c[:2] + np.array([g_off[0], 0.0])
@@ -296,7 +304,7 @@ print(f"PEG at {np.round(peg_c, 4)}, HOLE opening at {np.round(hole_top, 4)}, pe
       f"{np.round(offset[:2] * 1000, 2)} mm -> hole estimate {np.round(hole_est, 4)}; tip {tip_below_tcp * 1000:.1f} mm "
       f"below the TCP", flush=True)
 t_start = state["t"]
-gripper(0.03, settle=0.5)
+gripper(args.open_width, settle=0.5)
 segment("A home -> above peg -> grasp", [(np.array([*grasp_xy, Z_SAFE]), R), (np.array([*grasp_xy, z_grasp_actual]), R)])
 gripper(0.0, settle=1.0)
 closed = state["fingers"]
@@ -414,7 +422,7 @@ elif args.strategy == "probe":
     from ci_mpc_planner.hole_belief import HoleBelief
     from ci_mpc_planner.peg_hole import PegHoleGeometry
 
-    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp)
+    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **GEO)
     O = np.array([hole_est[0], hole_est[1], hole_tip_z])
     # lateral force evidence off: in Isaac the estimate's lateral error while pressing (~1 N) is the size of the
     # chamfer's push; the belief uses the robust part only ("the peg did not drop: the hole is not under the tip")
@@ -469,7 +477,8 @@ elif args.strategy == "probe":
         srv_log = open(os.path.join(args.log_dir, "gpu_mpc_server.log"), "w")
         procs.append(subprocess.Popen([os.path.expanduser("~/IsaacLab/.venv/bin/python"),
                                        os.path.join(os.path.dirname(os.path.abspath(__file__)), "gpu_mpc_server.py"),
-                                       "--port", str(port)], stdout=srv_log, stderr=subprocess.STDOUT,
+                                       "--port", str(port)] + (["--geo", f"{args.geo},{tip_below_tcp}"] if args.geo else []),
+                                      stdout=srv_log, stderr=subprocess.STDOUT,
                                       env={k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "ROS",
                                                                                                       "AMENT", "LD_"))}))
         t_wait = time.time()
@@ -586,7 +595,7 @@ else:
 
     Kc = np.array([K_search[0], K_search[2], K_search[4] / 2.0])  # rotational: K/2 per rad (quaternion error)
     comp = 1.0 / Kc
-    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp)
+    geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **GEO)
     O = np.array([hole_est[0], hole_est[1], hole_tip_z])  # model frame: estimated hole axis, opening plane
     peg_model = PegHole(geo, 0.0)
     arm_fric = np.array([2.0, 3.5, 0.05])  # the arm's stiction in TCP coordinates (z: 3 N of spring did not move it)

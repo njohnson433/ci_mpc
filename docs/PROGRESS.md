@@ -62,7 +62,29 @@ Read this before starting work (and before re-investigating something "new").
     10 mm**.
   - So H2 tests a DOF our peg strategies never use (the 5-D command has no yaw). The yaw tolerance is < 2°, and
     either the grasp yaw must be that good or a yaw search is needed.
-  - Next: the demo for the gear (grasp, lift, place over the shaft with an xy error), then the baselines.
+  - Demo: `scripts/demo_gear.sh`, the peg demo with `--geo` set to the contact model for the bore on the shaft
+    (also passed to the GPU MPC server), `--open-width 0.05` and `--grasp-depth 0.004`.
+    - Grasp failures before that: a 30 mm opening landed the fingers on the 30 mm hub; grasping 10 mm below the top
+      put the pads on the teeth (closed at 42 mm).
+    - Smoke tests at 0 offset (setup only, nothing tuned): spiral 0.15 / 0.11 mm in 6.3 s; probe 0.11 / 0.05 mm;
+      probe + GPU entry 0.12 / 0.10 mm (456 ms per decision).
+  - `scripts/heldout_h2.sh` is queued; it starts after `run_weekend.sh`'s "all done". Conditions:
+    - nominal: 5 random errors × spiral / probe / GPU
+    - yaw 1° and 3°: 3 errors each × spiral / probe
+- **Memory, measured:** each Isaac instance takes **~6.2 GB** RSS (not 3–4 GB). 4 instances plus H4's 3 workers leave
+  ~3 GB free, so dev runs go through a ≥ 9 GB guard.
+- **H4 so far** (offline, 30 fair starts; true plant varied, the MPC keeps its nominal model):
+
+  | condition | heuristic entered | GPU MPC entered | GPU peak p90 |
+  |---|---|---|---|
+  | mu 0.5 | 30/30 | 30/30 | 2.75 N |
+  | mu 1.0 | **10/30** | **30/30** | 6.57 N (heuristic 6.51 N) |
+  | R 4.4 (0.4 mm clearance) | **7/30** | **30/30** | 5.14 N |
+  | R 4.6 | 28/30 | 30/30 | 3.74 N |
+
+  The GPU MPC holds 30/30 under every plant change tested; the heuristic falls apart with high friction and tight
+  clearance. The force gate (p90 < 4 N) is missed under mu 1.0 and R 4.4 by both: more friction and tighter clearance
+  need more force to slide in.
 
 ### 2026-10-23: daily summary
 - **Stage 2, planar pushing (sim):** pusher-slider LTV MPC with a sticking contact: straight 20 cm 2.2–2.3 mm
