@@ -89,6 +89,8 @@ p.add_argument("--yaw-noise-deg", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
 p.add_argument("--grasp-depth", type=float, default=0.010, help="TCP this far below the object top [m] (gear: 0.004, "
                "the finger pads must stay on the hub, above the teeth)")
+p.add_argument("--gpu-refine-margin", type=float, default=None, help="--entry gpu: sample, then C3 refine "
+               "with this margin (offline choice: -1); default: the sampler alone")
 p.add_argument("--open-width", type=float, default=0.03, help="gripper opening before the grasp [m] (gear: 0.05)")
 p.add_argument("--geo", default="", help="contact model geometry R,c,depth,a,pc [m] (default: the Factory 8 mm peg; "
                "gear on its shaft: 0.005,0.0005,0.020,0.00475,0.0001)")
@@ -481,7 +483,9 @@ elif args.strategy == "probe":
         srv_log = open(os.path.join(args.log_dir, "gpu_mpc_server.log"), "w")
         procs.append(subprocess.Popen([os.path.expanduser("~/IsaacLab/.venv/bin/python"),
                                        os.path.join(os.path.dirname(os.path.abspath(__file__)), "gpu_mpc_server.py"),
-                                       "--port", str(port)] + (["--geo", f"{args.geo},{tip_below_tcp}"] if args.geo else []),
+                                       "--port", str(port)] + (["--geo", f"{args.geo},{tip_below_tcp}"] if args.geo else [])
+                                      + ([f"--refine-margin={args.gpu_refine_margin}"]
+                                         if args.gpu_refine_margin is not None else []),
                                       stdout=srv_log, stderr=subprocess.STDOUT,
                                       env={k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "ROS",
                                                                                                       "AMENT", "LD_"))}))

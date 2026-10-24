@@ -22,6 +22,7 @@ class SampleRefineMPC:
         """refiner: "c3" (one C3 solve warm-started from the best sample) or "icnn" (the learned convex cost-to-go,
         minimized in a box of +-box = (lateral step, press, tilt) around the best sample's action parameters)."""
         self.smpc = SamplingMPC(compliance, arm_friction, **sampler_kw)
+        self.geo = sampler_kw.get("geo")  # contact model geometry for C3 too (default: the peg)
         cfg = C33Config()
         cfg.rollout_every = 1  # the nominal is fresh every step
         cfg.arm_friction = np.asarray(arm_friction)
@@ -37,7 +38,9 @@ class SampleRefineMPC:
     def _c3_for(self, hole_xy):
         hole_xy = np.asarray(hole_xy, float)
         if self.c3 is None or np.linalg.norm(hole_xy - self.c3_hole) > 1e-4:  # rebuild when the estimate moves
-            self.c3 = PegHoleC3_3D(PegHole3D(hole_xy=hole_xy, n_ring=8, n_rim=12), self.comp, self.cfg)
+            model = PegHole3D(self.geo, hole_xy=hole_xy, n_ring=8, n_rim=12) if self.geo else \
+                PegHole3D(hole_xy=hole_xy, n_ring=8, n_rim=12)
+            self.c3 = PegHoleC3_3D(model, self.comp, self.cfg)
             self.c3_hole = hole_xy
         return self.c3
 
