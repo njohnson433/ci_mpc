@@ -43,6 +43,19 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (midday): sample, then QP-refine (user request)
+- **Idea:** the GPU sampler picks the mode (best sampled sequence); one 3D C3 solve warm-started from it refines
+  the commands inside that mode.
+  - Code: `ci_mpc_planner/refine_mpc.py` (`SampleRefineMPC`), `sampled_teacher_eval.py --policy refine
+    --refine-margin m`.
+  - The refined plan is used only if its score in the sampler's own rollout is ≥ the sample's + m.
+- **Fair 30 starts, margin 0:** 30/30, steps median 14, peak median 2.56 N, **p90 5.36 N**, max 6.29 N; C3 used on
+  8 % of steps. The sampler alone: 30/30, 14, 2.38 / 5.36 / 7.55 N.
+  - **No change in the tail.** The gate makes C3 beat the sample on the cost the sampler already maximizes, so it
+    rarely wins. That cost's force term did not move the tail before either (w_force 2.0: p90 5.42 N).
+  - Lower margins let C3's own (force-regularized) objective decide more often. Sweep −0.5 / −2 / always-C3 runs
+    on cores 16–31 after track B (`~/ci_mpc_runs/refine/`); the selector's binsel job runs after it.
+
 ### 2026-10-24 (midday): Track B (GPU MPC entry in Isaac) 4/10, a belief bug; AlphaNIST lever 2 negative
 - **Track B repeat 1:** probe `--entry gpu` 4/10, vs plain probe 24/30. All 6 failures end 2.7–8.7 mm off.
   - **Mechanism (bug):** the GPU phase called `belief.update` on every MPC step (up to 80 per engagement).

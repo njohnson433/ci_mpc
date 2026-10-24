@@ -15,13 +15,15 @@ p = argparse.ArgumentParser()
 p.add_argument("--episodes", type=int, default=5)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--steps", type=int, default=60)
-p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu"])
+p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu", "refine"])
 p.add_argument("--student", default="")
 p.add_argument("--plant-mu", type=float, default=None, help="held-out H4: true friction (model keeps 0.75)")
 p.add_argument("--plant-R", type=float, default=None, help="held-out H4: true hole radius [mm] (model 4.5)")
 p.add_argument("--plant-fa-scale", type=float, default=1.0, help="held-out H4: true arm stiction scale")
 p.add_argument("--gpu-wforce", type=float, default=0.5, help="gpu policy: weight of the force penalty above f_soft")
 p.add_argument("--gpu-fsoft", type=float, default=3.0, help="gpu policy: force [N] above which it is penalized")
+p.add_argument("--refine-margin", type=float, default=0.0, help="refine policy: C3 replaces the sample if its score "
+               "is at least this much higher")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
 rng = np.random.default_rng(args.seed)          # start states only: identical for every policy
@@ -56,8 +58,12 @@ for ep in range(args.episodes):
         if args.policy == "teacher":
             u, ff, info = teacher.act(plant, x, goal, u, w)
             srcs[info["source"]] = srcs.get(info["source"], 0) + 1
-        elif args.policy == "gpu":
-            if k == 0:
+        elif args.policy in ("gpu", "refine"):
+            if k == 0 and args.policy == "refine":  # sample, then QP-refine (ci_mpc_planner/refine_mpc.py)
+                from ci_mpc_planner.refine_mpc import SampleRefineMPC
+                gpu = SampleRefineMPC(comp, fa, margin=args.refine_margin, seed=args.seed, w_force=args.gpu_wforce,
+                                      f_soft=args.gpu_fsoft)
+            elif k == 0:
                 from ci_mpc_planner.sampling_mpc import SamplingMPC
                 gpu = SamplingMPC(comp, fa, seed=args.seed, w_force=args.gpu_wforce, f_soft=args.gpu_fsoft)
             wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
