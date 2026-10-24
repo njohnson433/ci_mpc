@@ -43,6 +43,30 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (midday): Track B (GPU MPC entry in Isaac) 4/10, a belief bug; AlphaNIST lever 2 negative
+- **Track B repeat 1:** probe `--entry gpu` 4/10, vs plain probe 24/30. All 6 failures end 2.7–8.7 mm off.
+  - **Mechanism (bug):** the GPU phase called `belief.update` on every MPC step (up to 80 per engagement).
+    Correlated measurements taken while the peg moves counted as independent, so the belief collapsed to std
+    0.02 mm on a wrong spot after the first engagement, and the MPC chased each false peak.
+  - Plain probe updates once per probe, and its belief stays wide (std ~5.2 mm) until the peg drops.
+  - Contributing: lateral force > 1.2 N counts as "engaged", so the GPU phase can start on the flat top face.
+  - **Fix:** one update per engagement. Prepared and swapped in atomically when phase 3 starts, so repeats 2–3
+    still run the code they started with. Clean rerun queued: `scripts/rerun_track_b.sh` (B2, 3 repeats) after
+    H3. The offline 30/30 result is unaffected (no belief offline).
+- **Lever 2, binary labels** (`scripts/relabel_binary.py`): same 3249 SGS states, labels "option, then the
+  heuristic for up to 20 steps, enters 2 mm without exceeding 6 N"; 2722 kept.
+
+  | labels | entered, seed 0 / 1 / 2 (of 30) | peak median |
+  |---|---|---|
+  | dense scores | 17 / 19 / 16 | 2.32–2.39 N |
+  | binary, heuristic continuation | **3 / 4 / 4** | 0.69–2.17 N |
+
+  - **Mechanism:** a label/deployment mismatch. ~8.5 of 10 options "enter" because the heuristic continuation does
+    the work, and the force tie-break then prefers the lightest-contact option.
+  - In closed loop no heuristic follows: the selector repeats that light option and never engages (median peak as
+    low as 0.69 N).
+  - On-policy variant queued (`binsel`: continuation = `sel_r0`, ~4 h on cores 16–31 from phase 3).
+
 ### 2026-10-24 (late morning): AlphaNIST lever 1, success-guided starts for the selector: no gain
 - **Setup:**
   - `ci_mpc_planner/start_cache.py`: 3 hole-error magnitude bins (0.3 / 0.8 / 1.3 / 1.8 mm, the fair eval's range)
