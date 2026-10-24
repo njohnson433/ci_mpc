@@ -152,7 +152,21 @@ Read this before starting work (and before re-investigating something "new").
     the work, and the force tie-break then prefers the lightest-contact option.
   - In closed loop no heuristic follows: the selector repeats that light option and never engages (median peak as
     low as 0.69 N).
-  - On-policy variant queued (`binsel`: continuation = `sel_r0`, ~4 h on cores 16–31 from phase 3).
+- **Lever 2 follow-ups (same states, 3 seeds each):**
+
+  | labels | entered (of 30) | peak median |
+  |---|---|---|
+  | binary, on-policy continuation (`sel_r0`) | 2 / 3 / 5 | 0.29–1.17 N |
+  | the same, no force tie-break (pure success) | 2 / 7 / 8 | 0.29–2.24 N |
+
+  - **Lever 2 is negative in all variants.** The tie-break is not the main cause; the label structure is.
+  - A binary label says "this option once, then a fixed continuation, enters". About 8 of 10 options pass in most
+    states, so the target is nearly uniform: it does not say which option to commit to step after step, while
+    dense scores rank options by progress.
+  - AlphaNIST's binary reward works because RL keeps re-estimating the closed-loop value under the current
+    policy; one-step supervised labels are no analogue of that.
+  - The selector line stays below the heuristic (best 19/30 vs 22/30). Sample-then-refine (above) is the stronger
+    use of the same idea (choose the mode, then a convex solve).
 
 ### 2026-10-24 (late morning): AlphaNIST lever 1, success-guided starts for the selector: no gain
 - **Setup:**
