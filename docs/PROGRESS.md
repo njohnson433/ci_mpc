@@ -81,6 +81,24 @@ Read this before starting work (and before re-investigating something "new").
 
   Margin −1 is chosen: p90 is 31 % lower on every seed and always under 4 N, for about one extra step.
   Next: H4 (held out) with margin −1, then Isaac (the GPU server needs the refiner).
+- **H4 (held out) for refine −1** (one sampler seed; `~/ci_mpc_runs/weekend/H4_refine/summary.txt`):
+
+  | condition | heuristic | sampler | refine | p90 heur / sampler / refine | peak median sampler → refine |
+  |---|---|---|---|---|---|
+  | mu 0.5 | 30/30 | 30/30 | 30/30 | 2.80 / 2.75 / **2.28** N | 2.47 → **1.46** N |
+  | mu 1.0 | 10/30 | 30/30 | 30/30 | 6.51 / 6.57 / **5.03** N | 3.90 → **2.13** N |
+  | R 4.4 | 7/30 | 30/30 | 30/30 | 4.94 / 5.14 / 5.01 N | 2.29 → **1.89** N |
+  | R 4.6 | 28/30 | 30/30 | 30/30 | 5.47 / **3.74** / 5.07 N | 2.14 → **1.86** N |
+  | stiction ×0.5 | 30/30 | 30/30 | 30/30 | 3.01 / 3.79 / 3.95 N | 2.98 → 3.31 N |
+  | stiction ×1.5 | 0/30 | 0/30 | 0/30 | no contact (degenerate) | – |
+
+  - **Typical force transfers, the tail does not.** Success is unchanged and the median peak is lower in 4/5
+    conditions (up to −45 %).
+  - The held-out p90 averages 4.27 N for refine vs 4.40 N for the sampler (dev set: −31 %). Refine is better in 2,
+    equal in 1, worse in 2.
+  - Likely reasons: the margin was chosen on the dev starts (selection), and one sampler seed moves p90 by about
+    ±0.6 N, so held-out p90 differences are mostly within noise.
+  - The honest claim: refine lowers typical contact force robustly; the force tail is unproven.
 - **ICNN cost-to-go (user's idea 2): negative** (`ci_mpc_planner/icnn.py`, `scripts/icnn_data.py`,
   `scripts/train_icnn.py`).
   - Setup: a PICNN convex in a continuous version of the sampler's candidate family (lateral step, press depth,
