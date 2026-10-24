@@ -43,6 +43,27 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (morning): weekend runs lost to an OOM, restarted; gear-mesh scene (H2)
+- **OOM, 2026-10-23 18:52.** Every weekend job died at once, and nothing ran overnight.
+  - The cause: 8 Isaac instances (Track A and Track B, 4 parallel each), plus the GPU MPC servers, the offline H4 and
+    a browser, on 31 GB of RAM. The kernel OOM-killer then took the user session.
+  - Kept: Track A repeat 1 (probe 8/10, spiral 3/10), the H4 mu0.5 lines and 2 bench_gpu runs (both inserted).
+  - Fix: `scripts/run_weekend.sh` runs the phases one after another (A reps 2–3 together with H4, then B with
+    3 repeats × 10 offsets at 3 parallel, then H1), started with `setsid nohup`.
+  - Also, `peg_benchmark.sh` no longer starts an Isaac instance while `MemAvailable` < `MIN_MEM_GB` (7), and
+    `repeat_benchmark.sh` takes `START=` to resume.
+- **H2 gear mesh** (`scripts/isaac/gear_scene.py`, `GEAR=1`, `GEAR_DROP_TEST=1`): Factory gear base plus the
+  small and large gears (kinematic); the medium gear lies free on the table. SDF collision is already in the assets.
+  - Measured geometry: shaft r 4.75 mm, top at z 25 mm (0.5 mm chamfer); bore r 5.00 mm, so 0.25 mm radial clearance;
+    20 mm travel to seated. Teeth: medium 40, small 20, large 60, with no tooth chamfer.
+  - **The asset frame is not in mesh at yaw 0:** tooth on tooth, a dropped gear stuck 10 mm above the seat. At
+    yaw +4.5° (half a pitch) it meshes, so `MESH_YAW` = 4.5.
+  - Drop test at `MESH_YAW`: aligned seats 0.12 mm high; 0.2 mm xy offset seats 0.04 mm; **2° yaw error jams at
+    10 mm**.
+  - So H2 tests a DOF our peg strategies never use (the 5-D command has no yaw). The yaw tolerance is < 2°, and
+    either the grasp yaw must be that good or a yaw search is needed.
+  - Next: the demo for the gear (grasp, lift, place over the shaft with an xy error), then the baselines.
+
 ### 2026-10-23: daily summary
 - **Stage 2, planar pushing (sim):** pusher-slider LTV MPC with a sticking contact: straight 20 cm 2.2–2.3 mm
   final, 90° arc 0.9–1.0 mm final (8 mm RMS), 10° start corrected to < 1° yaw. Open: the contact slides 9 mm

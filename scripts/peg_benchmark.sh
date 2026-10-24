@@ -12,6 +12,9 @@ PARALLEL=${PARALLEL:-4}
 mkdir -p "$OUT"
 i=0
 for off in $OFFSETS; do
+  # each Isaac instance takes ~3-4 GB: never start one below MIN_MEM_GB available (an OOM on 2026-10-23 killed
+  # every weekend job at once)
+  while [ "$(awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo)" -lt "${MIN_MEM_GB:-7}" ]; do sleep 20; done
   name="${STRATEGY}_${off/,/_}"
   dom=$((${DOMAIN_BASE:-60} + i % PARALLEL))
   mkdir -p "$OUT/$name"

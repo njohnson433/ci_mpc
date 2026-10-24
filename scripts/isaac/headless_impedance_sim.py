@@ -23,6 +23,9 @@ parser.add_argument("--peg", action="store_true", help="add the Factory 8 mm peg
 parser.add_argument("--peg-hole-xy", default="0.5,0.1", help="peg: hole x,y [m]")
 parser.add_argument("--peg-drop-test", action="store_true", help="peg: also drop free pegs into the hole")
 parser.add_argument("--peg-friction", type=float, default=None, help="peg: contact friction (default 0.75)")
+parser.add_argument("--gear", action="store_true", help="add the Factory gear mesh (held-out H2, SDF)")
+parser.add_argument("--gear-base-xy", default="0.5,0.05", help="gear: base x,y [m]")
+parser.add_argument("--gear-drop-test", action="store_true", help="gear: also drop free gears onto extra shafts")
 parser.add_argument("--peg-hole-tilt", type=float, default=0.0, help="peg: hole block tilt about x [deg]")
 parser.add_argument("--push", action="store_true", help="add table, slider box and a pusher rod on the hand")
 parser.add_argument("--push-xy", default="0.55,-0.15", help="push slider start x,y [m]")
@@ -50,6 +53,7 @@ home_lib = runpy.run_path(os.path.join(here, "set_home_pose.py"), run_name="lib"
 pick_lib = runpy.run_path(os.path.join(here, "pick_place_scene.py"), run_name="lib") if args.pick_place else None
 push_lib = runpy.run_path(os.path.join(here, "push_scene.py"), run_name="lib") if args.push else None
 peg_lib = runpy.run_path(os.path.join(here, "peg_scene.py"), run_name="lib") if args.peg else None
+gear_lib = runpy.run_path(os.path.join(here, "gear_scene.py"), run_name="lib") if args.gear else None
 cam_lib = runpy.run_path(os.path.join(here, "wrist_camera.py"), run_name="lib") if args.camera else None
 
 omni.usd.get_context().open_stage(args.scene)
@@ -67,6 +71,8 @@ if pick_lib:
     pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw, boxes)
 if cam_lib:
     cam_lib["add_camera"](stage)
+if gear_lib:
+    gear_lib["add_objects"](stage, [float(v) for v in args.gear_base_xy.split(",")], drop_test=args.gear_drop_test)
 if peg_lib:
     peg_lib["add_objects"](stage, [float(v) for v in args.peg_hole_xy.split(",")], drop_test=args.peg_drop_test,
                            friction=args.peg_friction, hole_tilt_deg=args.peg_hole_tilt)
@@ -141,6 +147,8 @@ if push_lib:
     gripper = push_lib["Poller"](args.sync_dir)
 if peg_lib:
     gripper = peg_lib["Poller"](args.sync_dir)
+if gear_lib:
+    gripper = gear_lib["Poller"](args.sync_dir)
 wrist_ft = runpy.run_path(os.path.join(here, "wrist_ft.py"), run_name="lib")["WristFT"](args.sync_dir, home_lib["ROOT"]) \
     if args.wrist_ft else None
 open(os.path.join(args.sync_dir, "home_done"), "w").close()

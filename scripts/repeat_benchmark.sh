@@ -6,7 +6,7 @@
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; STRATEGIES=$2; REPEATS=${3:-3}; shift 3
 mkdir -p "$OUT"
-for r in $(seq 1 "$REPEATS"); do
+for r in $(seq "${START:-1}" "$REPEATS"); do  # START (env): first repeat (resume)
   for s in $STRATEGIES; do
     extra=()
     [ "$s" = "probe" ] && extra=(--max-probes 25)

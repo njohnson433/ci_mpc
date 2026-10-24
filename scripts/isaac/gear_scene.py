@@ -19,10 +19,11 @@ TABLE_CENTER, TABLE_SIZE = (0.5, 0.0, 0.1), (0.4, 0.6, 0.2)
 TOP = TABLE_CENTER[2] + TABLE_SIZE[2] / 2
 MEDIUM_AXIS = np.array([0.02025, 0.0])
 GEAR_Z0, GEAR_Z1 = 0.005, 0.030      # medium gear body, in the asset frame
-SHAFT_TRAVEL = 0.020                 # assumed travel from first contact with the shaft top to seated
+SHAFT_TRAVEL = 0.020                 # shaft top z 25 mm (r 4.75 mm, 0.5 mm chamfer) to seated; bore r 5.0 mm
 FRICTION, ITERATIONS = 0.75, 32
 BASE, MEDIUM = "/Gear/Base", "/Gear/Medium"
-BASE_BODY, MEDIUM_BODY = BASE + "/factory_gear_base_loose/factory_gear_base_loose", MEDIUM + "/factory_gear_medium"
+BASE_BODY, MEDIUM_BODY = BASE + "/factory_gear_base_loose", MEDIUM + "/factory_gear_medium"
+DROP_GEAR = "/Gear/DropGear{}/factory_gear_medium"
 
 
 def _material(stage, path, mu):
@@ -46,7 +47,49 @@ def _body(prim, kinematic):
     rb.CreateMaxDepenetrationVelocityAttr(5.0)
 
 
-def add_objects(stage, base_xy=(0.5, 0.05), gear_xy=(0.45, -0.12), base_yaw_deg=0.0):
+def _ref(stage, path, asset, pos, yaw_deg=0.0):
+    prim = stage.DefinePrim(path, "Xform")
+    prim.GetReferences().AddReference(f"{ASSETS}/{asset}.usd")
+    x = UsdGeom.Xformable(prim)
+    x.ClearXformOpOrder()  # the assets carry identity translate/orient/scale ops
+    x.AddTranslateOp().Set(Gf.Vec3d(*pos))
+    x.AddRotateZOp().Set(float(yaw_deg))
+    return prim
+
+
+def _assembly(stage, root, xy, yaw_deg, mat):
+    """Kinematic base with the small and large gears in their assembled places, origin at xy on the table."""
+    for name, asset in (("Base", "factory_gear_base"), ("Small", "factory_gear_small"), ("Large", "factory_gear_large")):
+        _ref(stage, f"{root}/{name}", asset, (xy[0], xy[1], TOP), yaw_deg)
+        b = stage.GetPrimAtPath(f"{root}/{name}/{_BODY[name]}")
+        if b.HasAPI(UsdPhysics.ArticulationRootAPI):
+            b.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+        j = stage.GetPrimAtPath(f"{root}/{name}/root_joint")
+        if j.IsValid():
+            j.SetActive(False)
+        _body(b, kinematic=True)
+        _bind(b, mat)
+
+
+def _free_gear(stage, path, origin, yaw_deg, mat):
+    _ref(stage, path, "factory_gear_medium", origin, yaw_deg)
+    mb = stage.GetPrimAtPath(path + "/factory_gear_medium")
+    mb.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+    _body(mb, kinematic=False)
+    PhysxSchema.PhysxRigidBodyAPI(mb).CreateSleepThresholdAttr(0.0)
+    _bind(mb, mat)
+
+
+_BODY = {"Base": "factory_gear_base_loose", "Small": "factory_gear_small", "Large": "factory_gear_large"}
+# The assets' medium gear frame is not in mesh with the fixed gears at yaw 0: its 40 teeth (pitch 9 deg) face the
+# small (20) and large (60) gears tooth on tooth there (drop test: stuck 10 mm above the seat), at +4.5 deg they mesh.
+MESH_YAW = 4.5
+DROPS = ((0.0, 0.0), (0.0002, 0.0), (0.0, 2.0))  # drop test: (x offset [m], yaw offset from MESH_YAW [deg])
+DROP_XY = ((0.38, 0.2), (0.58, 0.2), (0.62, -0.2))
+
+
+def add_objects(stage, base_xy=(0.5, 0.05), gear_xy=(0.45, -0.12), base_yaw_deg=0.0, drop_test=False):
+    """drop_test: also drop free medium gears 3 mm above the shaft top of extra assemblies (DROPS), no robot."""
     mat = _material(stage, "/Gear/Material", FRICTION)
     table = UsdGeom.Cube.Define(stage, "/Gear/Table")
     table.CreateSizeAttr(1.0)
@@ -56,32 +99,18 @@ def add_objects(stage, base_xy=(0.5, 0.05), gear_xy=(0.45, -0.12), base_yaw_deg=
     table.CreateDisplayColorAttr([Gf.Vec3f(0.55, 0.45, 0.35)])
     UsdPhysics.CollisionAPI.Apply(table.GetPrim())
     _bind(table.GetPrim(), mat)
-    # base and the two fixed gears, all in the assembled pose at the base origin
-    for path, asset, body in ((BASE, "factory_gear_base", BASE_BODY),
-                              ("/Gear/Small", "factory_gear_small", "/Gear/Small/factory_gear_small"),
-                              ("/Gear/Large", "factory_gear_large", "/Gear/Large/factory_gear_large")):
-        prim = stage.DefinePrim(path, "Xform")
-        prim.GetReferences().AddReference(f"{ASSETS}/{asset}.usd")
-        x = UsdGeom.Xformable(prim)
-        x.AddTranslateOp().Set(Gf.Vec3d(base_xy[0], base_xy[1], TOP))
-        x.AddRotateZOp().Set(float(base_yaw_deg))
-        b = stage.GetPrimAtPath(body)
-        if b.HasAPI(UsdPhysics.ArticulationRootAPI):
-            b.RemoveAPI(UsdPhysics.ArticulationRootAPI)
-        j = stage.GetPrimAtPath(path + "/factory_gear_base_loose/root_joint")
-        if j.IsValid():
-            j.SetActive(False)
-        _body(b, kinematic=True)
-        _bind(b, mat)
+    _assembly(stage, "/Gear", base_xy, base_yaw_deg, mat)
     # medium gear lying on the table: its axis at gear_xy, its bottom face on the table top
-    med = stage.DefinePrim(MEDIUM, "Xform")
-    med.GetReferences().AddReference(f"{ASSETS}/factory_gear_medium.usd")
-    UsdGeom.Xformable(med).AddTranslateOp().Set(Gf.Vec3d(gear_xy[0] - MEDIUM_AXIS[0], gear_xy[1] - MEDIUM_AXIS[1],
-                                                         TOP - GEAR_Z0))
-    mb = stage.GetPrimAtPath(MEDIUM_BODY)
-    mb.RemoveAPI(UsdPhysics.ArticulationRootAPI)
-    _body(mb, kinematic=False)
-    _bind(mb, mat)
+    _free_gear(stage, MEDIUM, (gear_xy[0] - MEDIUM_AXIS[0], gear_xy[1] - MEDIUM_AXIS[1], TOP - GEAR_Z0), 0.0, mat)
+    if drop_test:
+        for i, ((dx, dyaw), xy) in enumerate(zip(DROPS, DROP_XY)):
+            _assembly(stage, f"/Gear/Drop{i}", xy, 0.0, mat)
+            # rotate about the medium gear's own axis: shift the origin so the axis stays on the shaft
+            dyaw += MESH_YAW
+            a = np.radians(dyaw)
+            axis_off = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]) @ MEDIUM_AXIS
+            o = np.array(xy) + MEDIUM_AXIS - axis_off + np.array([dx, 0.0])
+            _free_gear(stage, f"/Gear/DropGear{i}", (o[0], o[1], TOP + SHAFT_TRAVEL + 0.003), dyaw, mat)
     for joint in ("fr3_finger_joint1", "fr3_finger_joint2"):  # force-controlled 40 N grasp (as the peg scene)
         p = stage.GetPrimAtPath(f"/fr3/Physics/{joint}")
         if p.IsValid():
@@ -91,8 +120,8 @@ def add_objects(stage, base_xy=(0.5, 0.05), gear_xy=(0.45, -0.12), base_yaw_deg=
             drive.CreateDampingAttr(200.0)
             drive.CreateMaxForceAttr(20.0)
             drive.CreateTargetPositionAttr(0.04)
-    print(f"[sim] gear mesh (Factory, SDF): base at {base_xy} yaw {base_yaw_deg} deg, medium gear at {gear_xy}",
-          flush=True)
+    print(f"[sim] gear mesh (Factory, SDF): base at {base_xy} yaw {base_yaw_deg} deg, medium gear at {gear_xy}"
+          + (", drop test gears" if drop_test else ""), flush=True)
 
 
 class Poller:
@@ -103,6 +132,12 @@ class Poller:
         self.gear = XformPrim(MEDIUM_BODY)
         self.base = XformPrim(BASE_BODY)
         self.frame = 0
+        from pxr import Usd  # noqa: F401
+        import omni.usd
+
+        stage = omni.usd.get_context().get_stage()
+        self.drops = [XformPrim(DROP_GEAR.format(i)) for i in range(len(DROPS))
+                      if stage.GetPrimAtPath(DROP_GEAR.format(i)).IsValid()]
 
     @staticmethod
     def _pose(prim):
@@ -119,6 +154,12 @@ class Poller:
         self.frame += 1
         if self.frame % 5:
             return
+        if self.drops and self.frame % 240 == 0:  # drop test: seated = origin z at the table top (0 mm)
+            for i, d in enumerate(self.drops):
+                p, q, R = self._pose(d)
+                yaw = np.degrees(2 * np.arctan2(q[3], q[0])) - MESH_YAW
+                print(f"[sim] drop gear {i} {DROPS[i]}: {(p[2] - TOP) * 1000:+.2f} mm above seated, "
+                      f"axis xy {np.round((p[:2] + R[:2, :2] @ MEDIUM_AXIS - np.array(DROP_XY[i]) - MEDIUM_AXIS) * 1000, 2).tolist()} mm, yaw {yaw:+.1f} deg", flush=True)
         gp, gq, gR = self._pose(self.gear)
         bp, bq, bR = self._pose(self.base)
         gear_center = gp + gR @ np.array([MEDIUM_AXIS[0], MEDIUM_AXIS[1], (GEAR_Z0 + GEAR_Z1) / 2])
