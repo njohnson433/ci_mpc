@@ -15,7 +15,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--episodes", type=int, default=5)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--steps", type=int, default=60)
-p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu", "refine"])
+p.add_argument("--policy", default="teacher", choices=["teacher", "heuristic", "student", "selector", "gpu", "refine", "icnn"])
 p.add_argument("--student", default="")
 p.add_argument("--plant-mu", type=float, default=None, help="held-out H4: true friction (model keeps 0.75)")
 p.add_argument("--plant-R", type=float, default=None, help="held-out H4: true hole radius [mm] (model 4.5)")
@@ -24,6 +24,7 @@ p.add_argument("--gpu-wforce", type=float, default=0.5, help="gpu policy: weight
 p.add_argument("--gpu-fsoft", type=float, default=3.0, help="gpu policy: force [N] above which it is penalized")
 p.add_argument("--refine-margin", type=float, default=0.0, help="refine policy: C3 replaces the sample if its score "
                "is at least this much higher")
+p.add_argument("--icnn", default="", help="icnn policy: checkpoint from train_icnn.py")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
 rng = np.random.default_rng(args.seed)          # start states only: identical for every policy
@@ -70,6 +71,16 @@ for ep in range(args.episodes):
             u, info = gpu.act(x, -off + err, wm)
             ff = np.zeros(5)
             srcs[info["source"]] = srcs.get(info["source"], 0) + 1
+        elif args.policy == "icnn":  # one convex minimization of the learned cost-to-go per step
+            if k == 0:
+                import torch
+                from ci_mpc_planner.icnn import ICNNPlanner, sequence
+                planner = ICNNPlanner(args.icnn)
+            wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
+            a_best, _ = planner.plan(x, -off + err, tb)
+            u = sequence(torch.tensor(x[None], dtype=torch.float32), torch.tensor(a_best[None], dtype=torch.float32))[0, 0]
+            u, ff = u.double().numpy(), np.zeros(5)
+            srcs["icnn"] = srcs.get("icnn", 0) + 1
         elif args.policy == "selector":
             wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
             choice = selector.choose(C3Selector.features(x, -off + err, wm, tb))

@@ -53,8 +53,30 @@ Read this before starting work (and before re-investigating something "new").
   8 % of steps. The sampler alone: 30/30, 14, 2.38 / 5.36 / 7.55 N.
   - **No change in the tail.** The gate makes C3 beat the sample on the cost the sampler already maximizes, so it
     rarely wins. That cost's force term did not move the tail before either (w_force 2.0: p90 5.42 N).
-  - Lower margins let C3's own (force-regularized) objective decide more often. Sweep −0.5 / −2 / always-C3 runs
-    on cores 16–31 after track B (`~/ci_mpc_runs/refine/`); the selector's binsel job runs after it.
+  - Lower margins let C3's own (force-regularized) objective decide more often.
+- **Margin sweep** (fair 30 starts, sampler seed = start seed; `~/ci_mpc_runs/refine/fair_m*`):
+
+  | margin | entered | steps median | peak median | **p90** | max | C3 used |
+  |---|---|---|---|---|---|---|
+  | sampler only | 30/30 | 14 | 2.38 N | 5.36 N | 7.55 N | 0 |
+  | 0 | 30/30 | 14 | 2.56 N | 5.36 N | 6.29 N | 0.09 |
+  | −0.25 | 30/30 | 13 | 2.48 N | 3.97 N | 6.44 N | 0.27 |
+  | −0.5 | 30/30 | 15 | 2.04 N | 3.81 N | 5.77 N | 0.51 |
+  | **−1** | **30/30** | 14 | **2.01 N** | **3.71 N** | 6.42 N | 0.78 |
+  | −2 | 23/30 | 26 | 1.36 N | 3.46 N | 5.36 N | 0.97 |
+  | always C3 | 4/30 | 34 | 2.10 N | 6.37 N | 11.93 N | 1.00 |
+
+  - **First policy with 30/30 and p90 under the 4 N gate.** The non-monotone optimum is at −0.5 to −1.
+  - **Mechanism:** a division of labour. The sampler picks the mode, which prevents C3's mode failures (C3 alone
+    enters 4/30). C3's force-regularized QP smooths the commands inside that mode, cutting the force tail.
+  - Below −1, C3 overrides even good samples and gets stuck again (−2: 23/30).
+  - The max (~6 N) is probably the start transient (not verified for this policy yet).
+  - Next: extra sampler seeds for −0.5 / −1, H4 (held out) with the chosen margin, then Isaac.
+- **Infra mistakes:**
+  - 9 parallel PyTorch eval processes (~1.3 GB each) next to H1's 4 Isaac instances brought free memory down to
+    1.0 GB. No OOM, but from now on at most 4 PyTorch processes run while Isaac is up.
+  - A 7 s ICNN smoke test ran pinned to cores 0–1 (H1's half) by mistake.
+  - argparse reads `--refine-margin -1e9` as a flag: use `--refine-margin=-1e9`.
 
 ### 2026-10-24 (midday): Track B (GPU MPC entry in Isaac) 4/10, a belief bug; AlphaNIST lever 2 negative
 - **Track B repeat 1:** probe `--entry gpu` 4/10, vs plain probe 24/30. All 6 failures end 2.7–8.7 mm off.
