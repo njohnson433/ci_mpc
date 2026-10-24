@@ -122,6 +122,17 @@ Read this before starting work (and before re-investigating something "new").
     - C3 refine works for a different reason: its own force-regularized, physics-constrained objective.
   - Conclusion: a learned convex surrogate of the same cost cannot beat exact sampling of it. Its only possible
     gain is speed, at the sampler's quality, which it does not reach.
+- **H3 (held out, Isaac AutoMate; 12 assemblies × 1 random 1–4 mm error): spiral 6/12, probe 5/12, probe + GPU
+  5/12; 0 grasp failures.**
+  - All three succeed on 00016, 00021, 00499, 00652 and all fail on 00319, 00388, 00700, 01041.
+  - Mixed: 00028 (GPU only), 00211 and 00301 (spiral only), 00638 (probe only).
+  - **00700 is a likely setup artifact:** all three stop exactly 2.9 mm short of seated. The travel from
+    `disassembly_dist.json` probably does not match the real seat. To check before counting it.
+  - Most other failures never entered (depth error ≈ the full travel). Their 4–9 mm xy errors are probably the
+    plug falling over after release, so they say little about the search.
+  - **Mechanism:** on non-round shapes the outcome depends mainly on the assembly, not the strategy. The
+    round-peg contact model behind probe / GPU gives no edge, and the search has no yaw (as in H2).
+  - Table: `~/ci_mpc_runs/weekend/H3/driver.log`.
 - **H2 (held out, Isaac gear mesh) done:**
 
   | condition | spiral | probe | probe + GPU entry |
