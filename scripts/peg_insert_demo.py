@@ -309,7 +309,11 @@ segment("A home -> above peg -> grasp", [(np.array([*grasp_xy, Z_SAFE]), R), (np
 gripper(0.0, settle=1.0)
 closed = state["fingers"]
 if abs(closed - peg_size[0]) > 0.003:
-    print(f"FAIL: grasp, fingers {closed * 1000:.1f} mm (peg {peg_size[0] * 1000:.1f} mm)")
+    tr = truth()
+    print(f"FAIL: grasp, fingers {closed * 1000:.1f} mm (peg {peg_size[0] * 1000:.1f} mm); TCP "
+          f"{np.round(fk(state['q']).translation * 1000, 1).tolist()} mm, peg (truth) "
+          f"{np.round(np.array(tr['peg']['cube']) * 1000, 1).tolist() if 'peg' in tr else '?'} mm, quat "
+          f"{np.round(tr['peg']['quat_wxyz'], 3).tolist() if 'peg' in tr else '?'}")
     finish(1)
 tr = truth()
 in_hand = np.array(tr["peg"]["origin"])[:2] - fk(state["q"]).translation[:2]

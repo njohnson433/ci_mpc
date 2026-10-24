@@ -43,6 +43,17 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24: AlphaNIST (NVIDIA, arXiv 2610.13354) checked, not adopted
+- Sim-only RL from scratch, binary reward, one policy for all 20 NIST board tasks (98.2 % train success), up to
+  256k envs (4k per GPU), point-cloud observations, joint-position targets at 25 Hz. No code or weights, no
+  sim-to-real, no training time given.
+- Not usable directly: the compute is ~64 GPUs (we have one shared RTX 4080 and 31 GB RAM), it skips our
+  MPC → impedance stack, and it replaces CI-MPC instead of helping it.
+- Ideas worth taking: success-guided sampling of start states (amortized-C3 / DAgger starts), and the finding
+  that dense shaping rewards scored lower than binary ones.
+- A cheaper RL baseline is already installed: Isaac Lab `contrib/factory` and `contrib/forge` (peg insert,
+  gear mesh, nut thread; FORGE uses force feedback). Not run yet.
+
 ### 2026-10-24 (morning): weekend runs lost to an OOM, restarted; gear-mesh scene (H2)
 - **OOM, 2026-10-23 18:52.** Every weekend job died at once, and nothing ran overnight.
   - The cause: 8 Isaac instances (Track A and Track B, 4 parallel each), plus the GPU MPC servers, the offline H4 and
@@ -71,6 +82,19 @@ Read this before starting work (and before re-investigating something "new").
   - `scripts/heldout_h2.sh` is queued; it starts after `run_weekend.sh`'s "all done". Conditions:
     - nominal: 5 random errors × spiral / probe / GPU
     - yaw 1° and 3°: 3 errors each × spiral / probe
+- **H3 AutoMate** (`scripts/isaac/automate_scene.py`, `AUTOMATE=ID`, `scripts/demo_automate.sh ID`): all 100
+  assemblies downloaded (65 MB, without the 15 MB demonstration trajectories) to `~/ci_mpc_assets/automate`.
+  - The grasp comes from AutoMate's `plug_grasps.json` (TCP = hand − 103.4 mm); the travel comes from
+    `disassembly_dist.json`.
+  - Setup-only criteria: top-down grasp ≤ 40 mm wide, TCP ≥ 10 mm above the socket when seated, travel ≤ 40 mm.
+    56/100 pass, and seed 31 drew 12: 00016 00021 00028 00211 00301 00319 00388 00499 00638 00652 00700 01041.
+  - Setup fixes on dev assembly 00015 (not in the set):
+    - The plug does not stand on its own, so it now starts **seated in a second (source) socket**.
+    - The assets carry mass 0, so PhysX used ~3 g and the 20 N fingers sank into the SDF (closed to 5.3 mm on a
+      10.2 mm head). Now mass 0.05 kg and contact offset 5 mm, as Isaac Lab sets them.
+  - 00015 spiral at 0 offset: inserted, depth 0.03 mm, xy 0.28 mm, 6.8 s.
+  - `scripts/heldout_h3.sh` is queued after H2: 12 assemblies × 1 random error (r 1–4 mm) × spiral / probe / GPU.
+    Grasp failures are reported separately.
 - **Memory, measured:** each Isaac instance takes **~6.2 GB** RSS (not 3–4 GB). 4 instances plus H4's 3 workers leave
   ~3 GB free, so dev runs go through a ≥ 9 GB guard.
 - **H4 so far** (offline, 30 fair starts; true plant varied, the MPC keeps its nominal model):
@@ -81,6 +105,15 @@ Read this before starting work (and before re-investigating something "new").
   | mu 1.0 | **10/30** | **30/30** | 6.57 N (heuristic 6.51 N) |
   | R 4.4 (0.4 mm clearance) | **7/30** | **30/30** | 5.14 N |
   | R 4.6 | 28/30 | 30/30 | 3.74 N |
+  | stiction ×0.5 | 30/30 | 30/30 | 3.79 N (heuristic 3.01 N) |
+  | stiction ×1.5 | **0/30** | **0/30** | – (no contact) |
+
+  - **Stiction ×1.5 is degenerate, but it is a real gap.** The eval's setup press (4 mm × 500 N/m + 3 N = 5.0 N) is
+    below the true z stiction of 5.25 N, so the arm never moves and the tip stays 0.5 mm above the hole.
+  - Neither policy adapts when commanded motion does not happen: no integrator, no stiction estimate. The MPC's
+    nominal model predicts that small commands move the arm (it picks the heuristic candidate on all 60 steps).
+  - The Isaac demo has `--stiction-ff 3` for this. Online stiction identification (from command vs measured motion)
+    would be the fix. Not tuned here: H4 is held out.
 
   The GPU MPC holds 30/30 under every plant change tested; the heuristic falls apart with high friction and tight
   clearance. The force gate (p90 < 4 N) is missed under mu 1.0 and R 4.4 by both: more friction and tighter clearance

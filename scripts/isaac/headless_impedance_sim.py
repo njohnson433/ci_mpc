@@ -23,6 +23,7 @@ parser.add_argument("--peg", action="store_true", help="add the Factory 8 mm peg
 parser.add_argument("--peg-hole-xy", default="0.5,0.1", help="peg: hole x,y [m]")
 parser.add_argument("--peg-drop-test", action="store_true", help="peg: also drop free pegs into the hole")
 parser.add_argument("--peg-friction", type=float, default=None, help="peg: contact friction (default 0.75)")
+parser.add_argument("--automate", default="", help="add AutoMate assembly ID (held-out H3, SDF), e.g. 00016")
 parser.add_argument("--gear", action="store_true", help="add the Factory gear mesh (held-out H2, SDF)")
 parser.add_argument("--gear-base-xy", default="0.5,0.05", help="gear: base x,y [m]")
 parser.add_argument("--gear-yaw-error", type=float, default=0.0, help="gear: yaw off the meshing yaw [deg]")
@@ -55,6 +56,7 @@ pick_lib = runpy.run_path(os.path.join(here, "pick_place_scene.py"), run_name="l
 push_lib = runpy.run_path(os.path.join(here, "push_scene.py"), run_name="lib") if args.push else None
 peg_lib = runpy.run_path(os.path.join(here, "peg_scene.py"), run_name="lib") if args.peg else None
 gear_lib = runpy.run_path(os.path.join(here, "gear_scene.py"), run_name="lib") if args.gear else None
+asm_lib = runpy.run_path(os.path.join(here, "automate_scene.py"), run_name="lib") if args.automate else None
 cam_lib = runpy.run_path(os.path.join(here, "wrist_camera.py"), run_name="lib") if args.camera else None
 
 omni.usd.get_context().open_stage(args.scene)
@@ -72,6 +74,8 @@ if pick_lib:
     pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw, boxes)
 if cam_lib:
     cam_lib["add_camera"](stage)
+if asm_lib:
+    asm_lib["add_objects"](stage, args.automate)
 if gear_lib:
     gear_lib["add_objects"](stage, [float(v) for v in args.gear_base_xy.split(",")], drop_test=args.gear_drop_test,
                             yaw_error_deg=args.gear_yaw_error)
@@ -151,6 +155,8 @@ if peg_lib:
     gripper = peg_lib["Poller"](args.sync_dir)
 if gear_lib:
     gripper = gear_lib["Poller"](args.sync_dir)
+if asm_lib:
+    gripper = asm_lib["Poller"](args.sync_dir, args.automate)
 wrist_ft = runpy.run_path(os.path.join(here, "wrist_ft.py"), run_name="lib")["WristFT"](args.sync_dir, home_lib["ROOT"]) \
     if args.wrist_ft else None
 open(os.path.join(args.sync_dir, "home_done"), "w").close()
