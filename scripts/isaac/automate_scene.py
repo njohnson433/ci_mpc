@@ -39,11 +39,16 @@ def info(assembly):
     center = (band[:, :2].min(0) + band[:, :2].max(0)) / 2
     tip = pv[pv[:, 2] < pv[:, 2].min() + 0.003]
     a = min(np.ptp(tip[:, 0]), np.ptp(tip[:, 1])) / 2
+    # entry plane: the socket's top face around the hole. z0 + travel (the disassembly distance) lies 1.1-2.0 mm
+    # above it (00700: 5.1 mm, so the plug "engaged" on the top face and no strategy searched; H3 run 1, 2026-10-24)
+    c_tip = (tip[:, :2].min(0) + tip[:, :2].max(0)) / 2
+    near = sv[np.hypot(sv[:, 0] - c_tip[0], sv[:, 1] - c_tip[1]) < max(np.ptp(tip[:, :2], axis=0)) / 2 + 0.003]
+    entry = near[:, 2].max() - pv[:, 2].min()  # travel from first contact with the socket to seated
     return {"z0": pv[:, 2].min(), "z1": pv[:, 2].max(), "grasp_depth": pv[:, 2].max() - tcp_z,
-            "grasp_width": np.ptp(band[:, 1]), "center_xy": center, "travel": travel,
+            "grasp_width": np.ptp(band[:, 1]), "center_xy": center, "travel": travel, "entry": entry,
             "socket_top": sv[:, 2].max(),
             # round-peg contact model guess (the true features are not round): plug tip half width, 0.25 mm clearance
-            "geo": (a + 0.00025, 0.0005, travel, a, 0.0003)}
+            "geo": (a + 0.00025, 0.0005, entry, a, 0.0003)}
 
 
 def _material(stage, path, mu):
@@ -157,12 +162,12 @@ class Poller:
         sp, sq, sR = self._pose(self.socket)
         c = np.array([*i["center_xy"], 0.0])
         plug_center = pp + pR @ (c + [0, 0, (i["z0"] + i["z1"]) / 2])
-        opening = sp + sR @ (c + [0, 0, i["z0"] + i["travel"]])
+        opening = sp + sR @ (c + [0, 0, i["z0"] + i["entry"]])
         w = i["grasp_width"]
         objs = [{"name": "peg", "cube": plug_center.tolist(), "quat_wxyz": pq.tolist(),
                  "size": [w, w, i["z1"] - i["z0"]], "origin": (pp + pR @ (c + [0, 0, i["z0"]])).tolist()},
                 {"name": "hole", "cube": opening.tolist(), "quat_wxyz": sq.tolist(),
-                 "size": [w, w, i["travel"]], "origin": (sp + sR @ (c + [0, 0, i["z0"]])).tolist()}]
+                 "size": [w, w, i["entry"]], "origin": (sp + sR @ (c + [0, 0, i["z0"]])).tolist()}]
         tmp = os.path.join(self.sync_dir, "object.json.tmp")
         json.dump({**{k: objs[0][k] for k in ("cube", "quat_wxyz", "size")}, "objects": objs}, open(tmp, "w"))
         os.replace(tmp, os.path.join(self.sync_dir, "object.json"))

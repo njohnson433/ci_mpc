@@ -8,11 +8,12 @@
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [[ "${1:-}" =~ ^[0-9]{5}$ ]]; then export AUTOMATE=$1; shift; fi  # or AUTOMATE=ID in the environment
 export GUI=1
-read -r GEO DEPTH WIDTH < <(~/IsaacLab/.venv/bin/python -c "
+read -r GEO DEPTH WIDTH ENGAGE < <(~/IsaacLab/.venv/bin/python -c "
 import runpy; i = runpy.run_path('$HERE/isaac/automate_scene.py', run_name='lib')['info']('$AUTOMATE')
-print(','.join(f'{v:.5f}' for v in i['geo']), f\"{i['grasp_depth']:.4f}\", f\"{i['grasp_width']:.4f}\")" 2>/dev/null)
+print(','.join(f'{v:.5f}' for v in i['geo']), f\"{i['grasp_depth']:.4f}\", f\"{i['grasp_width']:.4f}\",
+      f\"{min(0.003, 0.5 * i['entry']):.4f}\")" 2>/dev/null)
 OPEN=$(python3 -c "print(f'{min(0.08, $WIDTH + 0.02):.3f}')")
-extra=(--geo "$GEO" --grasp-depth "$DEPTH" --open-width "$OPEN")
+extra=(--geo "$GEO" --grasp-depth "$DEPTH" --open-width "$OPEN" --engage "$ENGAGE")  # engaged: 3 mm in, or half a shallow entry
 while [ $# -gt 0 ]; do
   case "$1" in
     --offset)   extra+=("--hole-offset=$2"); shift ;;

@@ -523,7 +523,7 @@ elif args.strategy == "probe":
             cmd(target, uz, (0.0, 0.0, -args.stiction_ff))
             spin_sim(dt)
             F = force3(0.1)
-            if F[2] > 1.0 or tip_z(measure5()) < -0.003:
+            if F[2] > 1.0 or tip_z(measure5()) < -args.engage:
                 break
         cmd(target, measure5()[2] - 0.001, (0.0, 0.0, -args.stiction_ff))  # light: just keep the contact
         spin_sim(0.3)
@@ -579,11 +579,11 @@ elif args.strategy == "probe":
                 else:
                     cmd(x[:2], x[2] - 0.004, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
-                if tip_z(measure5()) < -0.003:
+                if tip_z(measure5()) < -args.engage:
                     break
             print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
                   flush=True)
-        if tip_z(measure5()) < -0.003:  # in the hole: push to the bottom (force-limited)
+        if tip_z(measure5()) < -args.engage:  # in the hole: push to the bottom (force-limited)
             c["t_engage"] = c["t_contact"] = state["t"]
             for _ in range(150):
                 x, F = measure5(), force3(0.1)

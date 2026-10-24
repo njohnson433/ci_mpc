@@ -126,8 +126,16 @@ Read this before starting work (and before re-investigating something "new").
   5/12; 0 grasp failures.**
   - All three succeed on 00016, 00021, 00499, 00652 and all fail on 00319, 00388, 00700, 01041.
   - Mixed: 00028 (GPU only), 00211 and 00301 (spiral only), 00638 (probe only).
-  - **00700 is a likely setup artifact:** all three stop exactly 2.9 mm short of seated. The travel from
-    `disassembly_dist.json` probably does not match the real seat. To check before counting it.
+  - **Setup bug found (00700 and, milder, all 12): run 1 does not count as a clean result.**
+    - The scene's socket opening was the plug's seated bottom + the AutoMate disassembly distance. That lies 1.1–2.0
+      mm above the socket's real top face around the hole, and 5.1 mm on 00700.
+    - On 00700 the plug therefore "engaged" on the top face (−4.5 mm vs the opening), and no strategy searched.
+      Its real entry depth is only 2.9 mm, below the demo's fixed 3 mm "in the hole" threshold.
+    - Fix: the entry plane is now the socket's top face around the hole (`info()["entry"]`).
+      `peg_insert_demo.py` uses `--engage` everywhere: still 3 mm by default; `demo_automate.sh` passes
+      min(3 mm, entry / 2).
+    - Dev check on 00015 (2,1 mm): contact on the top face (+0.6 mm), spiral search 22.8 s, seated 0.11 mm.
+    - **H3 rerun queued after B3** (`~/ci_mpc_runs/weekend/H3_fix`); the table below is run 1.
   - Most other failures never entered (depth error ≈ the full travel). Their 4–9 mm xy errors are probably the
     plug falling over after release, so they say little about the search.
   - **Mechanism:** on non-round shapes the outcome depends mainly on the assembly, not the strategy. The
