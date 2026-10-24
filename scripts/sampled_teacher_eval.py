@@ -24,6 +24,9 @@ p.add_argument("--gpu-wforce", type=float, default=0.5, help="gpu policy: weight
 p.add_argument("--gpu-fsoft", type=float, default=3.0, help="gpu policy: force [N] above which it is penalized")
 p.add_argument("--refine-margin", type=float, default=0.0, help="refine policy: C3 replaces the sample if its score "
                "is at least this much higher")
+p.add_argument("--mpc-seed-offset", type=int, default=0, help="gpu / refine: sampler seed = --seed + this "
+               "(varies the sampler's randomness, same starts)")
+p.add_argument("--refiner", default="c3", choices=["c3", "icnn"], help="refine policy: what refines the sample")
 p.add_argument("--icnn", default="", help="icnn policy: checkpoint from train_icnn.py")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
@@ -62,11 +65,12 @@ for ep in range(args.episodes):
         elif args.policy in ("gpu", "refine"):
             if k == 0 and args.policy == "refine":  # sample, then QP-refine (ci_mpc_planner/refine_mpc.py)
                 from ci_mpc_planner.refine_mpc import SampleRefineMPC
-                gpu = SampleRefineMPC(comp, fa, margin=args.refine_margin, seed=args.seed, w_force=args.gpu_wforce,
+                gpu = SampleRefineMPC(comp, fa, margin=args.refine_margin, refiner=args.refiner, icnn_path=args.icnn,
+                                      seed=args.seed + args.mpc_seed_offset, w_force=args.gpu_wforce,
                                       f_soft=args.gpu_fsoft)
             elif k == 0:
                 from ci_mpc_planner.sampling_mpc import SamplingMPC
-                gpu = SamplingMPC(comp, fa, seed=args.seed, w_force=args.gpu_wforce, f_soft=args.gpu_fsoft)
+                gpu = SamplingMPC(comp, fa, seed=args.seed + args.mpc_seed_offset, w_force=args.gpu_wforce, f_soft=args.gpu_fsoft)
             wm = w + rng_noise.normal(0, 0.2, 5) * np.array([1, 1, 1, 0.01, 0.01])
             u, info = gpu.act(x, -off + err, wm)
             ff = np.zeros(5)

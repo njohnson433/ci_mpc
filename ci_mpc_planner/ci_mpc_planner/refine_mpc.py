@@ -17,7 +17,10 @@ from ci_mpc_planner.sampling_mpc import SamplingMPC
 
 
 class SampleRefineMPC:
-    def __init__(self, compliance, arm_friction, margin=0.0, **sampler_kw):
+    def __init__(self, compliance, arm_friction, margin=0.0, refiner="c3", icnn_path="", box=(2e-4, 1e-3, 0.005),
+                 **sampler_kw):
+        """refiner: "c3" (one C3 solve warm-started from the best sample) or "icnn" (the learned convex cost-to-go,
+        minimized in a box of +-box = (lateral step, press, tilt) around the best sample's action parameters)."""
         self.smpc = SamplingMPC(compliance, arm_friction, **sampler_kw)
         cfg = C33Config()
         cfg.rollout_every = 1  # the nominal is fresh every step
@@ -26,6 +29,10 @@ class SampleRefineMPC:
         self.c3, self.c3_hole = None, None
         self.u_prev = None
         self.stats = {"refined": 0, "kept": 0, "c3_failed": 0}
+        self.refiner, self.box = refiner, box
+        if refiner == "icnn":
+            from ci_mpc_planner.icnn import ICNNPlanner
+            self.icnn = ICNNPlanner(icnn_path)
 
     def _c3_for(self, hole_xy):
         hole_xy = np.asarray(hole_xy, float)
@@ -50,6 +57,17 @@ class SampleRefineMPC:
             sc, _, _ = s.rollout(x, seqs, hole_xy)
         return sc[:k].double().cpu().numpy()
 
+    def _icnn_refine(self, x, nominal, hole_xy, hole_samples):
+        """The best sample's action parameters (lateral step, press below x, tilt), a box around them, one convex
+        minimization of the ICNN cost-to-go in it -> (first command, {"status", "U"})."""
+        from ci_mpc_planner.icnn import sequence
+        a0 = np.array([*(nominal[0, :2] - x[:2]), x[2] - nominal[:, 2].min(), *nominal[0, 3:]])
+        b = np.array([self.box[0], self.box[0], self.box[1], self.box[2], self.box[2]])
+        a, _ = self.icnn.plan(x, hole_xy, self.smpc.tb, hole_samples=hole_samples, box=(a0 - b, a0 + b))
+        U = sequence(torch.tensor(x[None], dtype=torch.float32), torch.tensor(a[None], dtype=torch.float32))[0]
+        U = U.double().numpy()
+        return U[0], {"status": "ok", "U": U}
+
     def act(self, x, hole_xy, wrench=None, hole_samples=None):
         x = np.asarray(x, float)
         u_s, info = self.smpc.act(x, hole_xy, wrench, hole_samples=hole_samples)
@@ -57,10 +75,13 @@ class SampleRefineMPC:
             self.u_prev = x.copy()
         H = self.smpc.H
         nominal = self.smpc.best.double().cpu().numpy() if self.smpc.best is not None else np.repeat(u_s[None], H, 0)
-        c3 = self._c3_for(hole_xy)
-        c3.prev = None
-        goal = np.array([*np.asarray(hole_xy, float), self.smpc.tb - c3.model.g.depth, 0.0, 0.0])
-        u_c, ic = c3.solve(x, goal, self.u_prev, nominal=nominal)
+        if self.refiner == "icnn":
+            u_c, ic = self._icnn_refine(x, nominal, hole_xy, hole_samples)
+        else:
+            c3 = self._c3_for(hole_xy)
+            c3.prev = None
+            goal = np.array([*np.asarray(hole_xy, float), self.smpc.tb - c3.model.g.depth, 0.0, 0.0])
+            u_c, ic = c3.solve(x, goal, self.u_prev, nominal=nominal)
         u, src = u_s, info["source"]
         if ic.get("status") != "ok":
             self.stats["c3_failed"] += 1
@@ -68,7 +89,7 @@ class SampleRefineMPC:
             s_c3 = float(self.score_seqs(x, np.asarray(ic["U"])[None], hole_xy, hole_samples)[0])
             info["score_c3"] = s_c3
             if s_c3 >= info["score"] + self.margin:
-                u, src = np.asarray(u_c, float), "c3_refined_" + info["source"]
+                u, src = np.asarray(u_c, float), self.refiner + "_refined_" + info["source"]
                 info["score"] = s_c3
                 self.stats["refined"] += 1
                 # the sampler keeps the refined plan as its "previous best" (its random candidates shift from it)

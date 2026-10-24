@@ -71,7 +71,41 @@ Read this before starting work (and before re-investigating something "new").
     enters 4/30). C3's force-regularized QP smooths the commands inside that mode, cutting the force tail.
   - Below −1, C3 overrides even good samples and gets stuck again (−2: 23/30).
   - The max (~6 N) is probably the start transient (not verified for this policy yet).
-  - Next: extra sampler seeds for −0.5 / −1, H4 (held out) with the chosen margin, then Isaac.
+- **Sampler-seed check** (same 30 starts; sampler seed offsets 0 / 1 / 2; all 30/30):
+
+  | policy | p90 per seed | mean p90 | mean peak median | steps median |
+  |---|---|---|---|---|
+  | sampler only | 5.36 / 5.38 / 4.71 N | 5.15 N | 2.30 N | 13–14 |
+  | refine −0.5 | 3.81 / 4.21 / 3.87 N | 3.96 N | 2.09 N | 14–15 |
+  | **refine −1** | **3.71 / 3.32 / 3.60 N** | **3.54 N** | **1.89 N** | 14–15 |
+
+  Margin −1 is chosen: p90 is 31 % lower on every seed and always under 4 N, for about one extra step.
+  Next: H4 (held out) with margin −1, then Isaac (the GPU server needs the refiner).
+- **ICNN cost-to-go (user's idea 2): negative** (`ci_mpc_planner/icnn.py`, `scripts/icnn_data.py`,
+  `scripts/train_icnn.py`).
+  - Setup: a PICNN convex in a continuous version of the sampler's candidate family (lateral step, press depth,
+    tilt). Trained on 20000 engaged GPU-plant states × 64 actions, scored exactly like a sampler candidate.
+  - Fit: validation MSE 0.010 (normalized); picking the lowest predicted cost among the 64 gives 0.14 mm regret
+    (random action 0.45 mm).
+  - **Alone:** 0/30, stuck 0.5–1 mm down the chamfer. Diagnosis at a stuck state:
+    - the lateral direction is right (toward the hole);
+    - the press is the box minimum (−1 mm, a lift), while the true best of 2048 actions is a ~4 mm press
+      (true score −0.72 vs −0.28);
+    - the true cost is non-convex in press depth (a light press jams and pays force; a deep press gains depth),
+      so the convex fit puts its minimum on a box edge. Within-state correlation predicted vs true: 0.66–0.71.
+  - **As the refiner behind the sampler** (box ±0.2 mm / ±1 mm press / ±5 mrad, margin −1): 28/30, p90 5.35 N,
+    worse than the sampler alone.
+    - Mechanism: it approximates the very score the sampler maximizes exactly, so a negative margin only lets
+      it replace good samples with worse ones.
+    - C3 refine works for a different reason: its own force-regularized, physics-constrained objective.
+  - Conclusion: a learned convex surrogate of the same cost cannot beat exact sampling of it. Its only possible
+    gain is speed, at the sampler's quality, which it does not reach.
+- **H1 (held out, Isaac; 5 conditions × 3 random 1–4 mm errors): probe 14/15, spiral 7/15.**
+  - Probe per condition: friction 0.5 3/3, friction 1.0 2/3, grasp offset 3/3, hole elsewhere 3/3, hole tilt
+    2° 3/3.
+  - Spiral per condition: 2/3, 0/3, 1/3, 3/3, 1/3.
+  - Probing generalizes to conditions it was never tuned on. Its only miss is at high friction, where the
+    offline H4 heuristic also broke down.
 - **Infra mistakes:**
   - 9 parallel PyTorch eval processes (~1.3 GB each) next to H1's 4 Isaac instances brought free memory down to
     1.0 GB. No OOM, but from now on at most 4 PyTorch processes run while Isaac is up.
