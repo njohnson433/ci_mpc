@@ -43,6 +43,40 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-24 (late morning): AlphaNIST lever 1, success-guided starts for the selector: no gain
+- **Setup:**
+  - `ci_mpc_planner/start_cache.py`: 3 hole-error magnitude bins (0.3 / 0.8 / 1.3 / 1.8 mm, the fair eval's range)
+    × 8 directions, weight (1 − Beta(1,1) posterior success) + 0.1.
+  - Snapshots every 10 steps of earlier rollouts form a second pool (p_snap 0.3, the hardest 400 kept).
+  - `selector_dagger.py --cache` / `--no-label`, `scripts/start_cache_update.py`, `scripts/sgs_round.sh`. Data in
+    `~/ci_mpc_runs/selector/` (the earlier DAgger data was copied there from /tmp).
+- **Only lever changed: the start distribution.** Same budget and settings as the old round 1: 16 × 5 episodes,
+  β 0.5, rolled out with `sel_r0`, trained on r0 + this round, tau 0.3.
+- **Pre-pass** (`sel_r0` alone, 96 episodes): success 0.75 / 0.69 / 0.48 by magnitude bin; 341 snapshots, mean
+  success 0.55. The round drew 51 bin and 29 snapshot starts.
+- **Baseline reproduces exactly:** `sel_r1` re-evaluates at 19/30, 2.41 / 4.18 N.
+- **Result (fair 30 starts):**
+
+  | training data | entered by training seed 0 / 1 / 2 / 3 | mean |
+  |---|---|---|
+  | r0 + r1 (uniform starts) | 19 / 19 / 18 / 19 | **18.75** |
+  | r0 + SGS round | 16 / 19 / 14 / 20 | 17.25 |
+
+  - Seed 0 also got a worse force tail: p90 6.92 N vs 4.18 N.
+  - Validation regret across the 4 seeds: 0.16–0.54 with SGS data vs 0.32–0.37 for r0 + r1.
+  - Neither beats the heuristic (22/30).
+- **Mechanism (likely):** the starts are not the bottleneck; the labels are. The dense 4-step score is
+  near-tied or misleading in hard states (jams, edge contact), so more such states add label noise, not signal.
+  Training gets less stable (regret spread), and the mean does not move.
+- **Binary-label check on 160 of these states** (each option, then the heuristic or `sel_r0` for 20 steps;
+  entered = tip 2 mm in; force gate 6 N):
+  - Options disagree in only 29–33 % of states; in 19–27 % no option enters.
+  - Where any option enters, the dense-score best already enters 93–95 % of the time (the heuristic option
+    65–75 %).
+  - So binary labels mainly widen the target to "any of the ~8 entering options". That may be easier to learn
+    than the dense argmax (top-1 only 0.3–0.5), but it cannot add much ranking information. Full test running
+    (dense vs binary on the same 3249 states, 3 seeds each).
+
 ### 2026-10-24: AlphaNIST (NVIDIA, arXiv 2610.13354) checked, not adopted
 - Sim-only RL from scratch, binary reward, one policy for all 20 NIST board tasks (98.2 % train success), up to
   256k envs (4k per GPU), point-cloud observations, joint-position targets at 25 Hz. No code or weights, no
@@ -63,6 +97,14 @@ Read this before starting work (and before re-investigating something "new").
     3 repeats × 10 offsets at 3 parallel, then H1), started with `setsid nohup`.
   - Also, `peg_benchmark.sh` no longer starts an Isaac instance while `MemAvailable` < `MIN_MEM_GB` (7), and
     `repeat_benchmark.sh` takes `START=` to resume.
+- **Track A done (D1 Isaac benchmark, 3 repeats × 10 offsets, cores 0–15):**
+  - **probe 24/30 (80 %, Wilson 95 % CI 63–90 %)**, spiral **7/30 (23 %, CI 12–41 %)**. The intervals do not
+    overlap, so probing is the better baseline beyond noise.
+  - Per repeat, probe went 8 / 9 / 7 and spiral 3 / 2 / 2.
+  - Probe is 3/3 at every offset ≤ 3 mm except (3, 3); its failures are at 3.6–5 mm. Successes there are slow
+    (41–109 s median contact phase vs 3–9 s near 0).
+  - Spiral fails even at 0,0 once (2/3) and is 0/3 at four offsets.
+  - Table: `~/ci_mpc_runs/weekend/A/summary.md`.
 - **H2 gear mesh** (`scripts/isaac/gear_scene.py`, `GEAR=1`, `GEAR_DROP_TEST=1`): Factory gear base plus the
   small and large gears (kinematic); the medium gear lies free on the table. SDF collision is already in the assets.
   - Measured geometry: shaft r 4.75 mm, top at z 25 mm (0.5 mm chamfer); bore r 5.00 mm, so 0.25 mm radial clearance;
