@@ -64,6 +64,10 @@ p.add_argument("--max-probes", type=int, default=12)
 p.add_argument("--engage-lateral", type=float, default=1.2,
                help="probe: a lateral force above this also counts as engaged [N] (inf: tip sink only; with a "
                     "calibrated grasp height ~22 %% of flat-face probes read > 1.2 N and started a GPU phase)")
+p.add_argument("--lateral-centering", action="store_true",
+               help="probe --entry gpu: a lateral push without tip sink centers (as plain probe) instead of starting "
+                    "the GPU phase; only a sink hands over to the GPU MPC (B4: pushes started GPU phases, 0/6 at 5 mm; "
+                    "B6, pushes ignored: out of probes, the push is the cue that walks plain probe to the hole)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -571,7 +575,8 @@ elif args.strategy == "probe":
         print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
               f"{tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N; belief {np.round(est * 1000, 2)} "
               f"(std {std * 1000:.2f}) mm", flush=True)
-        if engaged and args.entry == "gpu":
+        sunk = tip_z(x) < -3e-4
+        if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering):
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
             for _ in range(80):
                 x, F = measure5(), force3(0.1)

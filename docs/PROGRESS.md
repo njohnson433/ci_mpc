@@ -6,7 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). Running: B6/B7 (`queue_engage_sink.sh`).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). Running: B6/B7 (`queue_engage_sink.sh`), then B8/B9 (`queue_lateral_centering.sh`).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -95,6 +95,13 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **B6 rep1 (sink-only engagement): ±5 mm still fail, a different way.** No false GPU phases (0–1 per run) and only
+  92–96 s used, but all 25 probes spent with the belief wide (std ~5.9 mm); −5,0 found the hole on probe 24.
+  - Mechanism: the lateral push is the cue. In plain probe it triggers centering, which follows the chamfer push toward
+    the hole; B4 turned it into a GPU phase (harmful), B6 ignores it (lost).
+  - Option `--lateral-centering` (off by default): with `--entry gpu`, a push without tip sink centers as plain probe
+    does; only a sink starts the GPU phase. Queued `scripts/queue_lateral_centering.sh`: B8 (GPU) and B9 (refine),
+    after B6/B7.
 - **H3 rerun (entry-plane fix, same 12 assemblies and offsets): spiral 7/12, probe 4/12, probe + GPU 4/12**
   (run 1: 6 / 5 / 5). `~/ci_mpc_runs/weekend/H3_fix.log`.
   - 00700, the setup artifact, now works: spiral and GPU succeed (probe still fails 3.1 mm short).
