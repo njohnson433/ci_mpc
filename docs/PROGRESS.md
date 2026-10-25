@@ -87,6 +87,10 @@ Read this before starting work (and before re-investigating something "new").
     per-episode controller YAML). `demo_peg.sh` now honours `CONTROLLER_CONFIG`. No clearance knob (fixed USD asset).
   - Running: 2 workers × 40 episodes × 40 probes on cores 0–15 (~3200 probes, ~6–8 min per episode),
     `~/ci_mpc_runs/likelihood/sweeps`.
+  - **Memory incident 21:53:** with B10's 3 Isaac instances + 3 GPU servers, the 2 collection workers pushed RAM to
+    2 GB available and swap full (each Isaac instance ~6 GB RSS, not 3–4). Collection worker 1 stopped by PID (its
+    episode reruns on restart: the script skips episodes with a res.json); worker 0 continues. Restart worker 1 when
+    the benchmark queues are done (`WORKERS=2 scripts/collect_probes.sh ~/ci_mpc_runs/likelihood/sweeps 40`).
 - **Centering can push the peg off the block (B9 rep3 0,4):** a misread push drove centering 9.6 mm to y = 14.2 mm, past the
   face edge (12.5 mm); the peg dropped 4.3 mm, counted as "in the hole" and was pushed down beside the block (caught by
   the new xy success check). Centering has no travel bound (60 × 0.4 mm). 41 of 825 logged centering moves went > 4 mm,
