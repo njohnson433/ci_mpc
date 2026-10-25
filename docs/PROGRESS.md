@@ -73,7 +73,15 @@ Read this before starting work (and before re-investigating something "new").
   - **Fix (staged as `peg_insert_demo.next.py`, swapped in after B2):** a dedicated calibration touch on the top face
     14.5 mm from the estimate along a diagonal (hole R + chamfer + peg half width + 5 mm error; block 20 mm half
     wide), before probing. `--calib-touch` (default 0.0145; off with `--geo`, so gear / AutoMate are unchanged).
-  - New queue `scripts/queue_calib_fix.sh` replaces B3 and the H3 waiter: gate on 3 offsets (abort unless 3/3
+  - **Calibration touch, first try (14.5 mm) failed the gate (2/3):** the Factory hole's top face is a 25 mm square
+  (12.5 mm half width) on a 40 mm base plate; the 20 mm I assumed was the plate. On −3,−2 the touch went past the
+  face edge (tip −8.3 mm, no force) and the peg later slid down the block's side. That run also scored "success"
+  20 mm off: success only checked depth.
+  - **v2:** touch at 9.5 mm on the diagonal. The peg is held upright, so its tip sits at face height whenever part of
+    its footprint is on the flat face (centre 2–16 mm from the hole); 9.5 mm keeps that for errors up to 5.4 mm.
+    No lateral-force gate on the touch; probe 0 calibration stays as the fallback if the touch fails.
+  - Success now also needs xy error < 1.5 mm. Of 119 earlier successes, none is affected (only this one, 20 mm).
+- New queue `scripts/queue_calib_fix.sh` replaces B3 and the H3 waiter: gate on 3 offsets (abort unless 3/3
     calibrate), then A2 (plain probe), B4 (GPU entry), B5 (refine −1) interleaved per repeat, 3 repeats, then H3_fix.
   - The 24/30 baseline and B2 both carry this bug; compare B4/B5 against A2, not against 24/30.
 

@@ -63,7 +63,7 @@ p.add_argument("--out", default="")
 p.add_argument("--max-probes", type=int, default=12)
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
-                    "height before probing [m] (default 0.0145 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
+                    "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
                     "only if it lands flat; with --geo: off)")
 p.add_argument("--entry", default="follow", choices=["follow", "gpu"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
@@ -533,13 +533,16 @@ elif args.strategy == "probe":
         spin_sim(0.3)
         return measure5(), force3(0.3)
 
-    calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0145)
+    calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0095)
     if calib_touch > 0:
         # grasp height on a spot that is surely flat top face (2026-10-25: probe 0 skipped the calibration when its
         # lateral force read > 1.5 N, then the belief never moved; D1 plain probe 14/15 calibrated vs 7/12 not).
-        # 14.5 mm = hole R + chamfer + peg half width + 5 mm estimate error; diagonal: the block is 20 mm half wide
+        # The peg is held upright, so its tip sits at face height whenever part of its footprint is on the flat face:
+        # centre 2-16 mm from the hole (R + chamfer 5.5 mm, face 12.5 mm half wide, ~14 mm on the diagonal). 9.5 mm on
+        # the diagonal keeps that for estimate errors up to 5.4 mm (14.5 mm, first try: past the face edge, -8 mm)
         x, F = touch(np.array([-1.0, -1.0]) / np.sqrt(2.0) * calib_touch)
-        if F[2] > 1.0 and abs(tip_z(x)) < 0.0015:
+        if F[2] > 1.0 and abs(tip_z(x)) < 0.0015:  # no lateral-force gate: an edge contact gives a push, not a height
+
             c["z_bias"] = tip_z(x)
             print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibration touch, {calib_touch * 1000:.1f} mm "
                   f"from the estimate)", flush=True)
@@ -549,7 +552,7 @@ elif args.strategy == "probe":
         if state["t"] - c["t0"] > args.timeout_contact:
             break
         x, F = touch(target)
-        if k == 0 and calib_touch <= 0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
+        if k == 0 and c["z_bias"] == 0.0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
             # first contact on the flat top face (no lateral push): its tip height is the grasp offset (Isaac:
             # +0.55 mm; uncorrected, every hypothesis showed a gap and the belief never moved)
             c["z_bias"] = tip_z(x)
@@ -757,7 +760,7 @@ segment("C release -> up", [(np.array([*x[:2], Z_SAFE]), R)])
 tr = truth()
 peg_o = np.array(tr["peg"]["origin"])
 stays = abs(peg_o[2] - hole_o[2]) < 0.0015
-success = depth_err < 0.001 and stays
+success = depth_err < 0.001 and stays and xy_err < 0.0015  # xy: a peg off the block's side reached the depth
 t_search = (c["t_engage"] - c["t_contact"]) if c["t_engage"] and c["t_contact"] else float("nan")
 t_insert = (c["t_done"] - c["t_engage"]) if c["t_done"] and c["t_engage"] else float("nan")
 res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2] * 1000],
