@@ -53,6 +53,17 @@ Read this before starting work (and before re-investigating something "new").
 - **Restart bug fixed:** the drivers did not create `$OUT`. With the directory missing, every repeat failed at once
   and the driver still wrote "B2 done" / "B3 done", which released the next job in the chain. Both drivers now run
   `mkdir -p "$OUT"`. The early H3 waiter was killed before it started.
+- **B2 result (probe + GPU entry, belief fix, no calibration fix): 22/30 (73 %)**, per repeat 6 / 7 / 9 of 10.
+  Before the belief fix: 4/10 (B repeat 1). Plain probe (same calibration bug): 24/30.
+
+  | B2, 0,0 excluded | success |
+  |---|---|
+  | grasp height calibrated on probe 0 | **15/16 (94 %)** |
+  | not calibrated | **4/11 (36 %)** |
+
+  - 7 of B2's 8 failures are uncalibrated runs; all failures but one end 1.9–9.9 mm off with the belief frozen.
+  - So the belief fix works, and the GPU entry is about level with plain probe on equal footing (both ~93 % when
+    calibrated). The calibration bug dominates both; A2/B4/B5 measure them with it fixed.
 - **Grasp-height calibration bug (found 2026-10-25 in B2), affects every probe run on the Factory peg.**
   - Probe 0 calibrates the grasp height only if its lateral force is < 1.5 N. On many runs the press reads 1.5–2.6 N
     laterally on the flat face, the calibration is skipped, every hypothesis shows a gap, and the belief stops moving
