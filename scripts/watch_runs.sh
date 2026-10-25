@@ -1,10 +1,10 @@
 #!/bin/bash
-# Live dashboard for the Isaac benchmark chain (B2 -> B3 -> H3_fix by default): driver status, every run's result,
+# Live dashboard for the Isaac benchmark chain (B2 -> calib_check -> A2/B4/B5 -> H3_fix by default): driver status, every run's result,
 # per-repeat tallies, GPU / RAM. Read-only; Ctrl-C to quit.
 #   scripts/watch_runs.sh [RUN_ROOT] [JOB ...]      e.g. scripts/watch_runs.sh ~/ci_mpc_runs/weekend B2 B3 H3_fix
 # INTERVAL (env, default 20 s) the refresh period.
 ROOT=${1:-$HOME/ci_mpc_runs/weekend}; shift
-JOBS=${*:-B2 B3 H3_fix}
+JOBS=${*:-B2 calib_check A2 B4 B5 H3_fix}
 while true; do
   out=$(
     echo "ci_mpc runs  $(date '+%F %T')  root: $ROOT"
@@ -19,6 +19,10 @@ while true; do
       # these are evaluations of a fixed controller/planner, not training: say which method this job tests
       case $job in
         B2) echo "   method: probe search + GPU sampling MPC entry (belief fix), Isaac 8 mm peg, 10 offsets x 3" ;;
+        calib_check) echo "   method: gate for the grasp-height calibration touch (3 offsets); the queue aborts if not 3/3 calibrated" ;;
+        A2) echo "   method: plain probe search, with the calibration touch (baseline; before: 24/30)" ;;
+        B4) echo "   method: probe search + GPU sampling MPC entry, with the calibration touch" ;;
+        B5) echo "   method: probe search + sample-then-refine MPC entry (margin -1), with the calibration touch" ;;
         B3) echo "   method: probe search + sample-then-refine MPC entry (GPU sampler + C3 QP, margin -1), Isaac peg" ;;
         H3*) echo "   method: held-out AutoMate assemblies (12), spiral vs probe vs probe + GPU, entry-plane fix" ;;
       esac
@@ -64,7 +68,7 @@ for grp, items in groups.items():
     print("\n".join(rows))
 if tot_n:
     print(f"  TOTAL success {tot_ok}/{tot_n} = {100 * tot_ok / tot_n:.0f} %  ({tot_started} started)"
-          + ("   [baseline: plain probe 24/30 = 80 %]" if os.path.basename(root) in ("B2", "B3") else ""))
+          + ("   [baseline: plain probe 24/30 = 80 %]" if os.path.basename(root) in ("B2", "B3", "B4", "B5") else ""))
 EOF
     done
   )

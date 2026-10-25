@@ -5,8 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **2026-10-25:** after a power cut, B2 -> B3 -> H3_fix is running again (`~/ci_mpc_runs/weekend/{B2,B3,H3_fix}`).
-  When done: fill in the B2/B3 results vs probe 24/30, and the H3 rerun vs run 1.
+- **2026-10-25:** B2 is running (pre-fix); then `queue_calib_fix.sh` (calibration-touch gate, A2/B4/B5, H3_fix).
+  Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
   at 0–1 mm hole error, fails at ≥ 2 mm (jamming, in-hand slip). Proposed next: contact force estimate → CI-MPC
   (planar peg-hole with a compliant grasp) → Isaac.
@@ -53,6 +53,18 @@ Read this before starting work (and before re-investigating something "new").
 - **Restart bug fixed:** the drivers did not create `$OUT`. With the directory missing, every repeat failed at once
   and the driver still wrote "B2 done" / "B3 done", which released the next job in the chain. Both drivers now run
   `mkdir -p "$OUT"`. The early H3 waiter was killed before it started.
+- **Grasp-height calibration bug (found 2026-10-25 in B2), affects every probe run on the Factory peg.**
+  - Probe 0 calibrates the grasp height only if its lateral force is < 1.5 N. On many runs the press reads 1.5–2.6 N
+    laterally on the flat face, the calibration is skipped, every hypothesis shows a gap, and the belief stops moving
+    (B2 rep2 3,0: belief frozen at [2.08, −1.08] mm, std 5.55, for probes 5–19; ended 7.4 mm off).
+  - Success vs calibration (0,0 excluded): plain probe A **14/15 calibrated vs 7/12 not** (5 of its 6 failures);
+    B2 so far 5/6 vs 1/5.
+  - **Fix (staged as `peg_insert_demo.next.py`, swapped in after B2):** a dedicated calibration touch on the top face
+    14.5 mm from the estimate along a diagonal (hole R + chamfer + peg half width + 5 mm error; block 20 mm half
+    wide), before probing. `--calib-touch` (default 0.0145; off with `--geo`, so gear / AutoMate are unchanged).
+  - New queue `scripts/queue_calib_fix.sh` replaces B3 and the H3 waiter: gate on 3 offsets (abort unless 3/3
+    calibrate), then A2 (plain probe), B4 (GPU entry), B5 (refine −1) interleaved per repeat, 3 repeats, then H3_fix.
+  - The 24/30 baseline and B2 both carry this bug; compare B4/B5 against A2, not against 24/30.
 
 ### 2026-10-24 (midday): sample, then QP-refine (user request)
 - **Idea:** the GPU sampler picks the mode (best sampled sequence); one 3D C3 solve warm-started from it refines
