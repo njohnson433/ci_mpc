@@ -6,8 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. Running: A3/B10 (`queue_track_height.sh`, grasp-height tracking),
-  then A4/B11 (`queue_learned_belief.sh`, learned probe likelihood).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. Running: A4/B11 (`queue_learned_belief.sh`, learned probe likelihood).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -174,6 +173,12 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **A3 / B10 final (grasp-height tracking, `--track-height 5`):** A3 plain probe **29/30** (9 / 10 / 10; miss −5,0 out of
+  probes, like A2), B10 GPU entry + lateral centering **29/30** (10 / 9 / 10; miss 5,0, belief flat, time out).
+  - Plain probe: no change (A2 29/30). GPU entry: B8 28/30 → B10 29/30, ±5 mm 4/6 → 5/6: within noise, but the one
+    drift-caused B8 failure (−5,0, flat face read as sunk) did not recur. Tracking is cheap and does not hurt: keep it on.
+  - Every remaining miss at ±5 mm is search budget (25 probes / 150 s) with a wide belief: the target for the learned
+    likelihood (A4/B11) and the probe-sweep model.
 - **B8 / B9 final (`--lateral-centering`: a push centers, only a sink starts the GPU phase):** B8 GPU entry **28/30**
   (8 / 10 / 10; ±5 mm 4/6), B9 refine **27/30** (9 / 9 / 9; ±5 mm 4/6, plus 0,4 pushed off the block by centering).
 
