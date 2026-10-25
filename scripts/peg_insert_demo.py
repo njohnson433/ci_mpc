@@ -72,6 +72,10 @@ p.add_argument("--track-height", type=int, default=0,
                help="probe: re-estimate the grasp height offset as the median raw tip height of the last N flat-face "
                     "probes (0 = off; the peg creeps ~0.005-0.01 mm per probe in the fingers, long searches reached the "
                     "0.3 mm sink threshold on the flat face)")
+p.add_argument("--belief-model", default="",
+               help="probe: learned probe likelihood (.npz from scripts/train_probe_likelihood.py) instead of the hand "
+                    "measurement model in the hole belief")
+p.add_argument("--belief-scale", type=float, default=1.0, help="temper the learned log-likelihood (< 1: softer)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -450,6 +454,21 @@ elif args.strategy == "probe":
     # touch tolerance small: ring points over the chamfer must not count as supported (0.4 mm + the 0.3 mm
     # penetration tolerance shrank each probe's exclusion to ~1.3 mm, and the search crawled)
     belief = HoleBelief(geo, f_lateral=1e9, touch=1.5e-4)
+    if args.belief_model:
+        # from the source tree (the colcon install of ci_mpc_planner is older and is not rebuilt mid-benchmark)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("probe_likelihood", os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "ci_mpc_planner", "ci_mpc_planner", "probe_likelihood.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        lik = mod.ProbeLikelihood(os.path.expanduser(args.belief_model), scale=args.belief_scale)
+
+        def learned_update(x, force, b=belief):
+            b.logw += lik(b.h, x[:2], x[2] - b.g.tip_below_tcp, force)
+            b.logw -= b.logw.max()
+
+        belief.update = learned_update
+        print(f"  belief: learned probe likelihood {args.belief_model} (scale {args.belief_scale})", flush=True)
     c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
 
     c["z_bias"] = 0.0  # tip height offset of the grasp (peg seated deeper / shallower in the fingers than nominal)

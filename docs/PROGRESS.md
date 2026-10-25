@@ -6,7 +6,8 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. Running: B8/B9 (`queue_lateral_centering.sh`), then A3/B10 (`queue_track_height.sh`, grasp-height tracking).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. Running: B8/B9 (`queue_lateral_centering.sh`), then A3/B10 (`queue_track_height.sh`, grasp-height tracking),
+  then A4/B11 (`queue_learned_belief.sh`, learned probe likelihood).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -46,6 +47,37 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-25 (evening): learned probe likelihood for the hole belief (idea #1, user request)
+- **Why:** the remaining failures are at ±5 mm, search budget exhausted with a wide belief; the push that walks plain
+  probe to the hole is ignored by the belief (`f_lateral=1e9`), and its hard thresholds sit at the force estimate's
+  error level. The FR3 estimates the EE force from link-side joint torque sensors (model + Jacobian), which the sim
+  already reproduces (momentum observer on Isaac's link-side torques, noise 0.05 Nm, offsets ≤ 0.15 Nm).
+- **Data:** `scripts/probe_dataset.py` → 3873 probes from 321 Factory-peg runs (true hole known); training uses the 3332
+  from calibrated runs. `~/ci_mpc_runs/likelihood/probes.npz`.
+- **Model** (`ci_mpc_planner/probe_likelihood.py`, `scripts/train_probe_likelihood.py`): MLP on rotation-invariant
+  features (hole–TCP distance, lateral force toward / across the hypothesis, Fz, tip height), trained contrastively
+  (true hole vs 16 grid hypotheses; logit = log-likelihood ratio). **Sensor-error randomization** per sample: force
+  gain σ 10 %, cross-axis σ 5 %, bias drift after the tare σ 0.3 N, noise σ 0.2 N; tip bias σ 0.15 mm, noise 0.03 mm
+  (assumed until measured on the FR3). NumPy inference; models in `ci_mpc_planner/models/`.
+- **Offline replay, search probes only (51 held-out runs):** median belief error / P(within 2 mm) / log p(true cell)
+
+  | sensor errors | hand model (deployed) | learned, no rand | learned, randomized |
+  |---|---|---|---|
+  | 0× | 2.83 mm / 0.33 / −5.6 | 1.71 mm / 0.51 / −5.4 | 1.96 mm / 0.49 / −5.2 |
+  | 1× | 3.09 mm / 0.32 / −5.6 | 1.53 mm / 0.48 / −5.6 | 1.99 mm / 0.48 / −5.3 |
+  | 2× | 3.83 mm / 0.26 / −10.9 | 2.69 mm / 0.42 / −6.8 | 2.51 mm / 0.41 / −6.1 |
+
+  - Learned beats the hand model everywhere (~1 mm better, mass near the truth 0.33 → ~0.5); the hand model becomes
+    confidently wrong at 2× errors. Randomization trades ~0.3–0.5 mm at low error for the best calibration at 2×
+    (one seed, 51 runs: small differences). The randomized model is the deployment candidate.
+  - Caveat: off-policy (logged probe positions). Closed loop is the real test.
+- **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
+  installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
+  (B8 + learned belief, vs B8).
+- **Found:** the colcon install of `ci_mpc_planner` is from 2026-10-23 and older than the source (`peg_hole_3d.py`
+  differs, newer modules missing). The demo imports the install; not rebuilt mid-benchmark. To do: rebuild after the
+  queues and check the D1 numbers do not move.
 
 ### 2026-10-25 (morning): power cut, B2 -> B3 -> H3_fix chain restarted
 - The machine lost power at ~15:18 on 2026-10-24, during B2 repeat 1 (6 of 10 offsets started, 1 finished). B3 and

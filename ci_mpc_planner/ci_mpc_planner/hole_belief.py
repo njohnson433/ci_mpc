@@ -51,8 +51,9 @@ def profile_sdf(r, z, g):
 class HoleBelief:
     def __init__(self, geo=PegHoleGeometry(), spread=0.006, res=0.0005, n_ring=24, touch=4e-4, f_contact=0.8,
                  pen_tol=3e-4,
-                 f_lateral=1.0, capture=0.002):  # f_lateral ~3 sigma of the wrench estimate (0.5: noise read as a push)
+                 f_lateral=1.0, capture=0.002, likelihood=None):  # f_lateral ~3 sigma of the wrench estimate
         self.g = geo
+        self.likelihood = likelihood  # learned probe likelihood (probe_likelihood.py) instead of the hand model
         ax = np.arange(-spread, spread + 1e-9, res)
         gx, gy = np.meshgrid(ax, ax)
         self.h = np.column_stack([gx.ravel(), gy.ravel()])
@@ -84,6 +85,10 @@ class HoleBelief:
 
     def update(self, x, force):
         """x: measured TCP pose (model frame), force: measured contact force on the peg (3, world)."""
+        if self.likelihood is not None:
+            self.logw += self.likelihood(self.h, x[:2], x[2] - self.g.tip_below_tcp, force)
+            self.logw -= self.logw.max()
+            return
         d, n = self.gaps(x)
         ll = -np.sum(np.minimum(d + self.pen_tol, 0.0) ** 2, axis=1) / (3e-4) ** 2  # penetration beyond tolerance
         touching = d < self.touch + self.pen_tol
