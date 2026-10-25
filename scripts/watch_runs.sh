@@ -16,6 +16,14 @@ while true; do
     for job in $JOBS; do
       echo
       last=$(tail -n 1 "$ROOT/$job.log" 2>/dev/null); echo "== $job  (${last:-waiting for the previous job})"
+      # these are evaluations of a fixed controller/planner, not training: say which method this job tests
+      case $job in
+        B2) echo "   method: probe search + GPU sampling MPC entry (belief fix), Isaac 8 mm peg, 10 offsets x 3" ;;
+        B3) echo "   method: probe search + sample-then-refine MPC entry (GPU sampler + C3 QP, margin -1), Isaac peg" ;;
+        H3*) echo "   method: held-out AutoMate assemblies (12), spiral vs probe vs probe + GPU, entry-plane fix" ;;
+      esac
+      cmd=$(ps -eo args | grep -F "$ROOT/$job/" | grep -E "peg_benchmark|heldout_|demo_" | grep -v grep | head -n 1)
+      [ -n "$cmd" ] && echo "   now: $(echo "$cmd" | sed -E 's| [^ ]*/ci_mpc_runs/[^ ]*||g; s|/[^ ]*/||g; s|^bash ||' | cut -c1-110)"
       [ -d "$ROOT/$job" ] || { echo "   waiting to start"; continue; }
       python3 - "$ROOT/$job" <<'EOF'
 import glob, json, os, sys, time
