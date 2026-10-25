@@ -68,6 +68,10 @@ p.add_argument("--lateral-centering", action="store_true",
                help="probe --entry gpu: a lateral push without tip sink centers (as plain probe) instead of starting "
                     "the GPU phase; only a sink hands over to the GPU MPC (B4: pushes started GPU phases, 0/6 at 5 mm; "
                     "B6, pushes ignored: out of probes, the push is the cue that walks plain probe to the hole)")
+p.add_argument("--track-height", type=int, default=0,
+               help="probe: re-estimate the grasp height offset as the median raw tip height of the last N flat-face "
+                    "probes (0 = off; the peg creeps ~0.005-0.01 mm per probe in the fingers, long searches reached the "
+                    "0.3 mm sink threshold on the flat face)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -572,6 +576,9 @@ elif args.strategy == "probe":
         on_top = not engaged
         if on_top:
             probes.append(x[:2].copy())
+            if args.track_height > 0:  # raw tip heights (bias added back), seeded with the calibration
+                c.setdefault("flat_raw", [c["z_bias"]]).append(tip_z(x) + c["z_bias"])
+                c["z_bias"] = float(np.median(c["flat_raw"][-args.track_height:]))
         print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
               f"{tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N; belief {np.round(est * 1000, 2)} "
               f"(std {std * 1000:.2f}) mm", flush=True)

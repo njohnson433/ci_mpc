@@ -4,7 +4,7 @@
 #   scripts/watch_runs.sh [RUN_ROOT] [JOB ...]      e.g. scripts/watch_runs.sh ~/ci_mpc_runs/weekend B2 B3 H3_fix
 # INTERVAL (env, default 20 s) the refresh period.
 ROOT=${1:-$HOME/ci_mpc_runs/weekend}; shift
-JOBS=${*:-B6 B7 B8 B9}
+JOBS=${*:-B8 B9 A3 B10}
 while true; do
   out=$(
     echo "ci_mpc runs  $(date '+%F %T')  root: $ROOT"
@@ -27,6 +27,8 @@ while true; do
         B7) echo "   method: as B5, but engaged = tip sink only (--engage-lateral inf)" ;;
         B8) echo "   method: as B4, but a lateral push centers (plain probe), only a tip sink starts the GPU phase" ;;
         B9) echo "   method: as B5, but a lateral push centers (plain probe), only a tip sink starts the GPU phase" ;;
+        A3) echo "   method: plain probe + grasp-height tracking (--track-height 5); compare A2 29/30" ;;
+        B10) echo "   method: as B8 (GPU entry, lateral centering) + grasp-height tracking" ;;
         B3) echo "   method: probe search + sample-then-refine MPC entry (GPU sampler + C3 QP, margin -1), Isaac peg" ;;
         H3*) echo "   method: held-out AutoMate assemblies (12), spiral vs probe vs probe + GPU, entry-plane fix" ;;
       esac
@@ -72,7 +74,7 @@ for grp, items in groups.items():
     print("\n".join(rows))
 if tot_n:
     print(f"  TOTAL success {tot_ok}/{tot_n} = {100 * tot_ok / tot_n:.0f} %  ({tot_started} started)"
-          + ("   [baseline: plain probe 24/30 = 80 %]" if os.path.basename(root) in ("B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9") else ""))
+          + ("   [baseline: plain probe 24/30 = 80 %]" if os.path.basename(root) in ("B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10") else ""))
 EOF
     done
   )
