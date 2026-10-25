@@ -4,6 +4,7 @@
 #   setsid nohup scripts/rerun_track_b.sh ~/ci_mpc_runs/weekend/B2 3 > ~/ci_mpc_runs/weekend/B2.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; REPEATS=${2:-3}
+mkdir -p "$OUT"
 until grep -q "H3 done" ~/ci_mpc_runs/weekend/H3/driver.log 2>/dev/null && \
       grep -q "done$" ~/ci_mpc_runs/selector/sgs/binary/run_bin_sel.log 2>/dev/null; do sleep 60; done
 grep -q "Track B: belief fix" "$HERE/peg_insert_demo.py" || grep -q "one update per GPU step counted" "$HERE/peg_insert_demo.py" \

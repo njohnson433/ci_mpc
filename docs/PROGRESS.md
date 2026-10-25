@@ -5,6 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-25:** after a power cut, B2 -> B3 -> H3_fix is running again (`~/ci_mpc_runs/weekend/{B2,B3,H3_fix}`).
+  When done: fill in the B2/B3 results vs probe 24/30, and the H3 rerun vs run 1.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
   at 0–1 mm hole error, fails at ≥ 2 mm (jamming, in-hand slip). Proposed next: contact force estimate → CI-MPC
   (planar peg-hole with a compliant grasp) → Isaac.
@@ -42,6 +44,15 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-25 (morning): power cut, B2 -> B3 -> H3_fix chain restarted
+- The machine lost power at ~15:18 on 2026-10-24, during B2 repeat 1 (6 of 10 offsets started, 1 finished). B3 and
+  the H3 rerun had not started. The partial B2 is kept in `~/ci_mpc_runs/weekend/B2_interrupted_20261024`.
+- Restarted 08:46 with the same scripts: `rerun_track_b.sh` (B2, 3 repeats), then `track_b3_refine.sh` (B3), then
+  `run_h3_fix.sh` (H3 with the entry-plane fix).
+- **Restart bug fixed:** the drivers did not create `$OUT`. With the directory missing, every repeat failed at once
+  and the driver still wrote "B2 done" / "B3 done", which released the next job in the chain. Both drivers now run
+  `mkdir -p "$OUT"`. The early H3 waiter was killed before it started.
 
 ### 2026-10-24 (midday): sample, then QP-refine (user request)
 - **Idea:** the GPU sampler picks the mode (best sampled sequence); one 3D C3 solve warm-started from it refines

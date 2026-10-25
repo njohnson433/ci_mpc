@@ -4,6 +4,7 @@
 #   setsid nohup scripts/track_b3_refine.sh ~/ci_mpc_runs/weekend/B3 3 > ~/ci_mpc_runs/weekend/B3.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; REPEATS=${2:-3}
+mkdir -p "$OUT"
 until grep -q "B2 done" ~/ci_mpc_runs/weekend/B2.log 2>/dev/null; do sleep 60; done
 for r in $(seq 1 "$REPEATS"); do
   echo "$(date '+%F %T') B3 repeat $r"
