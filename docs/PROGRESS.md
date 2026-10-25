@@ -94,6 +94,13 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **Repeat 1 with the calibration touch (all runs calibrated):** A2 plain probe **10/10**, B4 GPU entry **7/10**
+  (fails ±5,0 and 3,3), B5 refine −1 **5/10** (fails ±5,0, 0,4, 3,3, −4,2).
+  - Every GPU-entry failure checked shows the false-engagement pattern: 3–9 GPU phases per run, mostly started on the
+    flat face by > 1.2 N lateral force; the belief collapses (std 0.87–1.75 mm) near the start; the run hits the
+    150 s budget. Refine is worse than the sampler because each phase is slower and it runs more of them.
+  - The offline refine gain (30/30, p90 3.7 N) does not carry over to Isaac while flat-face pushes count as
+    engagement. B6/B7 test sink-only engagement.
 - **Idea:** the GPU sampler picks the mode (best sampled sequence); one 3D C3 solve warm-started from it refines
   the commands inside that mode.
   - Code: `ci_mpc_planner/refine_mpc.py` (`SampleRefineMPC`), `sampled_teacher_eval.py --policy refine
