@@ -6,7 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). Running: B6/B7 (`queue_engage_sink.sh`), then B8/B9 (`queue_lateral_centering.sh`).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. Running: B8/B9 (`queue_lateral_centering.sh`).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -95,6 +95,21 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **B6 / B7 final (sink-only engagement, `--engage-lateral inf`):** B6 GPU entry **26/29** (one setup failure
+  excluded: B6 rep2 5,0, the arm never moved, TCP 310 mm off after 12 s; the only such run today), B7 refine **26/30**.
+
+  | method (calibration touch) | success | inside ±5 mm (24 runs) | ±5 mm |
+  |---|---|---|---|
+  | A2 plain probe | **29/30** | 24/24 | 5/6 |
+  | B4 GPU entry, push → GPU | 22/30 | 22/24 | 0/6 |
+  | B5 refine, push → GPU | 16/30 | 15/24 | 1/6 |
+  | B6 GPU entry, sink only | 26/29 | 24/24 | 2/5 |
+  | B7 refine, sink only | 26/30 | 24/24 | 2/6 |
+
+  - **Removing push → GPU fixes everything inside ±5 mm** (both entries 24/24, refine from 15/24). Refine's B5 deficit was
+    entirely this trigger.
+  - **±5 mm stays weak (2/5–2/6 vs plain probe 5/6):** ignoring the push loses plain probe's centering cue; the runs end
+    out of probes (B6) or out of time (B7 rep2) with the belief wide. B8/B9 (`--lateral-centering`) test using it.
 - **B6 rep1 (sink-only engagement): ±5 mm still fail, a different way.** No false GPU phases (0–1 per run) and only
   92–96 s used, but all 25 probes spent with the belief wide (std ~5.9 mm); −5,0 found the hole on probe 24.
   - Mechanism: the lateral push is the cue. In plain probe it triggers centering, which follows the chamfer push toward
