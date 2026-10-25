@@ -6,7 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. Running: B8/B9 (`queue_lateral_centering.sh`), then A3/B10 (`queue_track_height.sh`, grasp-height tracking),
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. Running: A3/B10 (`queue_track_height.sh`, grasp-height tracking),
   then A4/B11 (`queue_learned_belief.sh`, learned probe likelihood).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
@@ -144,6 +144,18 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **B8 / B9 final (`--lateral-centering`: a push centers, only a sink starts the GPU phase):** B8 GPU entry **28/30**
+  (8 / 10 / 10; ±5 mm 4/6), B9 refine **27/30** (9 / 9 / 9; ±5 mm 4/6, plus 0,4 pushed off the block by centering).
+
+  | method (calibration touch) | success | inside ±5 mm | ±5 mm |
+  |---|---|---|---|
+  | A2 plain probe | 29/30 | 24/24 | 5/6 |
+  | B4 / B5 push → GPU | 22 / 16 of 30 | 22 / 15 of 24 | 0 / 1 of 6 |
+  | B6 / B7 push ignored | 26/29 / 26/30 | 24 / 24 | 2/5 / 2/6 |
+  | **B8 / B9 push → centering** | **28/30 / 27/30** | 24 / 23 | **4/6 / 4/6** |
+
+  - Using the push for centering closes most of the gap to plain probe; the GPU entries now tie it within noise
+    (Wilson intervals overlap widely), but do not beat it. The open ±5 mm misses are search budget and grasp drift.
 - **Grasp-height drift (found in B8 rep1 −5,0):** the flat-face tip reading creeps down ~0.005–0.011 mm per probe
   (median per method), likely the peg slipping in the fingers under the ~5 N presses. On long searches it reaches the
   −0.3 mm sink threshold (last probes ≤ −0.3 mm: A2 1/15, B6 4/17, B7 5/18 long runs); in B8 −5,0 the flat face then
