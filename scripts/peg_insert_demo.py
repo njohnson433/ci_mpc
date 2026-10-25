@@ -61,6 +61,10 @@ p.add_argument("--engage", type=float, default=0.003, help="tip this far below t
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
 p.add_argument("--max-probes", type=int, default=12)
+p.add_argument("--calib-touch", type=float, default=None,
+               help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
+                    "height before probing [m] (default 0.0145 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
+                    "only if it lands flat; with --geo: off)")
 p.add_argument("--entry", default="follow", choices=["follow", "gpu"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
                     "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
@@ -499,9 +503,9 @@ elif args.strategy == "probe":
     tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
     probes, target, c["phase"] = [], np.zeros(2), "probe"
     n_probes = 0
-    for k in range(args.max_probes):
-        if state["t"] - c["t0"] > args.timeout_contact:
-            break
+
+    def touch(target):
+        """Hover, move over target, tare, press until contact (or in the hole); returns (x, F) in light contact."""
         x = measure5()
         cmd(x[:2], z_hover)
         spin_sim(0.4)
@@ -527,8 +531,25 @@ elif args.strategy == "probe":
                 break
         cmd(target, measure5()[2] - 0.001, (0.0, 0.0, -args.stiction_ff))  # light: just keep the contact
         spin_sim(0.3)
-        x, F = measure5(), force3(0.3)
-        if k == 0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
+        return measure5(), force3(0.3)
+
+    calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0145)
+    if calib_touch > 0:
+        # grasp height on a spot that is surely flat top face (2026-10-25: probe 0 skipped the calibration when its
+        # lateral force read > 1.5 N, then the belief never moved; D1 plain probe 14/15 calibrated vs 7/12 not).
+        # 14.5 mm = hole R + chamfer + peg half width + 5 mm estimate error; diagonal: the block is 20 mm half wide
+        x, F = touch(np.array([-1.0, -1.0]) / np.sqrt(2.0) * calib_touch)
+        if F[2] > 1.0 and abs(tip_z(x)) < 0.0015:
+            c["z_bias"] = tip_z(x)
+            print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibration touch, {calib_touch * 1000:.1f} mm "
+                  f"from the estimate)", flush=True)
+        else:
+            print(f"  calibration touch failed (tip {tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N)", flush=True)
+    for k in range(args.max_probes):
+        if state["t"] - c["t0"] > args.timeout_contact:
+            break
+        x, F = touch(target)
+        if k == 0 and calib_touch <= 0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
             # first contact on the flat top face (no lateral push): its tip height is the grasp offset (Isaac:
             # +0.55 mm; uncorrected, every hypothesis showed a gap and the belief never moved)
             c["z_bias"] = tip_z(x)
