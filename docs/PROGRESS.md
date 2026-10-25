@@ -5,7 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **2026-10-25:** B2 is running (pre-fix); then `queue_calib_fix.sh` (calibration-touch gate, A2/B4/B5, H3_fix).
+- **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
+  Running: H3_fix, then B6/B7 (`queue_engage_sink.sh`).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -94,6 +95,20 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **A2 / B4 / B5 final (calibration touch, 3 × 10 offsets, interleaved):**
+
+  | method | success | Wilson 95 % | ±5 mm | 3,3 / −4,2 / 0,4 |
+  |---|---|---|---|---|
+  | A2 plain probe | **29/30** | 83–99 % | 5/6 | 9/9 |
+  | B4 GPU entry | 22/30 | 56–86 % | 0/6 | 7/9 |
+  | B5 refine −1 | 16/30 | 36–70 % | 1/6 | 1/9 |
+  | (old A, uncalibrated) | 24/30 | 63–90 % | – | – |
+
+  - **The calibration touch is the win: plain probe 24/30 → 29/30.** Its one miss (−5,0) ran out of probes/time with a
+    wide belief (search speed, not belief error).
+  - **GPU entries are worse than plain probe in Isaac**, B5 worse than B4. Failures are the far offsets; mechanism (see
+    above): flat-face lateral pushes start GPU phases, the per-phase belief update collapses the belief near the start,
+    the 150 s budget runs out. Refine spends more time per phase. B6/B7 (sink-only engagement) test this next.
 - **Repeat 1 with the calibration touch (all runs calibrated):** A2 plain probe **10/10**, B4 GPU entry **7/10**
   (fails ±5,0 and 3,3), B5 refine −1 **5/10** (fails ±5,0, 0,4, 3,3, −4,2).
   - Every GPU-entry failure checked shows the false-engagement pattern: 3–9 GPU phases per run, mostly started on the
