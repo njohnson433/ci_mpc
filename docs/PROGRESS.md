@@ -48,6 +48,32 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-25: daily summary
+- **Power-cut restart:** the B2 → B3 → H3_fix chain was restarted at 08:46. The drivers did not create `$OUT`, so with
+  the directory missing they reported "done" at once and released the next job; fixed with `mkdir -p`. New live
+  dashboard `scripts/watch_runs.sh`. Today's Isaac results are logged under "2026-10-24 (midday): sample, then
+  QP-refine" below.
+- **Grasp-height calibration bug (affected every Factory-peg probe run):** probe 0 skipped calibration on > 1.5 N
+  lateral force, and then the belief froze. B2 (GPU entry) 22/30: 15/16 calibrated vs 4/11 not. Fix: a dedicated
+  calibration touch on the top face (v2 at 9.5 mm; 14.5 mm went off the 12.5 mm half-wide face). Success now also needs
+  xy < 1.5 mm, because one "success" ended 20 mm off. **Plain probe A2 29/30 (was 24/30).**
+- **GPU entries vs plain probe (Isaac, 3 × 10 offsets):** B4 GPU entry 22/30, B5 refine 16/30 (negative). Cause: flat-face
+  pushes > 1.2 N counted as engagement and started GPU phases, which collapsed the belief near the start. With sink-only
+  engagement (B6/B7): 26/29 and 26/30, 24/24 inside ±5 mm, but only 2/5–2/6 at ±5 mm, because the push cue was lost.
+  With the push used for centering (B8/B9): **28/30 and 27/30** (±5 mm 4/6 each). This ties plain probe within noise but
+  does not beat it.
+- **H3 rerun (AutoMate, entry-plane fix):** spiral 7/12, probe 4/12, GPU 4/12 (run 1: 6/5/5). 00700 is fixed, but 7 of
+  36 cells flipped with the same code, so the strategy differences on H3 are noise.
+- **Found in B8/B9:** the grasp height drifts ~0.005–0.011 mm per probe (peg creeping in the fingers), which can make the
+  flat face read as sunk → `--track-height N` (A3/B10, running). Centering also has no travel bound and pushed the
+  peg off the block once (B9 0,4); a bound is a to-do.
+- **Learned probe likelihood (sensor-error randomized MLP, 3332 probes):** offline median belief error 2.83 → 1.96 mm
+  (P within 2 mm 0.33 → 0.49), and the best calibration at 2× sensor errors. The evaluation is off-policy; closed loop
+  (A4/B11) is queued. Randomized probe sweeps (`--collect`, `collect_probes.sh`) are running.
+- **Infra:** 3 Isaac instances + 3 GPU servers + 2 collection workers filled RAM and swap (Isaac ~6 GB RSS each). One
+  collection worker was stopped; limit is at most 4 Isaac instances. The colcon install of `ci_mpc_planner` is
+  older than the source (rebuild after the queues).
+
 ### 2026-10-25 (evening): learned probe likelihood for the hole belief (idea #1, user request)
 - **Why:** the remaining failures are at ±5 mm, search budget exhausted with a wide belief; the push that walks plain
   probe to the hole is ignored by the belief (`f_lateral=1e9`), and its hard thresholds sit at the force estimate's
