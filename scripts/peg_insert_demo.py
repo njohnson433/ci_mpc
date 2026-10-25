@@ -61,6 +61,9 @@ p.add_argument("--engage", type=float, default=0.003, help="tip this far below t
 p.add_argument("--timeout-contact", type=float, default=30.0, help="sim seconds for the contact phase")
 p.add_argument("--out", default="")
 p.add_argument("--max-probes", type=int, default=12)
+p.add_argument("--engage-lateral", type=float, default=1.2,
+               help="probe: a lateral force above this also counts as engaged [N] (inf: tip sink only; with a "
+                    "calibrated grasp height ~22 %% of flat-face probes read > 1.2 N and started a GPU phase)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -561,7 +564,7 @@ elif args.strategy == "probe":
         belief.update(x, F)
         est, std = belief.estimate()
         n_probes += 1
-        engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > 1.2  # sank into the chamfer / a push (centering only)
+        engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > args.engage_lateral  # sank into the chamfer / a push (centering only)
         on_top = not engaged
         if on_top:
             probes.append(x[:2].copy())

@@ -7,6 +7,7 @@ Read this before starting work (and before re-investigating something "new").
 
 - **2026-10-25:** B2 is running (pre-fix); then `queue_calib_fix.sh` (calibration-touch gate, A2/B4/B5, H3_fix).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
+  Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
   at 0–1 mm hole error, fails at ≥ 2 mm (jamming, in-hand slip). Proposed next: contact force estimate → CI-MPC
   (planar peg-hole with a compliant grasp) → Isaac.
@@ -86,6 +87,13 @@ Read this before starting work (and before re-investigating something "new").
   - The 24/30 baseline and B2 both carry this bug; compare B4/B5 against A2, not against 24/30.
 
 ### 2026-10-24 (midday): sample, then QP-refine (user request)
+- **A2 rep1 (plain probe, calibration touch): 10/10**, every run calibrated (old A: 8/10 best repeat).
+- **B4 rep1 early: ±5 mm both fail although calibrated (A2: both OK).** Mechanism: a lateral force > 1.2 N on the flat
+  face counts as "engaged" (~22 % of flat probes in A2 and B4). Plain probe then only centers; the GPU entry runs a
+  full MPC phase and its one belief update narrows the belief (std 1.75 mm) around the start, so the search never
+  reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
+  - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
+    (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
 - **Idea:** the GPU sampler picks the mode (best sampled sequence); one 3D C3 solve warm-started from it refines
   the commands inside that mode.
   - Code: `ci_mpc_planner/refine_mpc.py` (`SampleRefineMPC`), `sampled_teacher_eval.py --policy refine
