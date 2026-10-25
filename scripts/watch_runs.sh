@@ -23,6 +23,7 @@ root = sys.argv[1]
 # a run dir is any directory holding run.out (repeat dirs rep1/rep2/..., or flat as in H3)
 runs = sorted({os.path.dirname(p) for p in glob.glob(f"{root}/**/run.out", recursive=True)})
 groups = {}
+tot_ok = tot_n = tot_started = 0
 for d in runs:
     rel = os.path.relpath(d, root)
     grp = rel.split(os.sep)[0] if os.sep in rel else "."
@@ -49,8 +50,13 @@ for grp, items in groups.items():
             except Exception:
                 pass
             rows.append(f"   {rel:<34} running ({age/60:.1f} min since last output){err}")
-    print(f"  [{grp}] {ok}/{n} succeeded of {n} finished, {len(items)} started")
+    tot_ok += ok; tot_n += n; tot_started += len(items)
+    pct = f"{100 * ok / n:.0f} %" if n else "-"
+    print(f"  [{grp}] success {ok}/{n} = {pct}  ({len(items)} started)")
     print("\n".join(rows))
+if tot_n:
+    print(f"  TOTAL success {tot_ok}/{tot_n} = {100 * tot_ok / tot_n:.0f} %  ({tot_started} started)"
+          + ("   [baseline: plain probe 24/30 = 80 %]" if os.path.basename(root) in ("B2", "B3") else ""))
 EOF
     done
   )
