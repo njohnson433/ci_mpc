@@ -6,7 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  Running: H3_fix, then B6/B7 (`queue_engage_sink.sh`).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). Running: B6/B7 (`queue_engage_sink.sh`).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -95,6 +95,15 @@ Read this before starting work (and before re-investigating something "new").
   reaches the hole 5 mm away (A2's belief stays ~5.3 mm wide and walks out to it).
   - Option `--engage-lateral` (default 1.2 N, unchanged). Queued `scripts/queue_engage_sink.sh`: B6 (GPU) and B7
     (refine) with `--engage-lateral inf` (tip sink only), after H3_fix; compare with B4 / B5.
+- **H3 rerun (entry-plane fix, same 12 assemblies and offsets): spiral 7/12, probe 4/12, probe + GPU 4/12**
+  (run 1: 6 / 5 / 5). `~/ci_mpc_runs/weekend/H3_fix.log`.
+  - 00700, the setup artifact, now works: spiral and GPU succeed (probe still fails 3.1 mm short).
+  - **Outcomes are not reproducible run to run:** 9 of 36 cells flipped, only 2 explained by the fix (00700). The 7
+    others (e.g. 00021 probe, 00028 / 00499 / 00652 GPU, 00301 / 00319 spiral) flipped with the same assembly, offset and
+    code. With 12 assemblies × 1 run, the H3 strategy differences (±1–3 of 12) are within this noise.
+  - The calibration touch is off here (`--geo`); probe 0 calibrated in 11/12 probe runs (+0.56 to +0.80 mm). No run was
+    rejected by the new xy < 1.5 mm check.
+  - Conclusion stays: on non-round AutoMate parts the assembly decides, not the strategy; spiral is at least as good.
 - **A2 / B4 / B5 final (calibration touch, 3 × 10 offsets, interleaved):**
 
   | method | success | Wilson 95 % | ±5 mm | 3,3 / −4,2 / 0,4 |
