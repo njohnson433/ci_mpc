@@ -81,6 +81,14 @@ p.add_argument("--collect", type=int, default=0,
                     "TRUE hole (distance 0-9 mm, half of them in the 2-6 mm chamfer band), random hold depth and settle "
                     "time, no insertion; logged as probe lines (scripts/probe_dataset.py)")
 p.add_argument("--collect-seed", type=int, default=0)
+p.add_argument("--centering-bound", type=float, default=0.0,
+               help="probe: stop centering, and do not take a drop as 'in the hole', beyond this distance from the "
+                    "estimate [m] (0 = off; hole errors are <= 5.4 mm; a misread push drove centering off the block "
+                    "edge twice, B9 rep3 / A4 rep1 0,4)")
+p.add_argument("--force-debias", type=int, default=0,
+               help="learned belief: subtract the median lateral force of the last N flat probes of the run before "
+                    "the likelihood (0 = off; the estimate's lateral bias is ~constant within a run, ~0.6-0.9 N, vs a "
+                    "0.17 N chamfer signal, and the belief treats probes as independent: A4 rep1 0,4 drifted)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -469,7 +477,14 @@ elif args.strategy == "probe":
         lik = mod.ProbeLikelihood(os.path.expanduser(args.belief_model), scale=args.belief_scale)
 
         def learned_update(x, force, b=belief):
-            b.logw += lik(b.h, x[:2], x[2] - b.g.tip_below_tcp, force)
+            tip, F = x[2] - b.g.tip_below_tcp, np.array(force, float)
+            if args.force_debias > 0:
+                hist = c.setdefault("lat_flat", [])
+                if hist:
+                    F[:2] -= np.median(np.array(hist[-args.force_debias:]), axis=0)
+                if tip > -3e-4:  # flat-face probe: its lateral reading is mostly estimate bias
+                    hist.append(np.array(force[:2], float))
+            b.logw += lik(b.h, x[:2], tip, F)
             b.logw -= b.logw.max()
 
         belief.update = learned_update
@@ -657,9 +672,12 @@ elif args.strategy == "probe":
                 spin_sim(dt)
                 if tip_z(measure5()) < -args.engage:
                     break
+                if args.centering_bound > 0 and np.linalg.norm(measure5()[:2]) > args.centering_bound:
+                    break
             print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
                   flush=True)
-        if tip_z(measure5()) < -args.engage:  # in the hole: push to the bottom (force-limited)
+        if tip_z(measure5()) < -args.engage and not (args.centering_bound > 0 and np.linalg.norm(measure5()[:2])
+                                                     > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
             for _ in range(150):
                 x, F = measure5(), force3(0.1)

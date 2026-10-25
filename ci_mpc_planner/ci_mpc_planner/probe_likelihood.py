@@ -27,6 +27,10 @@ class ProbeLikelihood:
         n = sum(1 for k in d.files if k.startswith("W"))
         self.W = [(d[f"W{i}"], d[f"b{i}"]) for i in range(n)]
         self.mu, self.sd = d["mu"], d["sd"]
+        # distance-prior correction: the contrastive logit is log p(meas | rel) + log p_pos(r) / p_neg(r); with probe
+        # positions chosen by strategies p_pos(r) is not the grid's p_neg(r) (a flat reading then favoured holes ~4.5 mm
+        # away: the belief chased its own probes). Subtract the histogram estimate when the file has one.
+        self.rc_edges, self.rc = (d["rcorr_edges"], d["rcorr"]) if "rcorr" in d.files else (None, None)
         self.scale = scale  # temper the log-likelihood (< 1: trust each probe less)
 
     def logit(self, X):
@@ -41,4 +45,10 @@ class ProbeLikelihood:
         """Log-likelihood of each hole hypothesis h_xy (H, 2) [m] for a probe at tcp_xy [m] with tip height tip_z [m]
         and tared contact force (3,) [N]."""
         X = features((np.asarray(h_xy) - np.asarray(tcp_xy)[:2]) * 1000.0, tip_z * 1000.0, force)
-        return self.scale * self.logit(X)
+        return self.scale * (self.logit(X) - self.r_correction(X[:, 0]))
+
+    def r_correction(self, r_mm):
+        if self.rc is None:
+            return 0.0
+        mid = 0.5 * (self.rc_edges[:-1] + self.rc_edges[1:])
+        return np.interp(r_mm, mid, self.rc)

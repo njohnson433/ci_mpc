@@ -6,7 +6,8 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. Running: A4/B11 (`queue_learned_belief.sh`, learned probe likelihood).
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. Running: A4/B11 (`queue_learned_belief.sh`, learned probe likelihood v1), then A5/B12
+  (`queue_rcorr_belief.sh`, + distance-prior correction).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -100,6 +101,21 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **A4 rep1 (learned v1): 9/10, ±5 mm both OK; the miss shows the off-policy bias (user's point) in closed loop.** On 0,4
+  the belief walked to +1.5 mm y while the hole was at −4, then a centering push left the block (TCP 13 mm, dropped 3.6
+  mm, counted as "in the hole"; caught by the xy check).
+  - Not the force bias: a constant per-run lateral bias up to 1 N barely moves the offline replay (2.00 vs 1.96 mm);
+    `--force-debias` (median of recent flat lateral readings) even worsens it (2.5 mm). Kept as an option, off.
+  - **Mechanism:** the contrastive logit is log p(meas | rel) + log p_pos(r) / p_neg(r). Training positives sit where the
+    strategies probed (r histogram peaks at 4–5 mm), so a flat reading favoured holes ~4.5 mm away and fell off beyond
+    (−1.1 at 8 mm, −2.6 at 12 mm): every probe pulls mass onto a ring around itself, the belief chases its own probes.
+    The replay shares the bias, so it could not show this.
+  - **Fix v1-rcorr** (`scripts/rprior_correction.py`, table in the model file, applied by `ProbeLikelihood`): subtract the
+    smoothed histogram log ratio. Flat reading now flat beyond ~3 mm (−0.1 to −0.6). Side finding: a 1 N push toward the
+    hole barely changes the likelihood: the lateral signal (0.17 N mean near the hole vs 0.6–0.9 N noise) is too weak in
+    this data; the offline gain is the tip-height model. The sweeps sample chamfer contacts on purpose.
+  - `--centering-bound` (stop centering / reject an "in the hole" drop beyond N m from the estimate) added, off.
+  - Queued `scripts/queue_rcorr_belief.sh` after A4/B11: A5 / B12 = A4 / B11 + the correction only.
 - **Better data than replayed strategy probes (user):** logged probes sit where the benchmark strategies went (75 %
   at 2–6 mm, 6 % within 1 mm), so training and the replay evaluation share that bias, and a closed-loop learned
   belief will probe elsewhere. Plan: (A) randomized probe sweeps, (B) on-policy rounds with the learned belief
