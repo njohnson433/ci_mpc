@@ -75,6 +75,18 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **Better data than replayed strategy probes (user):** logged probes sit where the benchmark strategies went (75 %
+  at 2–6 mm, 6 % within 1 mm), so training and the replay evaluation share that bias, and a closed-loop learned
+  belief will probe elsewhere. Plan: (A) randomized probe sweeps, (B) on-policy rounds with the learned belief
+  (only the likelihood is learned, labels exact: unlike the failed selector DAgger), (C) evaluation on held-out sweeps +
+  closed loop at random offsets, later a small real-robot sweep on a fixture.
+  - (A) `peg_insert_demo.py --collect N` (one grasp, calibration touch, N probes sampled around the true hole: r 0–9 mm,
+    half in the 2–6 mm chamfer band; random hold depth 0.5–2 mm and settle 0.2–0.6 s; no insertion) and
+    `scripts/collect_probes.sh` (per episode: friction U(0.5, 1), hole tilt 0–1.5° in 1/3, grasp dx/dz ±1 mm, and the
+    controller's torque-sensor model: noise U(0.02, 0.12) Nm, joint offsets U(±0.3) Nm, observer gain U(20, 40), via a
+    per-episode controller YAML). `demo_peg.sh` now honours `CONTROLLER_CONFIG`. No clearance knob (fixed USD asset).
+  - Running: 2 workers × 40 episodes × 40 probes on cores 0–15 (~3200 probes, ~6–8 min per episode),
+    `~/ci_mpc_runs/likelihood/sweeps`.
 - **Found:** the colcon install of `ci_mpc_planner` is from 2026-10-23 and older than the source (`peg_hole_3d.py`
   differs, newer modules missing). The demo imports the install; not rebuilt mid-benchmark. To do: rebuild after the
   queues and check the D1 numbers do not move.

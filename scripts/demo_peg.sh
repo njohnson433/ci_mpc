@@ -18,7 +18,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 export PEG=1
-export CONTROLLER_CONFIG=$HOME/franka_ros2_ws/install/ci_mpc_sim_gripper/share/ci_mpc_sim_gripper/config/isaac_pick_place.yaml
+export CONTROLLER_CONFIG=${CONTROLLER_CONFIG:-$HOME/franka_ros2_ws/install/ci_mpc_sim_gripper/share/ci_mpc_sim_gripper/config/isaac_pick_place.yaml}
 export CHECKER=$HERE/peg_insert_demo.py
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
 view=headless; [ -n "${GUI:-}" ] && view=window

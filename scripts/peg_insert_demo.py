@@ -76,6 +76,11 @@ p.add_argument("--belief-model", default="",
                help="probe: learned probe likelihood (.npz from scripts/train_probe_likelihood.py) instead of the hand "
                     "measurement model in the hole belief")
 p.add_argument("--belief-scale", type=float, default=1.0, help="temper the learned log-likelihood (< 1: softer)")
+p.add_argument("--collect", type=int, default=0,
+               help="probe: data collection for the learned probe likelihood: N probes at sampled positions around the "
+                    "TRUE hole (distance 0-9 mm, half of them in the 2-6 mm chamfer band), random hold depth and settle "
+                    "time, no insertion; logged as probe lines (scripts/probe_dataset.py)")
+p.add_argument("--collect-seed", type=int, default=0)
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -533,6 +538,9 @@ elif args.strategy == "probe":
     tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
     probes, target, c["phase"] = [], np.zeros(2), "probe"
     n_probes = 0
+    col_rng = np.random.default_rng(args.collect_seed)
+    if args.collect:
+        c["hold"], c["settle"] = 0.001, 0.3  # probe 0 and the calibration touch: the nominal values
 
     def touch(target):
         """Hover, move over target, tare, press until contact (or in the hole); returns (x, F) in light contact."""
@@ -559,8 +567,9 @@ elif args.strategy == "probe":
             F = force3(0.1)
             if F[2] > 1.0 or tip_z(measure5()) < -args.engage:
                 break
-        cmd(target, measure5()[2] - 0.001, (0.0, 0.0, -args.stiction_ff))  # light: just keep the contact
-        spin_sim(0.3)
+        # light: just keep the contact (collect mode randomizes the hold depth and settle time)
+        cmd(target, measure5()[2] - c.get("hold", 0.001), (0.0, 0.0, -args.stiction_ff))
+        spin_sim(c.get("settle", 0.3))
         return measure5(), force3(0.3)
 
     calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0095)
@@ -600,7 +609,16 @@ elif args.strategy == "probe":
                 c["z_bias"] = float(np.median(c["flat_raw"][-args.track_height:]))
         print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
               f"{tip_z(x) * 1000:+.2f} mm, force {np.round(F, 2)} N; belief {np.round(est * 1000, 2)} "
-              f"(std {std * 1000:.2f}) mm", flush=True)
+              f"(std {std * 1000:.2f}) mm" + (f"; hold {c['hold'] * 1000:.2f} mm settle {c['settle']:.2f} s"
+                                               if args.collect else ""), flush=True)
+        if args.collect:  # next sampled probe around the true hole; no insertion
+            r_s = col_rng.uniform(0.0, 9.0) if col_rng.random() < 0.5 else col_rng.uniform(2.0, 6.0)
+            a_s = col_rng.uniform(0.0, 2.0 * np.pi)
+            target = -offset[:2] + r_s / 1000.0 * np.array([np.cos(a_s), np.sin(a_s)])
+            c["hold"], c["settle"] = col_rng.uniform(0.0005, 0.002), col_rng.uniform(0.2, 0.6)
+            if k + 1 >= args.collect:
+                break
+            continue
         sunk = tip_z(x) < -3e-4
         if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering):
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
