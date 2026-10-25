@@ -87,6 +87,11 @@ Read this before starting work (and before re-investigating something "new").
     per-episode controller YAML). `demo_peg.sh` now honours `CONTROLLER_CONFIG`. No clearance knob (fixed USD asset).
   - Running: 2 workers × 40 episodes × 40 probes on cores 0–15 (~3200 probes, ~6–8 min per episode),
     `~/ci_mpc_runs/likelihood/sweeps`.
+- **Centering can push the peg off the block (B9 rep3 0,4):** a misread push drove centering 9.6 mm to y = 14.2 mm, past the
+  face edge (12.5 mm); the peg dropped 4.3 mm, counted as "in the hole" and was pushed down beside the block (caught by
+  the new xy success check). Centering has no travel bound (60 × 0.4 mm). 41 of 825 logged centering moves went > 4 mm,
+  some of them successful (B8 rep2 −5,0: 9.9 mm), so not a hard cap. To do: stop centering (and reject an "in the hole"
+  drop) when the TCP leaves ~8 mm around the estimate (the belief grid is ±6 mm).
 - **Found:** the colcon install of `ci_mpc_planner` is from 2026-10-23 and older than the source (`peg_hole_3d.py`
   differs, newer modules missing). The demo imports the install; not rebuilt mid-benchmark. To do: rebuild after the
   queues and check the D1 numbers do not move.
