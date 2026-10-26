@@ -1,38 +1,45 @@
+<div align="center">
+
 # CI-MPC on the Franka FR3
 
-Contact-implicit model predictive control (CI-MPC) for a Franka Research 3, developed in
-simulation (Isaac Sim) first and then deployed on the real robot.
+[![ROS 2 Humble](https://img.shields.io/badge/ROS_2-Humble-22314E?style=flat-square&logo=ros)](https://docs.ros.org/en/humble/)
+[![Isaac Sim 6.2](https://img.shields.io/badge/Isaac_Sim-6.2-76B900?style=flat-square&logo=nvidia)](https://developer.nvidia.com/isaac/sim)
+[![libfranka 0.21.3](https://img.shields.io/badge/libfranka-0.21.3-blue?style=flat-square)](https://github.com/frankaemika/libfranka)
+![Real robot: not tested](https://img.shields.io/badge/real_robot-not_tested-lightgrey?style=flat-square)
 
-The plan is staged: start with a simple MPC in free space, then add contact with a known
-mode, and finally make the contact sequence part of the optimization (contact-implicit).
+Contact-implicit model predictive control for a Franka Research 3: developed in Isaac Sim first, then deployed on the real robot.
 
-## Status
+[Overview](#overview) • [Features](#features) • [Getting started](#getting-started) • [Demos](#demos) • [Documentation](#documentation)
 
-| Component | Status |
-|---|---|
-| Ubuntu 22.04, NVIDIA driver 595 | ✅ |
-| libfranka 0.21.3 (FR3, system version 5.10) | ✅ installed |
-| ROS 2 Humble + franka_ros2 (humble, v2.x) | ✅ tested with fake hardware |
-| Isaac Sim 6.2 + Isaac Lab 3.0 | ✅ running, ROS 2 bridge works |
-| FR3 in Isaac Sim (`fr3_scene.usd`) | ✅ imported, gravity off on robot links, effort mode |
-| In-sim controller (physics callback) | ✅ joint PD holds home pose at 240 Hz |
-| PdZ Cartesian impedance controller in Isaac (ros2_control in-process, Pinocchio model) | ✅ hold 0.00 mm, reach 0.11 mm, steps 0.06–0.38 mm with identified friction |
-| Sim realism: FR3 joint armature + identified friction | ✅ `scripts/isaac/prepare_scene.py` |
-| Joint identification (`ci_mpc_sysid`) | ✅ validated in sim (Coulomb 0–0.4 %, viscous 0.1–2 %, armature 2–4 %); real robot pending |
-| Impedance test suite (steps, rotations, circle, pushes, windup) | ✅ `scripts/impedance_suite.py` |
-| MPC tracking interface (task 3, `ci_mpc_msgs/MpcCommand`) | ✅ circle 0.65 mm RMS without friction |
-| Stage-1 MPC (`ci_mpc_planner`, OSQP, 6-DOF) | ✅ finished in sim: 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad), stable at friction ×0.7/×1.3 |
-| Pick-and-place demo (sim) | ✅ `scripts/demo_pick_place.sh [box\|cube] [--noise] [--stops] [--headless]`; blended MPC motion, grasp from the detection |
-| Box stacking demo (sim) | ✅ `scripts/demo_stack.sh [--noise] [--headless]`: 3-cube tower, 1.2–3.2 mm per level; `--camera`: from the simulated Gemini 305 wrist camera (box detector on color + noisy depth), top 1.7 mm off base |
-| Factory peg-in-hole (sim, SDF) | 🟡 `scripts/demo_peg.sh [--offset dx,dy]`: hand-written search 0–1 mm hole error ✅, ≥ 2 mm ❌ (jamming / in-hand slip); `peg_insert_demo.py --strategy probe` (3D hole belief, active probing): 7/10 offsets up to 5 mm, then 4/4 on the failed ones after fixes; clean pinned benchmark: probing 6/10, spiral 5/10, planar estimator 2/10 (large run-to-run variance). With the grasp-height calibration touch (3 × 10 offsets up to 5 mm): plain probe **29/30** (was 24/30); `--entry gpu` (GPU MPC over belief-sampled holes) with `--lateral-centering` 28/30, + C3 refine 27/30 (ties plain probe within noise, does not beat it). With the learned probe likelihood + height tracking + centering bound: **30/30** (plain probe and GPU entry) at about half the contact time (median ~22–29 s vs ~56 s). On held-out random offsets (80/80), plain probe contact time is 44 → 21 s, but the GPU entry gains nothing (wide-belief hand-over; `--gpu-std-max` under test). A cross-task regression (H1–H3) is queued. Held-out H1 probe 14/15 vs spiral 7/15; gear mesh (H2) and AutoMate (H3) limited by the assembly / missing yaw search, not the strategy. Live dashboard: `scripts/watch_runs.sh` |
-| External wrench estimate (momentum observer, measured joint torques) | ✅ vs simulated wrist F/T: 0.17 / 0.31 / 0.80 N RMS in contact |
-| CI-MPC (peg, 3D C3+, `ci_mpc_planner`) | 🟡 offline: 2–3× lower contact force than the heuristic, but ~1.5 s/solve and warm-start sensitive; sampled teacher 9/10 entries (heuristic 8/10); learned option selector does not beat the heuristic on the fair 30-start test (16–19/30 vs 22/30). **GPU sampling MPC** (batched FISTA plant, matches OSQP to 0.012 mm; ~140 ms/decision): 30/30 offline (heuristic 22/30), p90 peak force 5.36 N (heuristic 4.96 N); **sample, then C3 refine** (margin −1): 30/30, p90 3.71 N (3.32–3.71 over 3 seeds), held out (H4) lower median force but the tail is unproven; ICNN cost-to-go negative; held-out variation drivers `scripts/heldout_h1.sh`, `heldout_h4.sh`. **Learned probe likelihood** for the hole belief (`--belief-model`, sensor-error randomized): offline belief error 2.83 → 1.96 mm. In closed loop, v1 alone was worse than the hand model (27/30, off-policy distance prior). With the distance correction it matches the hand model's success at ~2× faster localization. The v3 model, trained on logs plus 80 randomized probe sweeps, gets held-out log p(true) −4.5 vs −18.9 for the hand model |
-| Stage-2 pushing MPC (sticking contact, sim) | ✅ `scripts/demo_push.sh [line\|arc\|yaw10]`: straight 20 cm 2.2 mm, 90° arc 0.9 mm final (8 mm RMS), 10° start corrected; contact sliding on arcs open → stage 3 |
-| Real robot connection test | ⏳ not done yet |
+</div>
 
-See [docs/REAL_ROBOT.md](docs/REAL_ROBOT.md) for the real-robot bring-up checklist, [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) for what was learned about the controller in
-sim, [docs/SYSID.md](docs/SYSID.md) for the identification, [docs/ROADMAP.md](docs/ROADMAP.md) for the next
-tasks and [docs/PROGRESS.md](docs/PROGRESS.md) for the dated log.
+## Overview
+
+The plan has three stages. Each stage changes only the solver, not the controller or the sim:
+
+1. **Free-space MPC**: 6-DOF tracking with force-aware limits. Finished in sim.
+2. **Contact with a known mode**: planar pushing with a sticking contact. Works in sim.
+3. **Contact-implicit MPC**: the contact sequence is part of the optimization. In progress, on Factory peg-in-hole.
+
+> [!NOTE]
+> Everything so far runs in **Isaac Sim** only. The real-robot connection test is not done yet.
+> See [docs/REAL_ROBOT.md](docs/REAL_ROBOT.md) for the bring-up checklist.
+
+## Features
+
+- **PdZ Cartesian impedance controller in Isaac.** It runs in-process in the physics step (`isaacsim.ros2.control`) with a Pinocchio model. With identified friction: hold 0.00 mm, reach 0.11 mm, steps 0.06–0.38 mm. See [CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md).
+- **Realistic sim.** The scene has FR3 joint armature and identified joint friction (`scripts/isaac/prepare_scene.py`). Joint identification (`ci_mpc_sysid`) is validated in sim to within 0–0.4 % on Coulomb friction, 0.1–2 % on viscous and 2–4 % on armature. See [SYSID.md](docs/SYSID.md).
+- **Stage-1 MPC** (`ci_mpc_planner`, OSQP, 6-DOF). It passes 9/9 tests (reach 0.25–0.42 mm, circle 1.0 mm RMS, rotation 3–4 mrad) and stays stable at friction ×0.7 / ×1.3. It drives the pick-and-place and stacking demos, including stacking from a simulated Gemini 305 wrist camera.
+- **Stage-2 pushing MPC** with a sticking contact. A straight 20 cm push ends 2.2 mm off and a 90° arc 0.9 mm off. The open point is contact sliding on arcs.
+- **External wrench estimate.** A momentum observer on the measured joint torques comes within 0.17 / 0.31 / 0.80 N RMS of a simulated wrist F/T sensor in contact.
+- **Peg-in-hole with a 3D hole belief and active probing**, in Isaac with SDF collision:
+  - With the calibration touch, height tracking, centering bound and **learned probe likelihood**, the plain probe and the GPU MPC entry both reach **30/30** on the D1 benchmark (3 × 10 hole errors up to 5 mm). They take about half the hand model's contact time (median ~22–29 s vs ~56 s).
+  - **Held-out random offsets (R, 2026-10-26):** with the learned v3 likelihood, the plain probe inserts 30/30 at 23.9 s mean contact (hand model 30/30, 45.7 s). The GPU entry loses most of this gain (41.4 s): the MPC takes over while the belief is still wide. A confidence gate (`--gpu-std-max`) is being tested on a fresh set R2.
+  - A cross-task regression on H1–H3 is queued, because all of this week's fixes were tuned on the peg only. Earlier held-out H1: probe 14/15 vs spiral 7/15.
+- **CI-MPC research (3D C3+, GPU sampling MPC, C3 refine).** The GPU sampling MPC uses a batched FISTA plant that matches OSQP to 0.012 mm at ~140 ms per decision. Offline it enters 30/30 vs 22/30 for the heuristic. **Negative results:** the learned option selector (16–19/30) and the ICNN cost-to-go. See [PROGRESS.md](docs/PROGRESS.md).
+
+> [!TIP]
+> The full numbers for every run (D1, R, H1–H4, offline studies) and the reason each one won or lost are in the dated log [docs/PROGRESS.md](docs/PROGRESS.md). Open tasks are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Architecture
 
@@ -48,85 +55,16 @@ perception ────────┴─► ci_mpc_planner (MPC, 20–100 Hz)
           franka_hardware → FR3     Isaac Sim (ros2_control in-process)
 ```
 
-Design rules:
-
-- **Two rates.** The MPC never commands torques. It sends setpoints; the impedance controller
-  turns them into torques every control step.
+- **Two rates.** The MPC never commands torques. It sends setpoints, and the impedance controller turns them into torques every control step.
 - **Same controller code in sim and on hardware.** Only the hardware interface underneath changes.
-- **Gravity is handled below the controller.** The real FR3 compensates gravity internally
-  (libfranka torques exclude gravity). In the sim, gravity is disabled on the robot links to
-  match. Objects in the scene keep normal gravity.
-- **Keep the setpoint interface fixed** (pose, twist, feedforward wrench, gains), so later MPC
-  stages only change the solver, not the controller or sim.
+- **Gravity is handled below the controller.** The real FR3 compensates gravity internally (libfranka torques exclude gravity). In the sim, gravity is off on the robot links to match. Objects in the scene keep normal gravity.
+- **Fixed setpoint interface** (`ci_mpc_msgs/MpcCommand`: pose, twist, feedforward wrench, gains). Later MPC stages change only the solver.
 
-## Where this repo lives
+## Getting started
 
-```
-~/franka_ros2_ws/src/
-  franka_ros2 packages …          upstream, not in this repo
-  cartesian_impedance_control/    PdZ controller (own clone; later our fork)
-  messages_fr3/
-  ci_mpc/                         ← this repo
-~/ci_mpc_assets/                  URDF + USD scene (not in git)
-~/IsaacLab/                       Isaac Lab + Isaac Sim (uv)
-~/ocs2_ws/                        OCS2, separate workspace
-```
+Full step-by-step setup: [docs/SETUP.md](docs/SETUP.md). Known problems and fixes: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-The repo sits in `src/` so that the ROS packages we add later (`ci_mpc_msgs`,
-`ci_mpc_planner`, …) are built by `colcon` automatically. Folders without a `package.xml`
-(docs, scripts) are ignored by colcon.
-
-## Repository layout
-
-```
-README.md                  this file
-ci_mpc_msgs/               MpcCommand (MPC → controller setpoint)
-ci_mpc_planner/            MPCs (stage 1, pushing, C3+ peg-hole, GPU sampling MPC, C3 refine), hole belief + learned probe likelihood (models/), mpc_node
-ci_mpc_perception/         simulated Gemini 305 depth noise, box detector
-ci_mpc_sim_gripper/        sim gripper controller
-ci_mpc_sysid/              joint identification
-patches/                   backups of the controller / franka_ros2 changes
-docs/
-  SETUP.md                 full environment setup, step by step
-  ROADMAP.md               staged plan and open tasks
-  PROGRESS.md              dated log and where to resume
-  TROUBLESHOOTING.md       problems we hit and how they were solved
-scripts/                   demos (demo_*.sh), tests, offline experiments
-  isaac_ros.sh             start Isaac Sim with the ROS 2 (Humble) bridge
-  gen_fr3_urdf.sh          generate the FR3 URDF from franka_description
-  isaac/                   scripts to run in Isaac Sim's Script Editor
-    find_articulation_root.py
-    disable_robot_gravity.py
-    pd_home_controller.py
-    stop_controller.py
-```
-
-## Quick start (sim)
-
-```bash
-# Terminal 1 – Isaac Sim (no ROS sourced, no venv active)
-~/isaac_ros.sh
-#   File → Open → /home/njohnson/ci_mpc_assets/fr3_scene.usd
-#   Press Play, then run scripts/isaac/pd_home_controller.py in the Script Editor
-
-# Terminal 2 – ROS
-source /opt/ros/humble/setup.bash
-source ~/franka_ros2_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-ros2 topic echo /joint_states --once
-```
-
-## Environments – one terminal each
-
-| Purpose | Activate | Python |
-|---|---|---|
-| ROS 2 / franka_ros2 | `source /opt/ros/humble/setup.bash && source ~/franka_ros2_ws/install/setup.bash` | 3.10 |
-| Robot / MPC prototyping | `source ~/venvs/cimpc/bin/activate` | 3.10 |
-| Isaac Sim / Isaac Lab | nothing — `cd ~/IsaacLab && uv run ...` or `~/isaac_ros.sh` | 3.12 |
-
-Never mix them in one terminal. ROS sets `PYTHONPATH` to its 3.10 packages, which breaks Isaac's 3.12 environment.
-
-## Key versions
+### Prerequisites
 
 | | Version |
 |---|---|
@@ -137,3 +75,90 @@ Never mix them in one terminal. ROS sets `PYTHONPATH` to its 3.10 packages, whic
 | franka_ros2 | `humble` branch (v2.x), libfranka taken from the system |
 | ROS 2 | Humble |
 | Isaac Sim / Isaac Lab | 6.2.0 / 3.0 (pip via `uv`, Python 3.12) |
+
+### Workspace
+
+The repo sits in `src/` so that colcon builds its ROS packages. Folders without a `package.xml` (docs, scripts) are ignored.
+
+```
+~/franka_ros2_ws/src/
+  franka_ros2 packages …          upstream, not in this repo
+  cartesian_impedance_control/    PdZ controller (own clone, branch isaac-sim-pinocchio; backup in patches/)
+  messages_fr3/
+  ci_mpc/                         ← this repo
+~/ci_mpc_assets/                  URDF + USD scene (not in git)
+~/IsaacLab/                       Isaac Lab + Isaac Sim (uv)
+~/ocs2_ws/                        OCS2, separate workspace
+```
+
+### Environments: one terminal each
+
+| Purpose | Activate | Python |
+|---|---|---|
+| ROS 2 / franka_ros2 | `source /opt/ros/humble/setup.bash && source ~/franka_ros2_ws/install/setup.bash` | 3.10 |
+| Robot / MPC prototyping | `source ~/venvs/cimpc/bin/activate` | 3.10 |
+| Isaac Sim / Isaac Lab | nothing: `cd ~/IsaacLab && uv run ...` or `~/isaac_ros.sh` | 3.12 |
+
+> [!IMPORTANT]
+> Never mix these environments in one terminal. ROS sets `PYTHONPATH` to its Python 3.10 packages, and that breaks Isaac's 3.12 environment.
+
+### Quick start (sim)
+
+```bash
+# Terminal 1: Isaac Sim (no ROS sourced, no venv active)
+~/isaac_ros.sh
+#   File → Open → /home/njohnson/ci_mpc_assets/fr3_scene.usd
+#   Press Play, then run scripts/isaac/pd_home_controller.py in the Script Editor
+
+# Terminal 2: ROS
+source /opt/ros/humble/setup.bash
+source ~/franka_ros2_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 topic echo /joint_states --once
+```
+
+Headless controller test (~1 min): `scripts/isaac/run_impedance_test.sh`.
+
+## Demos
+
+| Demo | Command |
+|---|---|
+| Pick and place (blended MPC motion, grasp from the detection) | `scripts/demo_pick_place.sh [box\|cube] [--noise] [--stops] [--headless]` |
+| Box stacking, 3-cube tower (1.2–3.2 mm per level) | `scripts/demo_stack.sh [--noise] [--headless] [--camera]` |
+| Planar pushing | `scripts/demo_push.sh [line\|arc\|yaw10]` |
+| Factory peg-in-hole, hand-written search (0–1 mm hole error ✅, ≥ 2 mm ❌) | `scripts/demo_peg.sh [--offset dx,dy]` |
+| Peg-in-hole with probing / GPU entry / learned belief | `scripts/peg_insert_demo.py --strategy probe [--entry gpu] [--belief-model ...]` |
+| Gear mesh (H2), AutoMate (H3) | `scripts/demo_gear.sh`, `scripts/demo_automate.sh` |
+| Impedance test suite (steps, rotations, circle, pushes, windup) | `scripts/impedance_suite.py` |
+
+> [!TIP]
+> Benchmark queues (`scripts/queue_*.sh`) run in the background. Follow them with the live dashboard `scripts/watch_runs.sh`.
+
+## Repository layout
+
+```
+ci_mpc_msgs/          MpcCommand (MPC → controller setpoint)
+ci_mpc_planner/       MPCs (stage 1, pushing, C3+ peg-hole, GPU sampling MPC, C3 refine),
+                      hole belief + learned probe likelihood (models/), mpc_node
+ci_mpc_perception/    simulated Gemini 305 depth noise, box detector
+ci_mpc_sim_gripper/   sim gripper controller
+ci_mpc_sysid/         joint identification
+patches/              backups of the controller / franka_ros2 changes
+scripts/              demos (demo_*.sh), benchmark queues, tests, offline experiments
+  isaac_ros.sh        start Isaac Sim with the ROS 2 (Humble) bridge
+  gen_fr3_urdf.sh     generate the FR3 URDF from franka_description
+  isaac/              Isaac scene setup (prepare_scene.py, *_scene.py) and in-sim scripts
+docs/                 setup, roadmap, progress log, findings (below)
+```
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/PROGRESS.md](docs/PROGRESS.md) | Dated log with all results, plus where to resume |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Staged plan, next tasks, open questions |
+| [docs/SETUP.md](docs/SETUP.md) | Full environment setup, step by step |
+| [docs/CONTROLLER_FINDINGS.md](docs/CONTROLLER_FINDINGS.md) | What was learned about the controller in sim |
+| [docs/SYSID.md](docs/SYSID.md) | Joint identification |
+| [docs/REAL_ROBOT.md](docs/REAL_ROBOT.md) | Real-robot bring-up checklist |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Problems we hit and how they were solved |
