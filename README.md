@@ -19,7 +19,7 @@ The plan has three stages. Each stage changes only the solver, not the controlle
 
 1. **Free-space MPC**: 6-DOF tracking with force-aware limits. Finished in sim.
 2. **Contact with a known mode**: planar pushing with a sticking contact. Works in sim.
-3. **Contact-implicit MPC**: the contact sequence is part of the optimization. In progress, on Factory peg-in-hole.
+3. **Contact-implicit MPC**: the contact sequence is part of the optimization. In progress, on Factory peg-in-hole: 30/30 on held-out hole offsets in sim with a learned probe likelihood.
 
 > [!NOTE]
 > Everything so far runs in **Isaac Sim** only. The real-robot connection test is not done yet.
@@ -34,12 +34,13 @@ The plan has three stages. Each stage changes only the solver, not the controlle
 - **External wrench estimate.** A momentum observer on the measured joint torques comes within 0.17 / 0.31 / 0.80 N RMS of a simulated wrist F/T sensor in contact.
 - **Peg-in-hole with a 3D hole belief and active probing**, in Isaac with SDF collision:
   - With the calibration touch, height tracking, centering bound and **learned probe likelihood**, the plain probe and the GPU MPC entry both reach **30/30** on the D1 benchmark (3 × 10 hole errors up to 5 mm). They take about half the hand model's contact time (median ~22–29 s vs ~56 s).
-  - **Held-out random offsets (R, 2026-10-26):** with the learned v3 likelihood, the plain probe inserts 30/30 at 23.9 s mean contact (hand model 30/30, 45.7 s). The GPU entry loses most of this gain (41.4 s): the MPC takes over while the belief is still wide. A confidence gate (`--gpu-std-max`) is being tested on a fresh set R2.
-  - A cross-task regression on H1–H3 is queued, because all of this week's fixes were tuned on the peg only. Earlier held-out H1: probe 14/15 vs spiral 7/15.
+  - **Held-out random offsets:** with the learned v3 likelihood, the plain probe inserts 30/30 on both held-out sets: 23.9 s mean contact on R (hand model 45.7 s) and 39.4 s on R2, where the offsets are larger (up to 5 mm). On R2 the GPU entry ties the plain probe (+0.2 s, 95 % CI −6.9 to 8.3 s), so it brings no measurable gain. **Recommended default: plain probe + v3**, with no GPU server.
+  - **Negative results (2026-10-26):** the confidence gate `--gpu-std-max 1 mm` effectively switches the GPU entry off and costs +6 s, so it is not adopted. More training data (v4, +40 sweep episodes) improves val loss by only 1 %, so the likelihood is close to saturated.
+  - A cross-task regression on H1–H3 is queued, because all of this week's fixes were tuned on the peg only. Earlier held-out H1: probe 14/15 vs spiral 7/15. A jam-recovery option (`--jam-recovery`, off by default) is in progress, not yet benchmarked.
 - **CI-MPC research (3D C3+, GPU sampling MPC, C3 refine).** The GPU sampling MPC uses a batched FISTA plant that matches OSQP to 0.012 mm at ~140 ms per decision. Offline it enters 30/30 vs 22/30 for the heuristic. **Negative results:** the learned option selector (16–19/30) and the ICNN cost-to-go. See [PROGRESS.md](docs/PROGRESS.md).
 
 > [!TIP]
-> The full numbers for every run (D1, R, H1–H4, offline studies) and the reason each one won or lost are in the dated log [docs/PROGRESS.md](docs/PROGRESS.md). Open tasks are in [docs/ROADMAP.md](docs/ROADMAP.md).
+> The full numbers for every run (D1, R, R2, H1–H4, offline studies) and the reason each one won or lost are in the dated log [docs/PROGRESS.md](docs/PROGRESS.md). Open tasks are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Architecture
 
@@ -127,7 +128,7 @@ Headless controller test (~1 min): `scripts/isaac/run_impedance_test.sh`.
 | Box stacking, 3-cube tower (1.2–3.2 mm per level) | `scripts/demo_stack.sh [--noise] [--headless] [--camera]` |
 | Planar pushing | `scripts/demo_push.sh [line\|arc\|yaw10]` |
 | Factory peg-in-hole, hand-written search (0–1 mm hole error ✅, ≥ 2 mm ❌) | `scripts/demo_peg.sh [--offset dx,dy]` |
-| Peg-in-hole with probing / GPU entry / learned belief | `scripts/peg_insert_demo.py --strategy probe [--entry gpu] [--belief-model ...]` |
+| Peg-in-hole with probing / GPU entry / learned belief (recommended: plain probe + `models/probe_likelihood_v3_both.npz`) | `scripts/peg_insert_demo.py --strategy probe [--entry gpu] [--belief-model ...]` |
 | Gear mesh (H2), AutoMate (H3) | `scripts/demo_gear.sh`, `scripts/demo_automate.sh` |
 | Impedance test suite (steps, rotations, circle, pushes, windup) | `scripts/impedance_suite.py` |
 

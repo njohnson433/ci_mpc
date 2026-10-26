@@ -93,6 +93,12 @@ p.add_argument("--stuck-dither", type=float, default=0.0,
                help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
                     "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
                     "held by stiction on the chamfer edge, every probe returned to the same spot until time ran out)")
+p.add_argument("--jam-recovery", type=int, default=0,
+               help="probe: retries when the push to the bottom stalls (lift 1 mm, re-press shifted along the lateral "
+                    "contact force; 0 = off; H1 friction 1.0 0.63,1.57 wedged 13 mm short twice, H3 7 of 12)")
+p.add_argument("--jam-shift", type=float, default=0.0003, help="lateral shift per jam retry [m]")
+p.add_argument("--jam-lift", type=float, default=0.001, help="jam: lift before pressing again [m]")
+p.add_argument("--jam-force", type=float, default=3.0, help="jam: lateral force (1 s mean) that counts as wedged [N]")
 p.add_argument("--gpu-std-max", type=float, default=float("inf"),
                help="probe --entry gpu: start the GPU phase only when the belief std is below this [m]; otherwise center "
                     "as plain probe (the MPC drives toward the belief estimate: with a wide belief it moved the peg out of "
@@ -689,13 +695,32 @@ elif args.strategy == "probe":
         if tip_z(measure5()) < -args.engage and not (args.centering_bound > 0 and np.linalg.norm(measure5()[:2])
                                                      > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
-            for _ in range(150):
+            depth_hist, retries, anchor = [], 0, None
+            for _ in range(150 + 30 * args.jam_recovery):
                 x, F = measure5(), force3(0.1)
                 uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
-                cmd(x[:2], uz, (0.0, 0.0, -args.stiction_ff))
+                cmd(x[:2] if anchor is None else anchor, uz, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
                     break
+                depth_hist.append(tip_z(measure5()))
+                F_lat = force3(1.0)[:2]
+                stalled = len(depth_hist) > 10 and depth_hist[-11] - depth_hist[-1] < 0.0002
+                wedged = len(depth_hist) > 10 and np.linalg.norm(F_lat) > args.jam_force
+                if retries < args.jam_recovery and (stalled or wedged):
+                    # wedged: lift (--jam-lift), then press again shifted along the lateral contact force (the force on the
+                    # peg points away from the wall that holds it). Stall alone misses it: the TCP keeps descending
+                    # while the peg slips in the fingers (H1 friction 1.0: 5 N lateral, 0 N on the hole bottom).
+                    retries, depth_hist = retries + 1, []
+                    x = measure5()
+                    u = F_lat / max(np.linalg.norm(F_lat), 1e-6)
+                    for _ in range(5):
+                        cmd(x[:2], x[2] + args.jam_lift)
+                        spin_sim(dt)
+                    anchor = x[:2] + args.jam_shift * u
+                    print(f"    jam {retries} ({'lateral force' if wedged else 'stall'}): tip {tip_z(x) * 1000:+.2f} mm, "
+                          f"lateral force {np.round(F_lat, 2)} N -> press at {np.round(anchor * 1000, 2)} mm",
+                          flush=True)
             c["phase"], c["t_done"] = "done", state["t"]
             break
         target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
