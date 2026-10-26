@@ -103,7 +103,10 @@ with a batched task-space impedance controller in torch.
 - [ ] 0. Measure the stock Factory PegInsert headless at N = 64 / 256: env-steps/s, GPU memory, RAM.
 - [ ] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
       limit, as `cartesian_impedance_control`), momentum observer → EE force estimate (link-side torques → −pinv(Jᵀ) r).
-      Scene parity: FR3 joint armature + identified friction (`prepare_scene.py`), 240 Hz → match our physics rate.
+      Scene parity: the stock task uses a **Panda** (`franka_mimic.usd`) with zero joint friction / armature at
+      120 Hz physics; swap in our FR3 asset with armature + identified friction (`prepare_scene.py`) at 240 Hz.
+      Factory's `compute_dof_torque` has the same structure as ours (Kp·e − Kd·v → Jᵀ, nullspace), so it is the
+      starting point; add our twist / feedforward / friction compensation / 100 Nm/s rate limit.
 - [ ] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,
       joint friction / armature (as `collect_probes.sh`, but per env).
 - [ ] 3. Batched probe strategy: belief grid as an (N × H) tensor, learned likelihood batched, probe / centering /
