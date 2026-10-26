@@ -52,6 +52,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (14:40): v4 likelihood (+ 40 sweep episodes): marginal gain, the data lever is nearly used up
+- sweeps2 done (40 episodes, seeds 5000+). Dataset `probes_v4.npz` = all logs + sweeps + sweeps2, **minus the
+  held-out benchmark runs** (R*, R2*, X: 170 runs), 10741 probes / 748 runs. Train with `~/IsaacLab/.venv/bin/python`
+  (system python has no torch).
+- Ablation, same 16 held-out sweeps2 episodes (`--val-filter sweeps2 --val 0.4`, seed 0), one lever:
+
+  | model | val loss | replay all: log p(true) x1 / x2 errors | replay search: mean err x1 / x2 [mm] |
+  |---|---|---|---|
+  | hand | – | −17.3 / −18.4 | 2.45 / 3.09 |
+  | v3 recipe (logs + sweeps) | 1.019 | −5.19 / −5.26 | 2.09 / 2.52 |
+  | **v4 (+ sweeps2)** | **1.008** | −5.15 / −5.19 | **1.99 / 2.18** |
+
+- 24 % more sweep data buys 1 % val loss and a small search gain at 2× sensor errors. **Mechanism:** with a
+  per-probe likelihood on 5 features the model is close to saturated; the remaining error is the information in a
+  single probe (flat readings rule out ~1 mm), not data. Next levers: on-policy rounds (plan step B) only if the
+  closed-loop probe distribution matters; better probe placement (information gain) for the slow flat-probe runs.
+- Saved as `models/probe_likelihood_v4.npz`; not benchmarked yet (R2 and the cross-task queue keep v3, one lever at a time).
+
 ### 2026-10-26 (14:10): lateral force on flat probes is noise, not a bias (checked, no fix)
 - Trigger: R2B_v3g rep1 at 1.79,−1.94 (106 s): belief std stayed 5.1–5.9 mm for 12 flat probes, all with Fy ≈ −1.4 N.
 - All 8912 logged probes (benchmarks + sweeps), 4345 flat (true hole > 3.5 mm away, |tip| < 0.3 mm): mean Fx −0.10,
