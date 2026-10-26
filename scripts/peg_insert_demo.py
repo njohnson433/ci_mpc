@@ -89,6 +89,10 @@ p.add_argument("--force-debias", type=int, default=0,
                help="learned belief: subtract the median lateral force of the last N flat probes of the run before "
                     "the likelihood (0 = off; the estimate's lateral bias is ~constant within a run, ~0.6-0.9 N, vs a "
                     "0.17 N chamfer signal, and the belief treats probes as independent: A4 rep1 0,4 drifted)")
+p.add_argument("--stuck-dither", type=float, default=0.0,
+               help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
+                    "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
+                    "held by stiction on the chamfer edge, every probe returned to the same spot until time ran out)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -691,6 +695,13 @@ elif args.strategy == "probe":
             c["phase"], c["t_done"] = "done", state["t"]
             break
         target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
+        if args.stuck_dither > 0:
+            c.setdefault("recent", []).append(x[:2].copy())
+            last = c["recent"][-3:]
+            if len(last) == 3 and max(np.linalg.norm(a - last[-1]) for a in last) < 4e-4:
+                a_d = col_rng.uniform(0.0, 2.0 * np.pi)
+                target = target + args.stuck_dither * np.array([np.cos(a_d), np.sin(a_d)])
+                print(f"    stuck: next probe dithered {args.stuck_dither * 1000:.1f} mm", flush=True)
     if c["phase"] != "done":
         c["phase"] = "failed"
     print(f"  probing: {c['phase']} after {n_probes} probes, {state['t'] - c['t0']:.1f} s", flush=True)

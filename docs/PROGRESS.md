@@ -5,6 +5,10 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-26 morning:** learned probe likelihood works in closed loop (with the distance-prior correction): D1 30/30
+  for A7 / B13 / B14 at ~half the contact time. Running: held-out random-offset test (`queue_heldout_r.sh`) and 40 more
+  sweep episodes. To do: centering-bound default on; belief collapse fix (stuck dither) evaluated in the held-out run;
+  rebuild the stale `ci_mpc_planner` colcon install and recheck D1; real-robot sweep on a fixture.
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
   H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. A4/B11 (learned v1): 27/30, B11 below B10: negative (off-policy distance prior). A5/B12 (learned + correction): 29/30 each at ~27 / 33 s contact vs ~58 s. Running: A6/B13 (`queue_combined.sh`), then A7/B14 (`queue_v2_belief.sh`, v2 model
   with probe sweeps).
@@ -47,6 +51,36 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-26 (night → morning): combined candidate, v2 / v3 learned likelihood, held-out test
+- **D1 benchmark, all with the calibration touch** (3 × 10 offsets; contact time = successes, mean / median):
+
+  | setup | success | contact | misses |
+  |---|---|---|---|
+  | A2 plain probe, hand model | 29/30 | 58.1 / 55.7 s | −5,0 |
+  | A3 + height tracking | 29/30 | 61.6 / 58.2 s | −5,0 |
+  | A5 + learned v1 + distance correction | 29/30 | 27.0 / 22.0 s | 3,3 (centering left the block) |
+  | A6 + learned v1-rcorr + tracking + centering bound | 29/30 | 31.4 / 30.9 s | −5,0 (belief collapse, below) |
+  | **A7 as A6 with v2 (logs + 43 sweep episodes)** | **30/30** | 40.0 / 21.8 s | – |
+  | B8 GPU entry + lateral centering, hand | 28/30 | 58.1 / 48.5 s | ±5,0 |
+  | B10 + height tracking | 29/30 | 59.8 / 55.4 s | 5,0 |
+  | B12 + learned v1-rcorr | 29/30 | 33.1 / 28.4 s | −5,0 (drift) |
+  | **B13 + learned v1-rcorr + tracking + bound** | **30/30** | 34.6 / 27.2 s | – |
+  | **B14 as B13 with v2** | **30/30** | 36.8 / 28.9 s | – |
+
+  - The learned likelihood (with the distance correction) halves the median contact time at equal or better success;
+    the combined setups are the first with 30/30. A7's mean is pulled up by a few long runs (max 121 s; median 21.8 s).
+  - Caveat: D1 is the set everything was tuned on → held-out test below.
+- **v3 likelihood (logs + all 80 sweep episodes, 3200 probes)**, evaluated on 16 held-out sweep episodes (640 random
+  probes): log p(true) hand −18.9 / logs-only −9.2 (its sweep loss rises 2.02 → 2.35 while training: overfits the
+  strategy probes) / sweeps-only −4.2 / **logs + sweeps −4.5 with the best P(within 2 mm) 0.93–0.96**; at 2× sensor errors
+  hand −20.8 vs −4.6. Final localization error ties (0.6–0.9 mm: 40 random probes include sinks); calibration is the
+  discriminating metric. Model `models/probe_likelihood_v3_both.npz`.
+- **New option `--stuck-dither`** (off by default) for the A6 rep3 collapse: after 3 probes within 0.4 mm, the next target
+  is offset in a random direction.
+- **Running:** `scripts/queue_heldout_r.sh` — 10 random hole errors (seed 77, r 1–5.4 mm, not D1): RA / RB = plain probe /
+  GPU entry + lateral centering, hand vs v3 + stuck dither (0.8 mm), all with tracking + bound; 3 repeats. Plus 40 more
+  sweep episodes (`~/ci_mpc_runs/likelihood/sweeps2`, seeds 5000+, 1 worker).
 
 ### 2026-10-25: daily summary
 - **Power-cut restart:** the B2 → B3 → H3_fix chain was restarted at 08:46. The drivers did not create `$OUT`, so with
