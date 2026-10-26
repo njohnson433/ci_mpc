@@ -60,7 +60,7 @@ Read this before starting work (and before re-investigating something "new").
 | R2B_v3g same + `--gpu-std-max 1 mm` | 30/30 | 45.6 / 37.6 / 85.0 | 6.9 | 0.10 |
 - Paired per offset (mean over 3 repeats, bootstrap 95 % CI): GPU − plain +0.2 s [−6.9, 8.3]; gated − plain +6.1 s
   [−5.0, 17.7]; gated − ungated +6.0 s [−3.7, 16.7]. Repeat-to-repeat means swing 32–56 s with the same code.
-- **Gate: negative.** It opens in only 0.10 runs per run on average: the belief rarely gets below 1 mm std before
+- **Gate: negative.** It opens rarely (0.10 GPU phases per run vs 1.23 ungated): the belief rarely gets below 1 mm std before
   the peg is already sliding in, so it effectively switches the GPU entry off, and the runs that wait for it take
   longer (more probes, 6.9). Not adopted.
 - GPU entry vs plain probe: a tie on R2 (R had plain 24 vs GPU 41 s). With the learned belief, the GPU entry gives no
