@@ -40,6 +40,7 @@ class C3Config:
     grasp_torque: float = 0.08   # [N m] about the TCP before the peg turns in the fingers
     rho0: float = 10.0          # 1: complementarity violation 3.0 after 12 iterations, 10: 0.14 (offline)
     rho_growth: float = 1.8
+    dual_rescale: bool = True    # omega /= rho_growth when rho grows (scaled dual, as c3_3d.py / dairlib C3)
     admm_iters: int = 12
     contact_radius: float = 0.004
     # arm static friction in TCP coordinates (Fx [N], Fz [N], torque [N m]): box friction, stick / slide chosen by
@@ -130,7 +131,6 @@ class PegHoleC3:
             P[b, b] += 1e-9
         P = P.tocsc()
         # --- constraints
-        rows, lo, hi = [], [], []
         A = sp.lil_matrix((0, n))
         Al = []
 
@@ -210,7 +210,7 @@ class PegHoleC3:
         solver = osqp.OSQP()
         Pk = sp.triu(P + rho * D).tocsc()
         Pk.sort_indices()
-        solver.setup(Pk, q, A, l, h, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polish=False, max_iter=4000,
+        solver.setup(Pk, q, A, l, h, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polishing=False, max_iter=4000,
                      warm_starting=True)
         z = None
         flat = sel.reshape(-1)
@@ -236,6 +236,8 @@ class PegHoleC3:
             delta[0::2], delta[1::2] = da, db
             omega = omega + z[flat] - delta
             rho *= cfg.rho_growth
+            if cfg.dual_rescale:
+                omega /= cfg.rho_growth
         if z is None:
             return (u_prev_s / S1), {"status": "failed", "m": m}
         u0 = z[iu(0):iu(0) + 3] / S1
