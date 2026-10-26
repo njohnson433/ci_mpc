@@ -52,6 +52,14 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (afternoon): cross-task regression queued
+- Gap: every fix since the weekend (calibration touch, height tracking, centering bound, stuck dither, learned belief)
+  was developed and benchmarked on the peg only (D1, R, R2). The held-out tasks H1 / H2 / H3 last ran with the old code.
+- `scripts/queue_cross_task.sh` (starts after "r2 queue done", `~/ci_mpc_runs/weekend/X`): H1 (5 conditions × 3,
+  same seeds), H2 nominal (5, seed 21), H3 (12 assemblies, same offsets), arms base (`--max-probes 25`) vs new
+  (+ height / centering bound / dither, + v3 belief on H1 only: v3 is peg-trained, and `--geo` tasks keep the hand
+  belief and skip the calibration touch). 64 runs, about 3 h.
+
 ### 2026-10-26 (night → morning): combined candidate, v2 / v3 learned likelihood, held-out test
 - **D1 benchmark, all with the calibration touch** (3 × 10 offsets; contact time = successes, mean / median):
 
