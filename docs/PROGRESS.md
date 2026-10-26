@@ -55,6 +55,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:45): cross-task regression result (`queue_cross_task.sh`, `~/ci_mpc_runs/weekend/X`)
+- base = weekend probe flags (`--max-probes 25`); new = + `--track-height 5 --centering-bound 0.008 --stuck-dither
+  0.0008` (+ learned v3 belief on H1 only). Same offsets / seeds as the weekend held-out sets.
+
+  | task | base | new | median contact (successes) base / new | weekend (old code) |
+  |---|---|---|---|---|
+  | H1 peg, 5 conditions x 3 | 15/15 | 14/15 | 11.3 / 12.8 s | 14/15 |
+  | H2 gear nominal, 5 offsets | 2/5 | 3/5 | 44.4 / 28.6 s | 3/5 |
+  | H3 AutoMate, 12 assemblies | 6/12 | 5/12 | 43.3 / 47.5 s | 5/12 (rerun 4/12) |
+
+- **No regression and no gain outside D1**: the new flags were tuned on the 8 mm peg (D1) and transfer neither way.
+  - H1: the one new failure is friction 1.0 at 0.63,1.57, the jam case that `--jam-recovery` now frees (16:45 entry).
+  - H2: new inserts -2.06,-2.22 (base 4.4 mm off); the failures that remain are the 8-12 mm stalls at bore clearance
+    (0.27 mm off) and a miss at 3.28,2.06 (8.7 mm off). Gear yaw-search + push-follow (gear session) targets the stall.
+  - H3: the two arms differ on one assembly only (00211: base OK, new FAIL, 17.6 mm short; probe also failed there at
+    the weekend). 6 assemblies fail in both arms (00028 00301 00319 00388 00700 01041): an AutoMate-specific problem,
+    not the probe flags. Within H3's run-to-run noise (7/36 flips at the weekend with identical code).
+
 ### 2026-10-26 (17:43): cross-task regression done (`~/ci_mpc_runs/weekend/X`)
 Today's code, two arms: base = weekend probe flags (`--max-probes 25`); new = + height tracking / centering bound /
 stuck dither, + learned v3 belief on H1 only (no jam recovery, yaw search or push-follow in either arm).
