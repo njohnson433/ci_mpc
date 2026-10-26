@@ -7,7 +7,7 @@ Read this before starting work (and before re-investigating something "new").
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
   H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. A4/B11 (learned v1): 27/30, B11 below B10: negative (off-policy distance prior). Running: A5/B12
-  (`queue_rcorr_belief.sh`, + distance-prior correction).
+  (`queue_rcorr_belief.sh`, + distance-prior correction; 2–3× shorter contact so far), then A6/B13 (`queue_combined.sh`).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -101,6 +101,15 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **A5 / B12 so far (learned + distance-prior correction):** A5 10/10, 9/10 (miss: centering left the block, 3rd time);
+  B12 9/10, 10/10 (miss −5,0: belief locked on the mirror spot (−5.2, −0.2) after grasp drift made flat probes read
+  −0.5 mm; B12 has no height tracking and the learned model leans on tip height).
+  - **Contact time ~2–3× shorter:** A5 32.5 / ~20 s per repeat vs A2 51.7 / 66.2 s, A3 63.4 s; B12 ~34 s (successes) vs
+    B8 58.1 s, B10 59.8 s. The correction turns the learned belief from a loss (A4 27/30, B11 26/30) into a speed gain.
+  - Centering bound now required (cost one run each in B9, A4, A5). Calibration-touch gate widened 1.5 → 2.5 mm (sweep
+    episode w0_e035 read +1.56 mm with a deep grasp + tilt and fell back to probe 0).
+  - Queued `scripts/queue_combined.sh` after A5/B12: A6 / B13 = learned (rcorr) + `--track-height 5` +
+    `--centering-bound 0.008` (combined deployment candidate).
 - **A4 / B11 final (learned likelihood v1, no distance correction):** A4 plain probe **27/30** (9 / 9 / 9; vs A2 / A3
   29/30), B11 GPU entry + lateral centering **26/30** (8 / 9 / 9; vs B8 28/30, B10 29/30).
   - **Negative in closed loop despite the offline gain** (belief error 2.83 → 1.96 mm in replay). B11's misses are at

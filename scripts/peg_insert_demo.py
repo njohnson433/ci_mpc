@@ -595,7 +595,9 @@ elif args.strategy == "probe":
         # centre 2-16 mm from the hole (R + chamfer 5.5 mm, face 12.5 mm half wide, ~14 mm on the diagonal). 9.5 mm on
         # the diagonal keeps that for estimate errors up to 5.4 mm (14.5 mm, first try: past the face edge, -8 mm)
         x, F = touch(np.array([-1.0, -1.0]) / np.sqrt(2.0) * calib_touch)
-        if F[2] > 1.0 and abs(tip_z(x)) < 0.0015:  # no lateral-force gate: an edge contact gives a push, not a height
+        # no lateral-force gate (an edge contact gives a push, not a height); 2.5 mm: grasp depth errors up to ~1 mm plus
+        # a tilted hole reached +1.56 mm in the probe sweeps (1.5 mm rejected it)
+        if F[2] > 1.0 and abs(tip_z(x)) < 0.0025:
 
             c["z_bias"] = tip_z(x)
             print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibration touch, {calib_touch * 1000:.1f} mm "
