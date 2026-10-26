@@ -7,7 +7,8 @@ Read this before starting work (and before re-investigating something "new").
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
   H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. A4/B11 (learned v1): 27/30, B11 below B10: negative (off-policy distance prior). Running: A5/B12
-  (`queue_rcorr_belief.sh`, + distance-prior correction; 2–3× shorter contact so far), then A6/B13 (`queue_combined.sh`).
+  (`queue_rcorr_belief.sh`, + distance-prior correction; 2–3× shorter contact so far), then A6/B13 (`queue_combined.sh`), then A7/B14 (`queue_v2_belief.sh`, v2 model
+  with probe sweeps).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
 - **Peg-in-hole (2026-10-23 night):** Factory 8 mm peg in sim (`scripts/demo_peg.sh --offset dx,dy`): succeeds
@@ -101,6 +102,21 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **v2 likelihood on the first probe sweeps (43 episodes, 1720 probes; worker 0 done, worker 1 resumed):** trained on
+  logs / sweeps / both, all evaluated on the same 8 held-out sweep episodes (320 random probes, varied physics and
+  sensors; `train_probe_likelihood.py --train-filter / --val-filter`, distance correction now added automatically):
+
+  | trained on | val loss on sweeps | P(within 2 mm) | log p(true) | log p at 2× errors |
+  |---|---|---|---|---|
+  | hand model | – | 0.83 | −13.6 | −16.2 |
+  | logs only | rises 1.37 → 1.61 | 0.75 | −10.2 | −9.5 |
+  | sweeps only | 1.06 | 0.55 | −5.9 | −5.0 |
+  | **logs + sweeps** | 1.07 | **0.94** | **−5.5** | **−4.5** |
+
+  - The log-trained model overfits the strategies' probe distribution (its sweep loss grows with training): the
+    off-policy problem measured directly. The hand model is often confidently wrong on random probes.
+  - Small test set (8 episodes); retrain when the sweeps are complete. Model `models/probe_likelihood_v2_both_partial.npz`;
+    queued `scripts/queue_v2_belief.sh` after A6/B13: A7 / B14 = A6 / B13 with the v2 model.
 - **A5 / B12 so far (learned + distance-prior correction):** A5 10/10, 9/10 (miss: centering left the block, 3rd time);
   B12 9/10, 10/10 (miss −5,0: belief locked on the mirror spot (−5.2, −0.2) after grasp drift made flat probes read
   −0.5 mm; B12 has no height tracking and the learned model leans on tip height).

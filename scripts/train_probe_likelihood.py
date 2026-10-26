@@ -34,6 +34,9 @@ p.add_argument("--lr", type=float, default=2e-3)
 p.add_argument("--val", type=float, default=0.2)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--all-runs", action="store_true", help="also uncalibrated runs (tip biased by the grasp offset)")
+p.add_argument("--train-filter", default="", help="train only on runs whose log path contains one of these (comma list)")
+p.add_argument("--val-filter", default="", help="draw validation runs only from runs whose path contains one of these")
+p.add_argument("--no-rcorr", action="store_true", help="do not add the distance-prior correction (rprior_correction.py)")
 args = p.parse_args()
 
 SPREAD = 6.0  # mm, the belief grid half width (HoleBelief default)
@@ -66,9 +69,17 @@ d = np.load(args.data)
 keep = np.ones(len(d["run"]), bool) if args.all_runs else d["calibrated"]
 run, tcp, hole, tip, force = d["run"][keep], d["tcp"][keep], d["hole"][keep], d["tip"][keep], d["force"][keep]
 runs = np.unique(run)
-val_runs = set(rng.choice(runs, int(len(runs) * args.val), replace=False).tolist())
+names = d["runs"]
+
+
+def match(r, filt):
+    return not filt or any(f in str(names[r]) for f in filt.split(","))
+
+
+val_pool = np.array([r for r in runs if match(r, args.val_filter)])
+val_runs = set(rng.choice(val_pool, int(len(val_pool) * args.val), replace=False).tolist())
 is_val = np.array([r in val_runs for r in run])
-tr = ~is_val
+tr = ~is_val & np.array([match(r, args.train_filter) for r in run])
 print(f"{tr.sum()} train / {is_val.sum()} val probes ({len(runs) - len(val_runs)} / {len(val_runs)} runs)")
 
 
@@ -118,7 +129,16 @@ lin = [m for m in net if isinstance(m, nn.Linear)]
 np.savez(args.out, mu=mu, sd=sd, **{f"W{i}": m.weight.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
          **{f"b{i}": m.bias.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
          err=np.array([ERR[k] for k in ERR]), rand_scale=rand_scale)
-print(f"saved {args.out}")
+if not args.no_rcorr:  # distance-prior correction from the training positives vs the grid negatives (as rprior_correction.py)
+    r_pos = np.linalg.norm(hole[tr_idx] - tcp[tr_idx], axis=1)
+    r_neg = np.linalg.norm(rng.uniform(-SPREAD, SPREAD, (len(tr_idx), 16, 2)) - tcp[tr_idx][:, None], axis=2).ravel()
+    edges = np.arange(0.0, 15.01, 0.5)
+    p_pos, p_neg = np.histogram(r_pos, edges)[0] + 1.0, np.histogram(r_neg, edges)[0] + 1.0
+    rc = np.convolve(np.log((p_pos / p_pos.sum()) / (p_neg / p_neg.sum())), np.ones(3) / 3, mode="same")
+    m = dict(np.load(args.out))
+    m["rcorr_edges"], m["rcorr"] = edges, rc - rc[np.searchsorted(edges, 6.0) - 1]
+    np.savez(args.out, **m)
+print(f"saved {args.out}" + ("" if args.no_rcorr else " (with distance-prior correction)"))
 
 # replay: every held-out run's logged probes through the grid belief, learned vs hand model, injected sensor errors.
 # "search": only probes before the tip sank > 1 mm (a probe in the hole localizes it trivially).
