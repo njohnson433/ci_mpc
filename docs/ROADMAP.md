@@ -94,6 +94,26 @@
 - [ ] Measure the real mount (hand-eye calibration) → `gemini305_sim.yaml` / real config; check depth noise
       against the real 305.
 
+### 9. Vectorized simulation for learning (Isaac Lab, many envs in one process)
+Why: the ros2_control pipeline runs one robot per Isaac process (~6 GB RAM, RTF 0.3–0.5), so at most 4 at once.
+Fine for validating the real controller, too slow for data (40 sweep episodes took hours) and for statistics
+(30 runs give ±7 s CIs; repeats of the same code swing 32–56 s). Isaac Lab's Factory tasks
+(`isaaclab_tasks/contrib/factory`: PegInsert with the same 8 mm peg, GearMesh) already run N envs on GPU PhysX
+with a batched task-space impedance controller in torch.
+- [ ] 0. Measure the stock Factory PegInsert headless at N = 64 / 256: env-steps/s, GPU memory, RAM.
+- [ ] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
+      limit, as `cartesian_impedance_control`), momentum observer → EE force estimate (link-side torques → −pinv(Jᵀ) r).
+      Scene parity: FR3 joint armature + identified friction (`prepare_scene.py`), 240 Hz → match our physics rate.
+- [ ] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,
+      joint friction / armature (as `collect_probes.sh`, but per env).
+- [ ] 3. Batched probe strategy: belief grid as an (N × H) tensor, learned likelihood batched, probe / centering /
+      push-to-bottom / jam recovery as per-env state machines.
+- [ ] 4. Fidelity check against the ros2_control pipeline: the same probe sequences in both, compare force and
+      tip-height distributions (and the momentum observer output) before trusting any batched data.
+- [ ] 5. Use: probe datasets at scale → likelihood retraining; on-policy rounds (closed loop with the learned belief);
+      benchmarks with hundreds of offsets per arm; later RL / learned search. Final validation stays in the
+      ros2_control pipeline (the code that runs on the FR3).
+
 ### Later
 - [x] Object(s) in the sim scene and object state estimation (perception package).
 - [ ] Stage 2 / stage 3 solvers (OCS2, C3 via dairlib needs Drake + Bazel).
