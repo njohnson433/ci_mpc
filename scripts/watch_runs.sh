@@ -4,7 +4,7 @@
 #   scripts/watch_runs.sh [RUN_ROOT] [JOB ...]      e.g. scripts/watch_runs.sh ~/ci_mpc_runs/weekend B2 B3 H3_fix
 # INTERVAL (env, default 20 s) the refresh period.
 ROOT=${1:-$HOME/ci_mpc_runs/weekend}; shift
-JOBS=${*:-RA_hand RA_v3 RB_hand RB_v3}
+JOBS=${*:-R2A_v3 R2B_v3 R2B_v3g}
 while true; do
   out=$(
     echo "ci_mpc runs  $(date '+%F %T')  root: $ROOT"
