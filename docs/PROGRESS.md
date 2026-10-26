@@ -52,6 +52,26 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26: daily summary
+- **Height tracking (A3/B10):** 29/30 each. Plain probe did not change (A2 29/30), and GPU entry went from 28 to 29/30.
+  Contact time did not improve (61.6 / 59.8 s mean).
+- **Learned likelihood v1 was negative in closed loop:** A4 27/30, B11 26/30, below the hand model. The 2.83 → 1.96 mm
+  offline gain did not hold in closed loop. Mechanism: the strategy-chosen training probes carry a distance prior, so the
+  belief chases its own probes, and the replay shares that bias. Fix: a distance-prior correction (`rprior_correction.py`).
+  With it, **A5 29/30 at 27.0 s and B12 29/30 at 33.1 s mean contact** (hand ~58 s).
+- **Combined candidate (learned + height tracking + centering bound):** A6 29/30. Its one miss is a new mode: the belief
+  collapsed on 13 repeated same-spot readings, which were counted as independent evidence. New option `--stuck-dither`
+  (off by default). **B13, A7 and B14 are 30/30**, the first setups with 30/30, at a median contact of ~22–29 s.
+- **v2 / v3 likelihood with randomized probe sweeps (80 episodes, 3200 probes):** on held-out sweeps, logs + sweeps
+  gives log p(true) −4.5 vs hand −18.9 (P within 2 mm 0.93–0.96). The logs-only model overfits the strategy probes:
+  its sweep loss rises 2.02 → 2.35 during training.
+- **Held-out R (random offsets, not D1), reps 1–2, 80/80 runs succeeded:** for plain probe, v3 halves contact time (44.0 → 20.6 s,
+  8.0 → 2.9 probes per run). For GPU entry, v3 gives **no gain** (46.7 → 43.8 s, 6.7 vs 6.8 probes). Mechanism: on a
+  wide belief the MPC drives toward a wrong estimate and pulls the peg out of the chamfer. New option `--gpu-std-max`
+  (off by default); it is being tested on a fresh set R2 (`queue_heldout_r2.sh`).
+- **Queued:** a cross-task regression (`queue_cross_task.sh`, 64 runs, ~3 h): H1/H2/H3 base vs new flags. All of
+  this week's fixes were tuned on the peg only. Infra: the nightly update script now allows the Skill tool.
+
 ### 2026-10-26 (afternoon): cross-task regression queued
 - Gap: every fix since the weekend (calibration touch, height tracking, centering bound, stuck dither, learned belief)
   was developed and benchmarked on the peg only (D1, R, R2). The held-out tasks H1 / H2 / H3 last ran with the old code.
