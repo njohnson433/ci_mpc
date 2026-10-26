@@ -52,6 +52,21 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (15:17): R2 (fresh held-out, seed 78) done: the confidence gate does not help, dropped
+| job | inserted | contact mean / median / p90 [s] | probes per run | GPU phases per run |
+|---|---|---|---|---|
+| R2A_v3 plain probe + v3 | 30/30 | 39.4 / 40.8 / 70.7 | 6.4 | – |
+| R2B_v3 GPU entry + centering + v3 | 30/30 | 39.6 / 32.9 / 72.8 | 5.6 | 1.23 |
+| R2B_v3g same + `--gpu-std-max 1 mm` | 30/30 | 45.6 / 37.6 / 85.0 | 6.9 | 0.10 |
+- Paired per offset (mean over 3 repeats, bootstrap 95 % CI): GPU − plain +0.2 s [−6.9, 8.3]; gated − plain +6.1 s
+  [−5.0, 17.7]; gated − ungated +6.0 s [−3.7, 16.7]. Repeat-to-repeat means swing 32–56 s with the same code.
+- **Gate: negative.** It opens in only 0.10 runs per run on average: the belief rarely gets below 1 mm std before
+  the peg is already sliding in, so it effectively switches the GPU entry off, and the runs that wait for it take
+  longer (more probes, 6.9). Not adopted.
+- GPU entry vs plain probe: a tie on R2 (R had plain 24 vs GPU 41 s). With the learned belief, the GPU entry gives no
+  measurable gain over plain probe on either held-out set. **Recommended default: plain probe + v3** (no GPU server).
+- R2 offsets are larger than R (up to 5.0 mm), hence ~40 s vs R's 24 s.
+
 ### 2026-10-26 (14:40): v4 likelihood (+ 40 sweep episodes): marginal gain, the data lever is nearly used up
 - sweeps2 done (40 episodes, seeds 5000+). Dataset `probes_v4.npz` = all logs + sweeps + sweeps2, **minus the
   held-out benchmark runs** (R*, R2*, X: 170 runs), 10741 probes / 748 runs. Train with `~/IsaacLab/.venv/bin/python`
