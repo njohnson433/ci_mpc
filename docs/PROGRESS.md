@@ -52,6 +52,18 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (12:49): held-out random offsets R (seed 77, 10 offsets × 3 repeats) done
+| job | inserted | contact mean / median [s] | probes per run |
+|---|---|---|---|
+| RA_hand (plain probe, hand belief) | 30/30 | 45.7 / 40.2 | 8.0 |
+| **RA_v3 (plain probe, learned v3)** | **30/30** | **23.9 / 17.5** | **3.8** |
+| RB_hand (GPU entry + centering, hand) | 29/30 | 47.4 / 44.5 | 7.5 |
+| RB_v3 (GPU entry + centering, v3) | 30/30 | 41.4 / 36.7 | 6.2 |
+- v3 carries over to unseen offsets: half the contact time and half the probes of the hand model, no failures.
+- The GPU entry gives back most of v3's gain (41 vs 24 s): the MPC takes over while the belief is still wide and
+  pulls the peg out of the chamfer. The confidence gate (`--gpu-std-max 1 mm`) is now on the fresh set R2 (running).
+- The one RB_hand miss (−2.72,−2.08 rep3) ended 0.96 mm off in xy and not seated.
+
 ### 2026-10-26: daily summary
 - **Height tracking (A3/B10):** 29/30 each. Plain probe did not change (A2 29/30), and GPU entry went from 28 to 29/30.
   Contact time did not improve (61.6 / 59.8 s mean).
