@@ -55,6 +55,12 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (16:40): note: Isaac refine results predate the C3 dual-rescale fix (6cedabc)
+- B5 (GPU entry + refine −1, 16/30), B7 and B9 (refine variants) ran with the buggy ADMM (scaled dual not rescaled
+  when rho grew; see the "2026-10-26 (evening)" entry by the C3 session). Treat their refine conclusions as pre-fix.
+  Unaffected: everything without `--gpu-refine-margin` (plain probe, GPU sampler alone: A*, B4, B6, B8, B10–B14,
+  R*, R2*, X).
+
 ### 2026-10-26 (evening): our C3+ vs dairlib's C3 (DAIRLab/c3): ADMM dual-rescale bug found and fixed
 Source comparison (DAIRLab/c3 `core/c3.cc`, `c3_plus.cc`, `c3_options.h`, read on GitHub; not built: needs Drake +
 Bazel, and cloning was not permitted in this session):
