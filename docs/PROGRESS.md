@@ -70,6 +70,12 @@ Read this before starting work (and before re-investigating something "new").
   closed-loop probe distribution matters; better probe placement (information gain) for the slow flat-probe runs.
 - Saved as `models/probe_likelihood_v4.npz`; not benchmarked yet (R2 and the cross-task queue keep v3, one lever at a time).
 
+- Probe placement checked before building an information-gain selector: `HoleBelief.next_probe` maximizes
+  p = P(hole within the 2 mm capture radius). For a sink-or-flat outcome the expected information is the binary
+  entropy H(p), which rises with p for p < 0.5, so the current rule already maximizes the information for that
+  outcome. A new selector would only help through the force direction on near misses, which the learned likelihood
+  already uses. The slow R2 run is coverage: 12 flat probes 2.5–5 mm apart on a 5 mm-std prior (each rules out a
+  ~12 mm² disc). Not built.
 ### 2026-10-26 (14:10): lateral force on flat probes is noise, not a bias (checked, no fix)
 - Trigger: R2B_v3g rep1 at 1.79,−1.94 (106 s): belief std stayed 5.1–5.9 mm for 12 flat probes, all with Fy ≈ −1.4 N.
 - All 8912 logged probes (benchmarks + sweeps), 4345 flat (true hole > 3.5 mm away, |tip| < 0.3 mm): mean Fx −0.10,
