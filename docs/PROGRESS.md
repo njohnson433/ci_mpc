@@ -55,6 +55,23 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:30): codebase check of the eval path; planar C3 had the dual-rescale bug too
+- **Stale planner install (not yet fixed):** `install/ci_mpc_planner` is a copy from 2026-10-23 (no symlink install):
+  9 modules missing, `hole_belief.py` / `peg_hole_3d.py` differ. `peg_insert_demo.py` imports `HoleBelief`, `PegHole`,
+  `C3`, `HoleEstimator` from the install and only `probe_likelihood.py` from src. No effect on results so far (the
+  diffs are an unused `likelihood=` arg and solver tolerance args), but **an "Isaac C3 rerun with the fix" would run
+  the old code**, and `--strategy c3` uses the *planar* `c3.py`, not `c3_3d.py` (where 6cedabc fixed the ADMM).
+  Plan: `colcon build --symlink-install --packages-select ci_mpc_planner` once no benchmark is running.
+- **Planar `c3.py` had the same ADMM bug** (scaled dual not divided by rho_growth): fixed (705cacd, `dual_rescale`).
+  Offline nominal (`peg_c3_offline.py`): FAIL / violation 1.05 → inserted after 278 steps, violation 0.079. With a
+  3 mm offset + estimator it still does not insert in 400 steps (with or without the fix): broken since b3d3574
+  (arm friction, grasp_axial 10 → 4 N). `test_c3_inserts_at_3mm` is now a strict xfail with that reason.
+- `nightly_update.sh` stages only README.md / docs / patches (the blanket `git add -A` pushed WIP `--jam-recovery`
+  code in 1606d5f). OSQP `polish=` → `polishing=`; pyflakes 12 → 3 (deliberate side-effect imports).
+- Baseline: planner tests 13 passed + 1 xfail (needs the workspace sourced: `test_translational_mpc` imports
+  ci_mpc_msgs). Open cleanup (deferred, `peg_insert_demo.py` is being edited by the gear session): drop the planar
+  `estimate` strategy and `--follow-force`; `command()` is a 549-line closure, 57 flags.
+
 ### 2026-10-26 (17:20): vectorized sim step 0 (Isaac Lab Factory PegInsert, one process) + gear fixes, first runs
 - **Step 0** (`scripts/isaac/bench_factory_vec.py`, random actions, 300 timed steps; 3 ros2_control Isaac
   instances and the C3 session's GPU jobs ran at the same time, so conservative):
