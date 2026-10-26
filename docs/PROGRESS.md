@@ -55,6 +55,17 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:55): gear with yaw sweep ±9° + push-follow; release bug found
+- `dev/yaw/both` (`--yaw-search 9 --push-follow 2e-5`, drop 2 mm): yaw 3° **2/3** (+ test C 1/1; weekend 0/3);
+  yaw 1° 0/2 (the sweep turns past the mesh, drop at −8° cmd, then a wedge 4 mm short at 0.27 mm off); H2 nominal
+  3/5 + the tooth-on-tooth case 0.77,−3.87 **seated** (0.17 mm, xy 0.06 mm, meshed at +6°) but scored as a failure.
+- **Release bug:** after the push the demo opened the gripper to a fixed 30 mm; the gear is grasped at 30.1 mm (and
+  AutoMate 00388 at 33.1 mm), so the fingers never let go and the part could ride up with the hand ("stays" check
+  failed). Fixed: release to max(30 mm, `--open-width`). Depth is measured before the release, so earlier stall
+  results are unchanged; only success flags of seated gear / 00388 runs can change (00388 failed in both X arms).
+- Push-follow acts (lateral 0.9 N, xy command moving) but alone did not fix the nominal stall (test A).
+- Next: 1 s dwell for the 1° case; rerun H2 nominal + 00388 with the release fix.
+
 ### 2026-10-26 (17:45): cross-task regression result (`queue_cross_task.sh`, `~/ci_mpc_runs/weekend/X`)
 - base = weekend probe flags (`--max-probes 25`); new = + `--track-height 5 --centering-bound 0.008 --stuck-dither
   0.0008` (+ learned v3 belief on H1 only). Same offsets / seeds as the weekend held-out sets.

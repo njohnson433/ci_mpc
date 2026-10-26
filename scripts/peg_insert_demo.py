@@ -920,7 +920,7 @@ tr = truth()
 peg_o, hole_o = np.array(tr["peg"]["origin"]), np.array(tr["hole"]["origin"])  # peg bottom, hole bottom
 depth_err = peg_o[2] - hole_o[2]
 xy_err = np.linalg.norm(peg_o[:2] - hole_o[:2])
-gripper(0.03, settle=0.5)
+gripper(max(0.03, args.open_width), settle=0.5)  # 0.03 did not release the gear (grasped 30.1 mm) / AutoMate 00388
 node.destroy_timer(timer)
 active_pub.publish(Bool(data=True))
 spin_sim(0.2)
