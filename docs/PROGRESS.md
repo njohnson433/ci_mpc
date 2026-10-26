@@ -55,6 +55,23 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (18:10): vectorized sim step 0b: realistic throughput ~130–190× (Panda, 240 Hz, contact)
+N 1024 unless noted, one Isaac instance of mine plus the C3 session's offline jobs running (less contention than
+step 0, whose N 1024 stock gave 126 sim s / wall s vs 358 here: the 3 cross-task instances cost ~3×):
+
+| setting | physics steps/s | sim s / wall s |
+|---|---|---|
+| stock (120 Hz, random actions) | 43,000 | 358 |
+| 240 Hz (decimation 16, same control rate) | 43,900 | 183 |
+| contact-heavy (press on the hole) | 37,500 | 313 |
+| **240 Hz + contact** | 37,600 | **157** |
+| 240 Hz + contact, N 4096 | 53,800 | **224** (GPU 7.1 GB, RSS 7.4 GB) |
+
+- Physics steps/s is the invariant: 240 Hz halves sim time per wall second; contact costs ~13 %; N 4096 gives 1.4×
+  over 1024. vs ~1.2 sim s / wall s for 3 ros2_control instances: **~130× (N 1024) to ~190× (N 4096)**.
+- The FR3 runs did not run (appended to the running script after bash had read it); queued as `vec/run_fr3.sh`
+  after the gear round 2.
+
 ### 2026-10-26 (17:55): gear with yaw sweep ±9° + push-follow; release bug found
 - `dev/yaw/both` (`--yaw-search 9 --push-follow 2e-5`, drop 2 mm): yaw 3° **2/3** (+ test C 1/1; weekend 0/3);
   yaw 1° 0/2 (the sweep turns past the mesh, drop at −8° cmd, then a wedge 4 mm short at 0.27 mm off); H2 nominal
