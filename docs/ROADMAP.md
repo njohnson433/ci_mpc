@@ -102,8 +102,9 @@ Fine for validating the real controller, too slow for data (40 sweep episodes to
 with a batched task-space impedance controller in torch.
 - [x] 0. Measure the stock Factory PegInsert headless at N = 64 / 256: env-steps/s, GPU memory, RAM.
       (2026-10-26: N 1024 → 1889 env-steps/s = 126 sim s per wall s, ~100× our pipeline; 5 GB GPU, 6 GB RAM, flat in N.)
-- [ ] 0b. Close the step-0 caveat where it is cheap: 240 Hz physics, contact-heavy actions (press on the hole), N 4096,
+- [x] 0b. Close the step-0 caveat where it is cheap: 240 Hz physics, contact-heavy actions (press on the hole), N 4096,
       and the FR3 asset (`scripts/isaac/factory_fr3.py`), each measured with `bench_factory_vec.py`.
+      (2026-10-26: Panda 240 Hz + contact 157 sim s / wall s at N 1024, 224 at 4096; FR3 64 at N 1024, ~50× ours.)
 - [ ] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
       limit, as `cartesian_impedance_control`), momentum observer → EE force estimate (link-side torques → −pinv(Jᵀ) r).
       Scene parity: the stock task uses a **Panda** (`franka_mimic.usd`) with zero joint friction / armature at

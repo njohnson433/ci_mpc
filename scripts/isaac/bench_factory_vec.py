@@ -63,7 +63,50 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     t_load = time.perf_counter()
     env = gym.make(args.task, cfg=env_cfg)
     cleanup.callback(env.close)
-    env.reset()
+    rob = env.unwrapped._robot
+    print("JOINTS", rob.joint_names, flush=True)
+    print("BODIES", rob.body_names, flush=True)
+    if os.environ.get("BENCH_NAN_PROBE"):
+        def _nan(tag):
+            q = rob.data.joint_pos.torch
+            print(f"NANPROBE {tag}: NaN envs {int(torch.isnan(q).any(dim=1).sum())}, q0 {q[0].tolist()}", flush=True)
+        _nan("after make")
+        u0 = env.unwrapped
+        for k in (1, 10):
+            for _ in range(k):
+                u0.step_sim_no_action()
+            _nan(f"after {k} more step_sim_no_action")
+        print("NANPROBE inertia diag link0..", rob.data.body_inertia.torch[0, :, [0, 4, 8]].tolist(), flush=True)
+        cls = type(u0)
+        for meth in ("_set_assets_to_default_pose", "_set_franka_to_default_pose", "step_sim_no_action",
+                     "randomize_initial_state", "set_pos_inverse_kinematics", "close_gripper_in_place"):
+            if hasattr(cls, meth):
+                def wrap(f, name=meth):
+                    def g(self, *a, **k):
+                        r = f(self, *a, **k)
+                        q = rob.data.joint_pos.torch
+                        n = int(torch.isnan(q).any(dim=1).sum())
+                        if n or name != "step_sim_no_action":
+                            print(f"NANPROBE after {name}: NaN envs {n}, q0 {[round(v, 3) for v in q[0].tolist()]}",
+                                  flush=True)
+                        return r
+                    return g
+                setattr(cls, meth, wrap(getattr(cls, meth)))
+        lim = getattr(rob.data, "joint_pos_limits", None) or getattr(rob.data, "soft_joint_pos_limits", None)
+        print("NANPROBE limits", lim.torch[0].tolist() if lim is not None else "n/a", flush=True)
+        print("NANPROBE mass", rob.data.body_mass.torch[0].tolist() if hasattr(rob.data, "body_mass") else "n/a", flush=True)
+    try:
+        env.reset()
+    except Exception:
+        uu = env.unwrapped
+        torch.set_printoptions(precision=4, sci_mode=False)
+        bad = torch.isnan(uu.joint_pos).any(dim=1)
+        print("DEBUG NaN envs", int(bad.sum()), "/", args.num_envs, "first", torch.nonzero(bad)[:8, 0].tolist(), flush=True)
+        for name in ("joint_pos", "fingertip_midpoint_pos", "fingertip_midpoint_quat", "fingertip_midpoint_jacobian"):
+            print("DEBUG", name, getattr(uu, name, None)[0] if hasattr(uu, name) else "missing", flush=True)
+        print("DEBUG jacobians shape", tuple(rob.root_physx_view.get_jacobians().shape) if hasattr(rob, "root_physx_view")
+              else "n/a", "fixed base", getattr(rob, "is_fixed_base", "?"), flush=True)
+        raise
     u = env.unwrapped
     n_act = u.cfg.action_space if isinstance(u.cfg.action_space, int) else u.single_action_space.shape[0]
     if args.mode == "random":
@@ -84,6 +127,10 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         torch.cuda.synchronize()
         wall = time.perf_counter() - t0
     dt_env = u.cfg.sim.dt * u.cfg.decimation
+    jp, ft = u.joint_pos, getattr(u, "fingertip_midpoint_pos", None)
+    print(f"SANITY envs with NaN joints {int(torch.isnan(jp).any(dim=1).sum())}/{args.num_envs}, fingertip z "
+          f"[{ft[:, 2].min():.3f}, {ft[:, 2].max():.3f}] m, held-asset z [{u.held_pos[:, 2].min():.3f}, "
+          f"{u.held_pos[:, 2].max():.3f}] m" if ft is not None and hasattr(u, "held_pos") else "SANITY n/a", flush=True)
     r = {"task": args.task, "mode": args.mode, "num_envs": args.num_envs, "steps": args.steps, "wall_s": round(wall, 2),
          "env_steps_per_s": round(args.num_envs * args.steps / wall, 1),
          "sim_s_per_wall_s_total": round(args.num_envs * args.steps * dt_env / wall, 2),

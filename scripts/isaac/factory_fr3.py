@@ -33,14 +33,20 @@ def factory_urdf():
     """fr3.urdf with the Panda body names FactoryEnv looks up."""
     s = open(URDF).read()
     s = re.sub(r'"fr3_(left|right)finger"', r'"panda_\1finger"', s)
+    # massless "base" + fixed fr3_base_joint: the importer then leaves the articulation floating (Jacobian with 6 base
+    # columns, NaN states at the first reset); with fr3_link0 as the root, fix_base anchors it
+    s = re.sub(r'\s*<link name="base">\s*</link>\s*<joint name="fr3_base_joint".*?</joint>', "", s, flags=re.S)
     tcp = re.search(r'<joint name="fr3_hand_tcp_joint".*?<origin ([^/]*)/>', s, re.S).group(1)
-    s = s.replace("</robot>", f'''  <link name="panda_fingertip_centered"/>
+    s = s.replace("</robot>", f'''  <link name="panda_fingertip_centered">
+    <inertial><mass value="0.01"/><origin xyz="0 0 0"/><inertia ixx="1e-5" iyy="1e-5" izz="1e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
   <joint name="panda_fingertip_centered_joint" type="fixed">
     <parent link="fr3_hand"/>
     <child link="panda_fingertip_centered"/>
     <origin {tcp}/>
   </joint>
 </robot>''')
+    # a link without <inertial> is dropped by the importer (no body): give the frame a negligible mass
     if not os.path.exists(URDF_FACTORY) or open(URDF_FACTORY).read() != s:
         open(URDF_FACTORY, "w").write(s)
     return URDF_FACTORY
@@ -64,17 +70,21 @@ def _arm(joints, effort, velocity, friction, armature):
 class FactoryFR3PegInsertCfg(FactoryTaskPegInsertCfg):
     def __post_init__(self):
         friction, armature = _joint_params()
-        stock = self.robot.spawn
-        self.robot = self.robot.replace(
+        # the FR3 collision meshes give more broad-phase pairs than the Panda: at N 1024 PhysX asked for 2.3 M
+        # (default 2**21) and the states went NaN at the first reset
+        self.sim.physics.gpu_total_aggregate_pairs_capacity = int(os.environ.get("FR3_AGG_PAIRS", 2**21))
+        stock = self.scene.robot.spawn
+        self.scene.robot = self.scene.robot.replace(
             spawn=sim_utils.UrdfFileCfg(
-                asset_path=factory_urdf(), fix_base=True, merge_fixed_joints=False,
+                asset_path=factory_urdf(), fix_base=True, fix_root_link=True, merge_fixed_joints=False,  # fix_base alone
+                # left the articulation floating (6 base columns in the Jacobian) once articulation_props are passed
                 convert_mimic_joints_to_normal_joints=True, activate_contact_sensors=True,
                 rigid_props=stock.rigid_props, articulation_props=stock.articulation_props,
                 collision_props=stock.collision_props,
                 joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
                     gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=0.0, damping=0.0)),
             ),
-            init_state=self.robot.init_state.replace(
+            init_state=self.scene.robot.init_state.replace(
                 joint_pos={**{f"fr3_joint{i + 1}": q for i, q in enumerate(Q0)}, "fr3_finger_joint.*": 0.04}),
             actuators={
                 "fr3_arm1": _arm(["fr3_joint[1-4]"], 87.0, 2.62, friction, armature),

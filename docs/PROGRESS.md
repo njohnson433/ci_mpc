@@ -55,6 +55,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (19:00): FR3 in the vectorized Factory env runs: 64 sim s / wall s at 240 Hz + contact (~50×)
+- `scripts/isaac/factory_fr3.py` (fr3.urdf via the URDF importer, Panda body names in a generated `fr3_factory.urdf`,
+  identified friction / armature, FR3 limits). Bugs on the way, each with its symptom:
+  - `robot` lives in the scene cfg (`self.scene.robot`), not the env cfg (AttributeError at cfg build).
+  - A link without `<inertial>` is dropped by the importer ("panda_fingertip_centered is not in list"): 10 g frame.
+  - The massless `base` link + fixed `fr3_base_joint` and then `fix_base=True` alone both left the articulation
+    **floating** (Jacobian (N, 12, 6, 15): 6 base columns; the first reset step threw the joints to 8–11 rad, NaN).
+    Fix: drop `base` (fr3_link0 is the root) and set the spawner's `fix_root_link=True`.
+  - The "increase totalAggregatePairsCapacity" PhysX error at N 1024 was a symptom of the exploding floating base;
+    with the fixed base the default capacity suffices (`FR3_AGG_PAIRS` env override kept).
+- Sanity (after 300 contact steps, N 1024): 0 NaN envs; fingertip z 0.026–0.138 m, held peg z −0.003–0.106 m vs
+  Panda 0.027–0.150 / −0.003–0.118.
+- **Throughput, 240 Hz + contact, N 1024: FR3 64 sim s / wall s (15,400 physics steps/s) vs Panda 157**: the full FR3
+  link collision meshes cost 2.4×. vs ~1.2 for 3 ros2_control instances: ~50×. Simplifying the arm's collision
+  (only hand / fingers touch the parts) is the obvious speed lever later.
+- Still open before trusting data: the fingertip frame is the FR3 TCP (vs the Panda's fingertip frame), and the
+  controller / observer are still Factory's (step 1), no fidelity check yet (step 4).
+
 ### 2026-10-26 (18:10): vectorized sim step 0b: realistic throughput ~130–190× (Panda, 240 Hz, contact)
 N 1024 unless noted, one Isaac instance of mine plus the C3 session's offline jobs running (less contention than
 step 0, whose N 1024 stock gave 126 sim s / wall s vs 358 here: the 3 cross-task instances cost ~3×):
