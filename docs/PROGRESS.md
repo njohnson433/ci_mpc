@@ -55,6 +55,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (16:45): jam recovery (`--jam-recovery`): wedge fixed, no false triggers
+- Trigger case from the cross-task run: H1 friction 1.0 at 0.63,1.57 (same offset failed at the weekend). The peg
+  reaches the hole on probe 0, then wedges: from 19 s it presses 5.5 N sideways on the hole wall and 0 N on the
+  bottom (hole_contact.csv); the robot estimate shows +5 N lateral, +3.5 N up. The TCP keeps descending while the peg
+  slips in the fingers (μ 1.0 wall > grip), so a stall check on the TCP-derived tip height never fires.
+- Recovery: trigger on stall or 1 s mean lateral force > `--jam-force` (3 N); lift `--jam-lift`, press again from a
+  fixed anchor shifted `--jam-shift` along the lateral force (the force on the peg points away from the wall).
+
+  | variant (friction 1.0, 0.63,1.57) | inserted | wedged | freed |
+  |---|---|---|---|
+  | none (stall trigger only, never fired) | 0/3 | 3 | 0 |
+  | lift 1 mm, shift 0.3 mm | 1/3 | 2 | 0 (anchor moved only 0.03 mm: tilt wedge) |
+  | **lift 3 mm, shift 0.6 mm** | **8/8** | 4 | **4** (one needed 3 retries, 0.83 mm short) |
+
+- False-trigger check on D1 (A7 config + jam recovery, 1 repeat): 10/10, **0 retries fired**, contact mean / median
+  40.7 / 27.5 s vs A7 39.9 / 25.8 s. Recommended with `--jam-recovery 3 --jam-lift 0.003 --jam-shift 0.0006`
+  (still off by default). Not used in the running cross-task queue (one lever at a time).
+
 ### 2026-10-26 (16:40): note: Isaac refine results predate the C3 dual-rescale fix (6cedabc)
 - B5 (GPU entry + refine −1, 16/30), B7 and B9 (refine variants) ran with the buggy ADMM (scaled dual not rescaled
   when rho grew; see the "2026-10-26 (evening)" entry by the C3 session). Treat their refine conclusions as pre-fix.
