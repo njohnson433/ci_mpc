@@ -102,6 +102,17 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **A5 final (plain probe, learned v1 + distance correction): 29/30 at less than half the contact time.**
+
+  | plain probe | success | contact time, successes: mean / median |
+  |---|---|---|
+  | A2 hand model | 29/30 | 58.1 / 55.7 s |
+  | A3 hand + height tracking | 29/30 | 61.6 / 58.2 s |
+  | A4 learned v1 | 27/30 | 35.6 / 28.5 s |
+  | **A5 learned v1 + correction** | **29/30** | **27.0 / 22.0 s** |
+
+  - First learned component that wins in closed loop: same success, ~2.5× faster localization. A5's one miss is the
+    centering run-off (no bound in A5), not the belief.
 - **v2 likelihood on the first probe sweeps (43 episodes, 1720 probes; worker 0 done, worker 1 resumed):** trained on
   logs / sweeps / both, all evaluated on the same 8 held-out sweep episodes (320 random probes, varied physics and
   sensors; `train_probe_likelihood.py --train-filter / --val-filter`, distance correction now added automatically):
