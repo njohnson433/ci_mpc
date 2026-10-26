@@ -16,7 +16,7 @@ n_isaac() { ps -eo rss,cmd | awk '$2 ~ /IsaacLab\/.venv\/bin\/python/ && $1 > 30
 bench() {  # bench OUT [extra options]
   local out=$1; shift
   until [ "$(n_isaac)" -le 1 ]; do sleep 60; done
-  PARALLEL=3 DOMAIN_BASE=90 taskset -c 0-15 "$HERE/peg_benchmark.sh" "$out" probe --timeout-contact 150 \
+  PARALLEL=3 DOMAIN_BASE=100 taskset -c 0-15 "$HERE/peg_benchmark.sh" "$out" probe --timeout-contact 150 \
     --max-probes 25 --track-height 5 --centering-bound 0.008 --belief-model "$MODEL" --stuck-dither 0.0008 \
     --entry gpu --lateral-centering --gpu-refine-margin=-1 "$@"
 }
