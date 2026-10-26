@@ -115,6 +115,13 @@ Read this before starting work (and before re-investigating something "new").
 - **B12 final (GPU entry + lateral centering, learned v1 + correction): 29/30 at 33.1 s mean contact** (successes;
   B8 28/30 at 58.1 s, B10 29/30 at 59.8 s, B11 26/30 at 29.8 s). One miss, −5,0 (grasp drift → mirror-spot lock;
   B12 has no height tracking).
+- **A6 final (combined: learned v1 + correction + height tracking + centering bound):** see the totals in the next
+  entry; repeats 1–2 10/10 each. The rep3 miss (−5,0) is a new mode: the belief locked on at std 0.00 mm, 0.7 mm off
+  the true hole, with the peg resting 1.2 mm down the chamfer edge; every probe / centering step returned to that spot
+  (next probe = belief peak; the 1.2 N centering push could not beat stiction) until time ran out. Mechanism: 13
+  near-identical readings counted as independent evidence (the correlated-measurement problem again, now through the
+  sharper learned likelihood). To do: skip / temper repeated probes at the same spot, a belief floor (~0.3–0.5 mm
+  diffusion), or a "stuck at the same depth" detector → small local spiral.
 - **v2 likelihood on the first probe sweeps (43 episodes, 1720 probes; worker 0 done, worker 1 resumed):** trained on
   logs / sweeps / both, all evaluated on the same 8 held-out sweep episodes (320 random probes, varied physics and
   sensors; `train_probe_likelihood.py --train-filter / --val-filter`, distance correction now added automatically):
