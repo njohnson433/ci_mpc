@@ -52,6 +52,16 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (14:10): lateral force on flat probes is noise, not a bias (checked, no fix)
+- Trigger: R2B_v3g rep1 at 1.79,−1.94 (106 s): belief std stayed 5.1–5.9 mm for 12 flat probes, all with Fy ≈ −1.4 N.
+- All 8912 logged probes (benchmarks + sweeps), 4345 flat (true hole > 3.5 mm away, |tip| < 0.3 mm): mean Fx −0.10,
+  Fy −0.08 N, so no global bias. Fy scatters more than Fx (sd 0.94 vs 0.54 N). Not drag from the previous move
+  (regression on the move direction R² ≤ 0.03). Per run (414 runs with ≥ 4 flat probes): between-run sd Fx 0.25 /
+  Fy 0.47 N, within-run 0.48 / 0.80 N.
+- So a per-run debias would remove only ~25 % of the Fy variance; the rest is probe-to-probe noise. Not pursued.
+  The slow run is a flat-probe information problem (a flat reading rules out only the ~1 mm disc under the tip),
+  not a sensor bias.
+
 ### 2026-10-26 (12:49): held-out random offsets R (seed 77, 10 offsets × 3 repeats) done
 | job | inserted | contact mean / median [s] | probes per run |
 |---|---|---|---|
