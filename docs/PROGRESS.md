@@ -55,6 +55,26 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:20): vectorized sim step 0 (Isaac Lab Factory PegInsert, one process) + gear fixes, first runs
+- **Step 0** (`scripts/isaac/bench_factory_vec.py`, random actions, 300 timed steps; 3 ros2_control Isaac
+  instances and the C3 session's GPU jobs ran at the same time, so conservative):
+
+  | N | env-steps/s | sim s per wall s (all envs) | GPU | RSS |
+  |---|---|---|---|---|
+  | 16 | 40 | 2.7 | 4.3 GB | 5.5 GB |
+  | 64 | 93 | 6.2 | 4.4 GB | 5.5 GB |
+  | 256 | 352 | 23.5 | 4.5 GB | 5.6 GB |
+  | 1024 | 1889 | **126** | 5.0 GB | 6.0 GB |
+
+  vs ~0.4 sim s / wall s per ros2_control instance (~1.2 with 3): **~100× at N = 1024**, memory flat in N (the
+  4-instance RAM cap does not apply). Fixed overhead dominates below 256; 256 → 1024 gave 5.4×, so 4096 likely helps.
+  Caveat: Panda at 120 Hz with random actions; FR3 at 240 Hz with contact-heavy probing will be slower.
+  No `--headless` in this Isaac Lab (headless is the default).
+- **Gear fixes, one run each:** A nominal + push-follow: fail (still 0.27 mm off). B yaw3 + sweep ±9°: fail (false
+  "drop" at +7°, 1.2 mm of TCP creep, stopped the sweep). **C yaw3 + both: inserted** (real 2.4 mm drop at −5°,
+  xy 0.12 mm, 19 s contact). Drop threshold now `--yaw-drop` 2 mm; push-follow logs its moves.
+- Queued `dev/yaw/run4.sh` (both fixes): yaw3 ×3, yaw1 ×2, H2 nominal 5 offsets.
+
 ### 2026-10-26 (17:00): gear (H2) yaw search: two failure modes, yaw only matters for one
 - `--yaw-search DEG` (+ `--yaw-step`, `--yaw-dwell`; off by default): when the push to the bottom stalls or presses
   > `--max-contact-force` for 1 s, sweep the hand yaw 0, +s, −s, … ±DEG under a light press; keep the first yaw with a

@@ -101,6 +101,8 @@ p.add_argument("--yaw-search", type=float, default=0.0,
                help="push to the bottom: when it stalls / presses > --max-contact-force for 1 s, sweep the hand yaw up to "
                     "+-this many degrees for a drop (gear tooth on tooth, H2; 0 = off)")
 p.add_argument("--yaw-step", type=float, default=1.0, help="yaw search step [deg]")
+p.add_argument("--yaw-drop", type=float, default=0.002,
+               help="yaw search: tip drop that counts as meshed [m] (1 mm was fooled by the TCP creeping)")
 p.add_argument("--yaw-dwell", type=float, default=0.5, help="yaw search: time per yaw [s]")
 p.add_argument("--jam-recovery", type=int, default=0,
                help="probe: retries when the push to the bottom stalls (lift 1 mm, re-press shifted along the lateral "
@@ -721,6 +723,10 @@ elif args.strategy == "probe":
                     f_lat = force3(0.3)[:2]
                     if np.linalg.norm(f_lat) > args.push_follow_deadband:
                         anchor = (x[:2] if anchor is None else anchor) + np.clip(args.push_follow * f_lat, -1e-4, 1e-4)
+                    c["follow_n"] = c.get("follow_n", 0) + 1
+                    if c["follow_n"] % 20 == 0:
+                        print(f"      push follow: lateral force {np.round(f_lat, 2)} N, tip {tip_z(x) * 1000:+.2f} mm, "
+                              f"xy cmd {np.round((x[:2] if anchor is None else anchor) * 1000, 2)} mm", flush=True)
                 cmd(x[:2] if anchor is None else anchor, uz, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
@@ -732,7 +738,7 @@ elif args.strategy == "probe":
                 pressing = len(depth_hist) > 10 and force3(1.0)[2] > args.max_contact_force
                 if args.yaw_search > 0 and yaw_tries < 1 and (stalled or pressing):
                     # tooth on tooth (gear: 40 teeth, 9 deg pitch, meshes within ~2 deg): sweep the hand yaw
-                    # 0, +s, -s, +2s, ... up to +-yaw_search while pressing lightly; keep the first yaw where it drops
+                    # 0, +s, -s, +2s, ... up to +-yaw_search while pressing lightly; keep the first yaw where it drops by --yaw-drop
                     yaw_tries, depth_hist = yaw_tries + 1, []
                     tip0, found = tip_z(measure5()), None
                     n = int(round(args.yaw_search / args.yaw_step))
@@ -747,7 +753,7 @@ elif args.strategy == "probe":
                         print(f"      yaw cmd {a:+.1f}: hand {np.degrees(np.arctan2(Rr[1, 0], Rr[0, 0])):+.2f} deg, "
                               f"object {gy:+.2f} deg (truth), tip {tip_z(measure5()) * 1000:+.2f} mm, "
                               f"Fz {force3(0.2)[2]:.1f} N", flush=True)
-                        if tip_z(measure5()) < tip0 - 0.001:
+                        if tip_z(measure5()) < tip0 - args.yaw_drop:
                             found = a
                             break
                     Rr = fk(state["q"]).rotation @ R.T

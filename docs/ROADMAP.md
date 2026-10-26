@@ -100,7 +100,8 @@ Fine for validating the real controller, too slow for data (40 sweep episodes to
 (30 runs give ±7 s CIs; repeats of the same code swing 32–56 s). Isaac Lab's Factory tasks
 (`isaaclab_tasks/contrib/factory`: PegInsert with the same 8 mm peg, GearMesh) already run N envs on GPU PhysX
 with a batched task-space impedance controller in torch.
-- [ ] 0. Measure the stock Factory PegInsert headless at N = 64 / 256: env-steps/s, GPU memory, RAM.
+- [x] 0. Measure the stock Factory PegInsert headless at N = 64 / 256: env-steps/s, GPU memory, RAM.
+      (2026-10-26: N 1024 → 1889 env-steps/s = 126 sim s per wall s, ~100× our pipeline; 5 GB GPU, 6 GB RAM, flat in N.)
 - [ ] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
       limit, as `cartesian_impedance_control`), momentum observer → EE force estimate (link-side torques → −pinv(Jᵀ) r).
       Scene parity: the stock task uses a **Panda** (`franka_mimic.usd`) with zero joint friction / armature at
