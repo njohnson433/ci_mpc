@@ -78,6 +78,15 @@ Read this before starting work (and before re-investigating something "new").
   discriminating metric. Model `models/probe_likelihood_v3_both.npz`.
 - **New option `--stuck-dither`** (off by default) for the A6 rep3 collapse: after 3 probes within 0.4 mm, the next target
   is offset in a random direction.
+- **Held-out R, reps 1–2 (all 80 runs succeeded):** plain probe hand 44.0 s vs **v3 20.6 s** contact (probes / run 8.0 →
+  2.9); GPU entry hand 46.7 s vs v3 43.8 s (probes / run 6.7 vs 6.8: no gain). GPU phases end in the hole 42 % (hand) /
+  71 % (v3), so they are not the bottleneck. **Mechanism:** when the first probe sinks into the chamfer, plain probe
+  centers (follows the physical push) and slides in (8 / 20 runs in 1 probe), while the GPU entry hands over to the MPC,
+  which drives toward the *belief estimate*; with a wide belief (std ~3 mm) that estimate is wrong and the MPC pulls the
+  peg out of the chamfer (RB_v3 rep1 0.74,1.19: from (0.2, −0.2) to (0.77, −0.75), hole at (−0.7, −1.2)).
+  - Option `--gpu-std-max` (off by default): GPU phase only when the belief std is below the threshold, else center.
+    Motivated by an R run, so tested on a fresh set R2 (seed 78): `scripts/queue_heldout_r2.sh` (plain probe + v3,
+    GPU + v3, GPU + v3 + gate 1 mm), after the R queue.
 - **Running:** `scripts/queue_heldout_r.sh` — 10 random hole errors (seed 77, r 1–5.4 mm, not D1): RA / RB = plain probe /
   GPU entry + lateral centering, hand vs v3 + stuck dither (0.8 mm), all with tracking + bound; 3 repeats. Plus 40 more
   sweep episodes (`~/ci_mpc_runs/likelihood/sweeps2`, seeds 5000+, 1 worker).

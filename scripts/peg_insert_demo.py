@@ -93,6 +93,10 @@ p.add_argument("--stuck-dither", type=float, default=0.0,
                help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
                     "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
                     "held by stiction on the chamfer edge, every probe returned to the same spot until time ran out)")
+p.add_argument("--gpu-std-max", type=float, default=float("inf"),
+               help="probe --entry gpu: start the GPU phase only when the belief std is below this [m]; otherwise center "
+                    "as plain probe (the MPC drives toward the belief estimate: with a wide belief it moved the peg out of "
+                    "a chamfer the centering would have followed in, RB_v3 0.74,1.19)")
 p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
@@ -641,7 +645,7 @@ elif args.strategy == "probe":
                 break
             continue
         sunk = tip_z(x) < -3e-4
-        if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering):
+        if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering) and std < args.gpu_std_max:
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
             for _ in range(80):
                 x, F = measure5(), force3(0.1)
