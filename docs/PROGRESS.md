@@ -6,7 +6,7 @@ Read this before starting work (and before re-investigating something "new").
 ## Where to resume
 
 - **2026-10-25:** calibration touch: plain probe 29/30 (was 24/30); GPU entry 22/30, refine 16/30 (false engagements).
-  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. Running: A4/B11 (`queue_learned_belief.sh`, learned probe likelihood v1), then A5/B12
+  H3 rerun: spiral 7, probe 4, GPU 4 of 12 (noisy). B6/B7 (sink only): 26/29, 26/30, fail only at ±5 mm. B8/B9 (push → centering): 28/30, 27/30. A3/B10 (height tracking): 29/30 each. A4/B11 (learned v1): 27/30, B11 below B10: negative (off-policy distance prior). Running: A5/B12
   (`queue_rcorr_belief.sh`, + distance-prior correction).
   Watch: `scripts/watch_runs.sh`. When done: compare B4/B5 with A2 (same code), H3 rerun with run 1.
   Then `queue_engage_sink.sh` runs B6/B7 (tip-sink-only engagement); compare with B4/B5.
@@ -101,6 +101,13 @@ Read this before starting work (and before re-investigating something "new").
 - **Isaac:** `peg_insert_demo.py --belief-model PATH [--belief-scale s]` (loads from the source tree; replaces the
   installed belief's update). Queued `scripts/queue_learned_belief.sh` after A3/B10: A4 (plain probe, vs A2) and B11
   (B8 + learned belief, vs B8).
+- **A4 / B11 final (learned likelihood v1, no distance correction):** A4 plain probe **27/30** (9 / 9 / 9; vs A2 / A3
+  29/30), B11 GPU entry + lateral centering **26/30** (8 / 9 / 9; vs B8 28/30, B10 29/30).
+  - **Negative in closed loop despite the offline gain** (belief error 2.83 → 1.96 mm in replay). B11's misses are at
+    moderate offsets every centering setup had passed (−3,0, −4,2, −3,−2) and a −5,0 that ended 11 mm off: the belief
+    walks away from the hole and becomes confidently wrong (B11 rep1 −3,0: std 0.69 mm at (−3.9, 5.4), hole at (3, 0)).
+  - Mechanism: the distance prior of the strategy-chosen training probes (above); the replay shares it. A5 / B12 test
+    the corrected model.
 - **A4 rep1 (learned v1): 9/10, ±5 mm both OK; the miss shows the off-policy bias (user's point) in closed loop.** On 0,4
   the belief walked to +1.5 mm y while the hole was at −4, then a centering push left the block (TCP 13 mm, dropped 3.6
   mm, counted as "in the hole"; caught by the xy check).
