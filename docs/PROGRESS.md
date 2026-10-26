@@ -55,6 +55,28 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:43): cross-task regression done (`~/ci_mpc_runs/weekend/X`)
+Today's code, two arms: base = weekend probe flags (`--max-probes 25`); new = + height tracking / centering bound /
+stuck dither, + learned v3 belief on H1 only (no jam recovery, yaw search or push-follow in either arm).
+
+| task | base | new | weekend (old code, probe) |
+|---|---|---|---|
+| H1 peg, 5 conditions × 3 | **15/15**, median 11.3 s, mean 29.0 s | 14/15, median 12.8 s, mean 22.4 s | 14/15 |
+| H2 gear, nominal 5 | 2/5 | **3/5** (found the shaft 4/5) | 3/5 |
+| H3 AutoMate, 12 | **6/12** | 5/12 | 5/12, rerun 4/12 |
+
+- **H1:** the fixes since the weekend generalize to untuned conditions (base 15/15 vs 14/15 with the old code).
+  The new arm is faster on the hard runs (mean 22 vs 29 s); its one miss is the friction-1.0 wedge at 0.63,1.57
+  (an insertion problem, fixed by `--jam-recovery`, see 16:45), not the belief.
+- **H2:** the new flags find the shaft more often (4/5 vs 2/5); the remaining failures are a 3.3 mm miss and the
+  tooth-on-tooth stall (centering / yaw, see the 17:00 entry).
+- **H3:** 10 of 12 assemblies give the same result in both arms; the only flip is 00211 (base OK, new 17.6 mm short;
+  it also failed with probe at the weekend). With 7/36 same-code flips measured on H3, 6 vs 5 is noise. The same 6
+  assemblies fail in both arms (00028, 00301, 00319, 00388, 00700 at 3 mm short, 01041 fallen over): assembly-specific,
+  not strategy.
+- **Conclusion:** no cross-task regression from the peg-tuned changes; gains carry over to H1 and the gear search.
+  The learned belief stays peg-only (trained on the 8 mm peg).
+
 ### 2026-10-26 (17:30): codebase check of the eval path; planar C3 had the dual-rescale bug too
 - **Stale planner install (not yet fixed):** `install/ci_mpc_planner` is a copy from 2026-10-23 (no symlink install):
   9 modules missing, `hole_belief.py` / `peg_hole_3d.py` differ. `peg_insert_demo.py` imports `HoleBelief`, `PegHole`,
