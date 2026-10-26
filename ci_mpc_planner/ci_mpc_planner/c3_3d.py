@@ -38,6 +38,8 @@ class C33Config:
     rho0: float = 10.0
     rho_growth: float = 1.8
     admm_iters: int = 10
+    dual_rescale: bool = True    # omega /= rho_growth when rho grows (scaled dual, as dairlib C3: w /= rho_scale).
+                                 # False (before 2026-10-26) inflates the dual 1.8x per iteration: stuck at the opening
     contact_radius: float = 0.0005  # 2 mm: 40 contacts in the bore, ~1 s per solve
     warm_start: str = "rollout"  # rollout | zero
     rollout_every: int = 4       # fresh rollout targets every n solves (and when the contact set changes), shifted
@@ -214,6 +216,8 @@ class PegHoleC3_3D:
             delta[1::2] = np.where(a > b, 0.0, np.maximum(b, 0.0))
             omega = omega + z[flat] - delta
             rho *= cfg.rho_growth
+            if cfg.dual_rescale:
+                omega /= cfg.rho_growth
         if z is None:
             return u_prev.copy(), {"status": "failed", "m": m}
         self.prev = (m, delta.copy())

@@ -5,6 +5,9 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-26 evening:** C3 ADMM dual-rescale bug fixed (found by comparing with dairlib); the fast C3 now
+  enters 16/16 offline (was 5/16). Next: rerun refine-MPC / sampled teacher / Isaac C3 with the fix; find why
+  insertion stalls at 18–21 mm.
 - **2026-10-26 morning:** learned probe likelihood works in closed loop (with the distance-prior correction): D1 30/30
   for A7 / B13 / B14 at ~half the contact time. Running: held-out random-offset test (`queue_heldout_r.sh`) and 40 more
   sweep episodes. To do: centering-bound default on; belief collapse fix (stuck dither) evaluated in the held-out run;
@@ -51,6 +54,39 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-26 (evening): our C3+ vs dairlib's C3 (DAIRLab/c3): ADMM dual-rescale bug found and fixed
+Source comparison (DAIRLab/c3 `core/c3.cc`, `c3_plus.cc`, `c3_options.h`, read on GitHub; not built: needs Drake +
+Bazel, and cloning was not permitted in this session):
+
+| | ours (`c3_3d.py`) | dairlib C3+ |
+|---|---|---|
+| language / QP | Python, OSQP (direct) | C++, OSQP via Drake `MathematicalProgram` |
+| complementarity slack eta | explicit variables + equality rows | same (`C3Plus`: eta = E x + F lam + H u + c) |
+| projection | closed form, unweighted `a > b` | closed form, weighted `sqrt(U_eta) eta > sqrt(U_lam) lam`, clip at 0 |
+| consensus on | complementarity pairs only | all of z = (x, lam, u, eta); x, u pass through (a proximal term) |
+| rho schedule | rho 10, x1.8, 10 QPs | G x `rho_scale` (default 10), `admm_iter` 3 + final QP |
+| **dual when rho grows** | **unchanged (bug)** | **w /= rho_scale** (scaled-dual ADMM) |
+| delta init | physics rollout of a nominal / shifted previous | zeros, x part = x0 (`delta_option` 1) |
+| model | quasi-static impedance, LCS built per solve | general LCS, optional `scale_lcs`, Lemke for lam0 if H = 0 |
+
+- **The bug:** omega is the scaled dual (y / rho). Growing rho without dividing omega inflates the effective dual by
+  1.8x per iteration (~200x after 10), so later QPs chase stale residuals of the first projection and lock in its mode.
+- **A/B, offline engaged phase** (`peg_c3_3d_offline.py`, rollout warm start every 4th solve = the fast variant,
+  ~70 ms/solve; "entered" = tip > 5 mm deep):
+
+  | variant | entered (16 offsets, 0.8–1.8 mm) | depth reached | violation | peak force |
+  |---|---|---|---|---|
+  | old (no rescale) | 5/16 | others stuck at 0.3–1 mm | 0.4–5.9 | – |
+  | **+ dual rescale** | **16/16** | 18–21 mm | 0.15–0.36 | 1.1–2.8 N |
+  | dairlib schedule (x10, 3+1 QPs) + rescale | 2/4 deep, 2/4 partial | | 0.17–0.46 | |
+  | dairlib schedule, no rescale | 2/4 deep, 1 partial | | 0.3–2.9 | |
+  - Zero warm start: all variants stay at the surface (0/4 each), so the rollout warm start is still needed.
+  - No run reaches the 24 mm success depth in 150 steps (all stall at 18–21 mm); not investigated yet.
+- **Reading:** the "fast C3 variants get stuck at the opening" result (2026-10-23) was largely this bug. With it fixed,
+  the cheap rollout-every-4 variant enters every offset at ~70 ms per solve (vs ~1.5 s for rollout every solve).
+  Default changed to `dual_rescale=True`; this also affects `refine_mpc.py` and `sampled_teacher.py`, so their
+  earlier numbers were with the buggy ADMM. Not yet rerun: refine / teacher / Isaac C3 benchmarks.
 
 ### 2026-10-26 (15:17): R2 (fresh held-out, seed 78) done: the confidence gate does not help, dropped
 | job | inserted | contact mean / median / p90 [s] | probes per run | GPU phases per run |

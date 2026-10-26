@@ -19,6 +19,10 @@ p.add_argument("--policy", default="c3", choices=["c3", "follow", "student"])
 p.add_argument("--student", default="", help="student weights (.npz) for --policy student")
 p.add_argument("--steps", type=int, default=80)
 p.add_argument("--warm-start", default="rollout")
+p.add_argument("--rho0", type=float, default=None)
+p.add_argument("--rho-growth", type=float, default=None)
+p.add_argument("--admm-iters", type=int, default=None)
+p.add_argument("--no-dual-rescale", action="store_true", help="old ADMM without the scaled-dual rescale (pre 2026-10-26)")
 p.add_argument("--success-depth", type=float, default=0.024, help="[m] tip depth counted as success (0.005: entered)")
 p.add_argument("--verbose", action="store_true")
 args = p.parse_args()
@@ -39,6 +43,10 @@ for _ in range(10):
 goal = np.array([*(-off + err), tb - plant.g.depth, 0.0, 0.0])
 cfg = C33Config()
 cfg.warm_start = args.warm_start
+for k_, v_ in (("rho0", args.rho0), ("rho_growth", args.rho_growth), ("admm_iters", args.admm_iters)):
+    if v_ is not None:
+        setattr(cfg, k_, v_)
+cfg.dual_rescale = not args.no_dual_rescale
 mpc = PegHoleC3_3D(model, comp, cfg)
 peak_f, peak_tau, ms, viol = 0.0, 0.0, [], []
 F = np.zeros(3)
