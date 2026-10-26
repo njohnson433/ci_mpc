@@ -34,10 +34,11 @@ PROMPT="Nightly documentation update for the ci_mpc repo (today is $TODAY). Do n
    for $TODAY exists already: 3-8 bullets on what was done today, with the concrete numbers, based on
    'git log --since=\"$TODAY 00:00\" --stat' and 'git diff HEAD --stat' and the existing PROGRESS.md entries of today.
    Be honest about negative results. Keep the style of the existing entries.
-2. Use the create-readme skill to update README.md: keep its existing facts, the status table and the links accurate
-   and current (update rows that today's work changed), keep it concise; do not remove information that is still true.
+2. Invoke the create-readme skill (Skill tool) and follow it to update README.md. Keep its existing facts, the status
+   table and the links accurate and current (update rows that today's work changed), keep it concise; do not remove
+   information that is still true.
 Only edit README.md and docs/PROGRESS.md."
-claude -p "$PROMPT" --allowedTools "Read,Edit,Write,Glob,Grep,WebFetch,Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*)" \
+claude -p "$PROMPT" --allowedTools "Skill,Read,Edit,Write,Glob,Grep,WebFetch,Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*)" \
   --permission-mode acceptEdits || echo "claude run failed (committing the work anyway)"
 
 git add -A
