@@ -20,7 +20,7 @@ import json
 import os
 
 import numpy as np
-from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdPhysics, UsdShade
+from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics, UsdShade
 
 ASSETS = "/home/njohnson/ci_mpc_assets/factory"
 TABLE_CENTER, TABLE_SIZE = (0.5, 0.0, 0.1), (0.4, 0.6, 0.2)

@@ -11,7 +11,6 @@ Candidates per decision (horizon H, all step-limited like the controller's comma
 Score (as the teacher): tip depth gained, tip distance to the (estimated) hole axis, penalty on contact force above
 f_soft. Returns the best first command (pose set-point incl. any feedforward as an equivalent offset).
 """
-import math
 
 import numpy as np
 import torch

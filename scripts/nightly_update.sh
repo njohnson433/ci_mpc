@@ -43,7 +43,8 @@ Only edit README.md and docs/PROGRESS.md."
 claude -p "$PROMPT" --allowedTools "Skill,Read,Edit,Write,Glob,Grep,WebFetch,Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*)" \
   --permission-mode acceptEdits < /dev/null || echo "claude run failed (committing the work anyway)"
 
-git add -A
+# only what this job writes: a blanket add would sweep in other sessions' uncommitted code (1606d5f did)
+git add README.md docs patches
 if git diff --cached --quiet; then
   echo "no changes to commit"
   exit 0

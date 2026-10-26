@@ -182,7 +182,6 @@ class PushingMpc:
         if self.last_u is not None:  # smoothness against the previous first input
             qv[n_s:n_s + nu] = -cfg.r_du * (self.last_u - u_ref[0])
         # equality constraints
-        rows, cols, vals = [], [], []
         A_eq = sp.lil_matrix((n_s, n_s + n_u))
         b_eq = np.zeros(n_s)
         A_eq[0:3, 0:3] = -np.eye(3)
@@ -216,7 +215,7 @@ class PushingMpc:
         l = np.concatenate([b_eq, gl])
         u = np.concatenate([b_eq, gu])
         solver = osqp.OSQP()
-        solver.setup(P, qv, Acon, l, u, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polish=True,
+        solver.setup(P, qv, Acon, l, u, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polishing=True,
                      max_iter=4000, time_limit=0.02)
         res = solver.solve(raise_error=False)
         status = res.info.status

@@ -183,7 +183,7 @@ class PegHole:
         lo[4 * m:], hi[4 * m:] = -fa, fa
         solver = osqp.OSQP()
         solver.setup(sp.csc_matrix(np.triu(A)), b, sp.csc_matrix(G), lo, hi, verbose=False, eps_abs=1e-9,
-                     eps_rel=1e-9, polish=True, max_iter=20000)
+                     eps_rel=1e-9, polishing=True, max_iter=20000)
         res = solver.solve(raise_error=False)
         z = res.x if res.x is not None else np.zeros(3 * m + 3)
         lam = np.maximum(z[:3 * m], 0.0)

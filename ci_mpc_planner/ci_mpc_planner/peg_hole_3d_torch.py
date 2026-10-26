@@ -185,7 +185,6 @@ class BatchedPegHole3D:
         bg = torch.where(active.repeat_interleave(4, 1), bg, torch.zeros_like(bg))
         W = torch.cat([Wg, torch.diag_embed(torch.ones(B, 5, device=self.dev, dtype=self.dt))], 1)  # (B, nz, 5)
         b = sc * torch.cat([bg, du], 1)
-        nz = W.shape[1]
         Cs = sc * C  # A = W C W^T (in z space): A z = W (C (W^T z))
         lo = torch.cat([torch.zeros(B, P * 4, device=self.dev, dtype=self.dt), -Fs], 1)
         hi = torch.cat([torch.where(active.repeat_interleave(4, 1), torch.full((B, P * 4), float("inf"), device=self.dev,

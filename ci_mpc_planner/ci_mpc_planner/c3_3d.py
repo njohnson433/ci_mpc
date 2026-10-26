@@ -194,7 +194,7 @@ class PegHoleC3_3D:
         solver = osqp.OSQP()
         Pk = sp.triu(P + rho * D).tocsc()
         Pk.sort_indices()
-        solver.setup(Pk, q, A, lo, hi, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polish=False, max_iter=4000)
+        solver.setup(Pk, q, A, lo, hi, verbose=False, eps_abs=1e-5, eps_rel=1e-5, polishing=False, max_iter=4000)
         z = None
         for it in range(cfg.admm_iters):
             qk = q.copy()

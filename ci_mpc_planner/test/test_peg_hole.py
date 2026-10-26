@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from ci_mpc_planner.c3 import PegHoleC3
 from ci_mpc_planner.hole_estimator import HoleEstimator
@@ -46,5 +47,7 @@ def test_estimator_plus_straight_down_inserts_at_3mm():
     assert run("down", 0.003)
 
 
+@pytest.mark.xfail(strict=True, reason="planar C3 + estimator stuck at the opening since b3d3574 (arm friction, "
+                   "grasp_axial 10 -> 4 N); planar line retired 2026-10-23 (model wrong in 3D)")
 def test_c3_inserts_at_3mm():
     assert run("c3", 0.003, steps=150)

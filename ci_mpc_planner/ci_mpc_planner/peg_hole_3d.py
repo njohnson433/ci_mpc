@@ -177,7 +177,7 @@ class PegHole3D:
         lo[6 * m:], hi[6 * m:] = -fa, fa
         solver = osqp.OSQP()
         solver.setup(sp.csc_matrix(np.triu(A)), b, sp.csc_matrix(G), lo, hi, verbose=False, eps_abs=eps,
-                     eps_rel=eps, polish=eps < 1e-7, max_iter=max_iter)
+                     eps_rel=eps, polishing=eps < 1e-7, max_iter=max_iter)
         res = solver.solve(raise_error=False)
         z = res.x if res.x is not None else np.zeros(nvar)
         lam = np.maximum(z[:5 * m], 0.0)
