@@ -28,6 +28,8 @@ p.add_argument("--mpc-seed-offset", type=int, default=0, help="gpu / refine: sam
                "(varies the sampler's randomness, same starts)")
 p.add_argument("--refiner", default="c3", choices=["c3", "icnn"], help="refine policy: what refines the sample")
 p.add_argument("--icnn", default="", help="icnn policy: checkpoint from train_icnn.py")
+p.add_argument("--no-dual-rescale", action="store_true", help="C3 with the old ADMM (no scaled-dual rescale, "
+               "before 2026-10-26)")
 p.add_argument("--est-error", type=float, default=0.2, help="std of the hole estimate error [mm] (student features)")
 args = p.parse_args()
 rng = np.random.default_rng(args.seed)          # start states only: identical for every policy
@@ -56,6 +58,9 @@ for ep in range(args.episodes):
     runtime = SampledTeacher(PegHole3D(hole_xy=-off + err, n_ring=8, n_rim=12), comp, fa) if selector else None
     goal_est = np.array([*(-off + err), plant.g.tip_below_tcp - plant.g.depth, 0.0, 0.0])
     teacher = SampledTeacher(PegHole3D(hole_xy=-off, n_ring=8, n_rim=12), comp, fa)
+    for t_ in (teacher, runtime):
+        if t_ is not None:
+            t_.cfg.dual_rescale = not args.no_dual_rescale
     goal = np.array([*(-off), tb - plant.g.depth, 0.0, 0.0])
     u, peak, peak_step, srcs, t0 = x.copy(), 0.0, 0, {}, time.perf_counter()
     for k in range(args.steps):
@@ -68,6 +73,7 @@ for ep in range(args.episodes):
                 gpu = SampleRefineMPC(comp, fa, margin=args.refine_margin, refiner=args.refiner, icnn_path=args.icnn,
                                       seed=args.seed + args.mpc_seed_offset, w_force=args.gpu_wforce,
                                       f_soft=args.gpu_fsoft)
+                gpu.cfg.dual_rescale = not args.no_dual_rescale
             elif k == 0:
                 from ci_mpc_planner.sampling_mpc import SamplingMPC
                 gpu = SamplingMPC(comp, fa, seed=args.seed + args.mpc_seed_offset, w_force=args.gpu_wforce, f_soft=args.gpu_fsoft)

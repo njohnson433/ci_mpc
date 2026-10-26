@@ -27,6 +27,7 @@ p.add_argument("--arm-friction", default="2.0,2.0,3.5,0.05,0.05")
 p.add_argument("--refine-margin", type=float, default=None, help="sample, then C3 refine with this margin "
                "(ci_mpc_planner/refine_mpc.py; chosen offline: -1); default: the sampler alone")
 p.add_argument("--geo", default="", help="R,c,depth,a,pc,tip_below_tcp [m] (default: the Factory 8 mm peg)")
+p.add_argument("--no-dual-rescale", action="store_true", help="refine: C3 with the old ADMM (before 2026-10-26)")
 args = p.parse_args()
 comp = 1.0 / np.array([float(v) for v in args.compliance.split(",")])
 fa = np.array([float(v) for v in args.arm_friction.split(",")])
@@ -36,6 +37,7 @@ if args.refine_margin is None:
     mpc = SamplingMPC(comp, fa, w_force=args.w_force, geo=geo)
 else:
     mpc = SampleRefineMPC(comp, fa, margin=args.refine_margin, w_force=args.w_force, geo=geo)
+    mpc.cfg.dual_rescale = not args.no_dual_rescale
 mpc.act(np.array([0, 0, 0.0405, 0, 0]), np.zeros(2), np.zeros(5))  # compile / warm up before accepting clients
 mpc.act(np.array([0, 0, 0.0405, 0, 0]), np.zeros(2), np.zeros(5), hole_samples=np.zeros((8, 2)))
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

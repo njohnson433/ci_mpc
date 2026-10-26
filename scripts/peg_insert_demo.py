@@ -93,6 +93,11 @@ p.add_argument("--stuck-dither", type=float, default=0.0,
                help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
                     "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
                     "held by stiction on the chamfer edge, every probe returned to the same spot until time ran out)")
+p.add_argument("--yaw-search", type=float, default=0.0,
+               help="push to the bottom: when it stalls / presses > --max-contact-force for 1 s, sweep the hand yaw up to "
+                    "+-this many degrees for a drop (gear tooth on tooth, H2; 0 = off)")
+p.add_argument("--yaw-step", type=float, default=1.0, help="yaw search step [deg]")
+p.add_argument("--yaw-dwell", type=float, default=0.5, help="yaw search: time per yaw [s]")
 p.add_argument("--jam-recovery", type=int, default=0,
                help="probe: retries when the push to the bottom stalls (lift 1 mm, re-press shifted along the lateral "
                     "contact force; 0 = off; H1 friction 1.0 0.63,1.57 wedged 13 mm short twice, H3 7 of 12)")
@@ -137,6 +142,8 @@ p.add_argument("--grasp-depth", type=float, default=0.010, help="TCP this far be
                "the finger pads must stay on the hub, above the teeth)")
 p.add_argument("--gpu-refine-margin", type=float, default=None, help="--entry gpu: sample, then C3 refine "
                "with this margin (offline choice: -1); default: the sampler alone")
+p.add_argument("--gpu-no-dual-rescale", action="store_true", help="--gpu-refine-margin: C3 with the old ADMM "
+               "(no scaled-dual rescale, before 2026-10-26)")
 p.add_argument("--open-width", type=float, default=0.03, help="gripper opening before the grasp [m] (gear: 0.05)")
 p.add_argument("--geo", default="", help="contact model geometry R,c,depth,a,pc [m] (default: the Factory 8 mm peg; "
                "gear on its shaft: 0.005,0.0005,0.020,0.00475,0.0001)")
@@ -505,6 +512,7 @@ elif args.strategy == "probe":
         print(f"  belief: learned probe likelihood {args.belief_model} (scale {args.belief_scale})", flush=True)
     c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
 
+    c["yaw"] = 0.0  # commanded hand yaw about the world z [rad] (--yaw-search), 0 = the grasp orientation
     c["z_bias"] = 0.0  # tip height offset of the grasp (peg seated deeper / shallower in the fingers than nominal)
 
     def measure5():
@@ -527,7 +535,9 @@ elif args.strategy == "probe":
         return f if raw else f - c["tare"]
 
     def cmd(xy, z, ff=(0.0, 0.0, 0.0)):  # z in the bias-corrected model frame, like measure5()
-        c["u_cmd"] = (np.array([O[0] + xy[0], O[1] + xy[1], O[2] + z + c["z_bias"]]), R)
+        cy, sy = np.cos(c["yaw"]), np.sin(c["yaw"])  # yaw search: rotation about the world z on top of R
+        c["u_cmd"] = (np.array([O[0] + xy[0], O[1] + xy[1], O[2] + z + c["z_bias"]]),
+                      np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]]) @ R)
         c["ff"] = np.asarray(ff, float)
 
     def command_probe():
@@ -553,7 +563,8 @@ elif args.strategy == "probe":
                                        os.path.join(os.path.dirname(os.path.abspath(__file__)), "gpu_mpc_server.py"),
                                        "--port", str(port)] + (["--geo", f"{args.geo},{tip_below_tcp}"] if args.geo else [])
                                       + ([f"--refine-margin={args.gpu_refine_margin}"]
-                                         if args.gpu_refine_margin is not None else []),
+                                         if args.gpu_refine_margin is not None else [])
+                                      + (["--no-dual-rescale"] if args.gpu_no_dual_rescale else []),
                                       stdout=srv_log, stderr=subprocess.STDOUT,
                                       env={k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "ROS",
                                                                                                       "AMENT", "LD_"))}))
@@ -695,8 +706,8 @@ elif args.strategy == "probe":
         if tip_z(measure5()) < -args.engage and not (args.centering_bound > 0 and np.linalg.norm(measure5()[:2])
                                                      > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
-            depth_hist, retries, anchor = [], 0, None
-            for _ in range(150 + 30 * args.jam_recovery):
+            depth_hist, retries, anchor, yaw_tries = [], 0, None, 0
+            for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)):
                 x, F = measure5(), force3(0.1)
                 uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
                 cmd(x[:2] if anchor is None else anchor, uz, (0.0, 0.0, -args.stiction_ff))
@@ -707,6 +718,30 @@ elif args.strategy == "probe":
                 F_lat = force3(1.0)[:2]
                 stalled = len(depth_hist) > 10 and depth_hist[-11] - depth_hist[-1] < 0.0002
                 wedged = len(depth_hist) > 10 and np.linalg.norm(F_lat) > args.jam_force
+                pressing = len(depth_hist) > 10 and force3(1.0)[2] > args.max_contact_force
+                if args.yaw_search > 0 and yaw_tries < 1 and (stalled or pressing):
+                    # tooth on tooth (gear: 40 teeth, 9 deg pitch, meshes within ~2 deg): sweep the hand yaw
+                    # 0, +s, -s, +2s, ... up to +-yaw_search while pressing lightly; keep the first yaw where it drops
+                    yaw_tries, depth_hist = yaw_tries + 1, []
+                    tip0, found = tip_z(measure5()), None
+                    n = int(round(args.yaw_search / args.yaw_step))
+                    for a in [k * sgn * args.yaw_step for k in range(1, n + 1) for sgn in (1, -1)]:
+                        c["yaw"] = np.radians(a)
+                        for _ in range(max(1, int(round(args.yaw_dwell / dt)))):
+                            x = measure5()
+                            cmd(x[:2] if anchor is None else anchor, x[2] - 0.003, (0.0, 0.0, -args.stiction_ff))
+                            spin_sim(dt)
+                        if tip_z(measure5()) < tip0 - 0.001:
+                            found = a
+                            break
+                    Rr = fk(state["q"]).rotation @ R.T
+                    print(f"    yaw search ({'stall' if stalled else 'pressing'} at tip {tip0 * 1000:+.2f} mm): "
+                          f"{'dropped at %+.1f deg' % found if found is not None else 'no drop, back to 0'}, hand yaw "
+                          f"{np.degrees(np.arctan2(Rr[1, 0], Rr[0, 0])):+.1f} deg, tip {tip_z(measure5()) * 1000:+.2f} mm, "
+                          f"Fz {force3(0.3)[2]:.1f} N", flush=True)
+                    if found is None:
+                        c["yaw"] = 0.0
+                    continue
                 if retries < args.jam_recovery and (stalled or wedged):
                     # wedged: lift (--jam-lift), then press again shifted along the lateral contact force (the force on the
                     # peg points away from the wall that holds it). Stall alone misses it: the TCP keeps descending
