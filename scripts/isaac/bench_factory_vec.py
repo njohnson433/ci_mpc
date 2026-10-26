@@ -1,7 +1,7 @@
 """Throughput of Isaac Lab's vectorized Factory PegInsert (ROADMAP 9, step 0): N envs in one process, random actions,
 headless. Prints env-steps/s, simulated seconds per wall second (all envs), GPU memory of this process and RSS.
 Random delta-pose actions put the peg in and out of contact, so the timing includes SDF contacts part of the time.
-    ~/IsaacLab/.venv/bin/python scripts/isaac/bench_factory_vec.py --num_envs 64 --steps 300 --headless
+    ~/IsaacLab/.venv/bin/python scripts/isaac/bench_factory_vec.py --num_envs 64 --steps 300   (headless by default; --viz NAME for a viewer)
 """
 import argparse
 import contextlib

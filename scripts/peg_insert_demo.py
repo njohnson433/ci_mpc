@@ -93,6 +93,10 @@ p.add_argument("--stuck-dither", type=float, default=0.0,
                help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
                     "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
                     "held by stiction on the chamfer edge, every probe returned to the same spot until time ran out)")
+p.add_argument("--push-follow", type=float, default=0.0,
+               help="push to the bottom: move the xy command along the lateral contact force by this gain [m/N] per "
+                    "planning step (max 0.1 mm), centring the part on its shaft / hole (0 = off)")
+p.add_argument("--push-follow-deadband", type=float, default=0.7, help="push follow: ignore lateral forces below [N]")
 p.add_argument("--yaw-search", type=float, default=0.0,
                help="push to the bottom: when it stalls / presses > --max-contact-force for 1 s, sweep the hand yaw up to "
                     "+-this many degrees for a drop (gear tooth on tooth, H2; 0 = off)")
@@ -710,6 +714,13 @@ elif args.strategy == "probe":
             for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)):
                 x, F = measure5(), force3(0.1)
                 uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
+                if args.push_follow > 0:
+                    # follow the lateral contact force (the bore / hole wall pushes the part toward the axis): keeps
+                    # the gear centred on its shaft, where its teeth mesh (H2 stalls all sat 0.23-0.30 mm off,
+                    # the bore clearance; successes 0.02-0.16)
+                    f_lat = force3(0.3)[:2]
+                    if np.linalg.norm(f_lat) > args.push_follow_deadband:
+                        anchor = (x[:2] if anchor is None else anchor) + np.clip(args.push_follow * f_lat, -1e-4, 1e-4)
                 cmd(x[:2] if anchor is None else anchor, uz, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
@@ -731,6 +742,11 @@ elif args.strategy == "probe":
                             x = measure5()
                             cmd(x[:2] if anchor is None else anchor, x[2] - 0.003, (0.0, 0.0, -args.stiction_ff))
                             spin_sim(dt)
+                        Rr, tp = fk(state["q"]).rotation @ R.T, truth().get("peg", {})
+                        gy = np.degrees(yaw_of(tp["quat_wxyz"])) if "quat_wxyz" in tp else float("nan")
+                        print(f"      yaw cmd {a:+.1f}: hand {np.degrees(np.arctan2(Rr[1, 0], Rr[0, 0])):+.2f} deg, "
+                              f"object {gy:+.2f} deg (truth), tip {tip_z(measure5()) * 1000:+.2f} mm, "
+                              f"Fz {force3(0.2)[2]:.1f} N", flush=True)
                         if tip_z(measure5()) < tip0 - 0.001:
                             found = a
                             break

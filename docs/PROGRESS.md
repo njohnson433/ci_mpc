@@ -55,6 +55,25 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-26 (17:00): gear (H2) yaw search: two failure modes, yaw only matters for one
+- `--yaw-search DEG` (+ `--yaw-step`, `--yaw-dwell`; off by default): when the push to the bottom stalls or presses
+  > `--max-contact-force` for 1 s, sweep the hand yaw 0, +s, −s, … ±DEG under a light press; keep the first yaw with a
+  > 1 mm drop. Commands carry `c["yaw"]` (rotation about world z on top of the grasp orientation). The code first
+  landed in the C3 session's commit 209f713 (swept in while uncommitted, untested then); logging per step added here.
+- Tests (one Isaac, `~/ci_mpc_runs/dev/yaw`), ±5° command: 3° yaw error 0/1, 1° 0/1, nominal 0.77,−3.87 0/1.
+  The hand reaches only ~50 % of the command under contact (−5° → −2.5°).
+- **Nominal tooth-on-tooth (0.77,−3.87): the gear is already at the meshing yaw** (truth +3.8…+5.2° vs mesh +4.5°)
+  and barely turns (±0.7° while the hand turns ±2.3°): not a yaw problem. The "drop at +5°" was the TCP creeping 1 mm.
+- **3° yaw error: the gear turns with the hand ~1:1** (truth +5.2…+9.6°); it needed hand −3° (gear +4.5°) and got
+  −2.5° (gear +5.2°): the sweep was too small for the hand lag.
+- **All 16 gear stalls 8–12 mm short (weekend + today) end 0.23–0.30 mm off the shaft axis** (one 0.09), i.e. at the
+  bore clearance (bore r 5.0, shaft r 4.75), vs 0.02–0.16 mm for all 11 successes. Likely: the hand holds xy where
+  centering ended, the bore leans on the shaft, the center distance to the fixed gears is off and the teeth interfere.
+  (Could also be an effect of the jam; the next test separates it.)
+- New `--push-follow GAIN` (off by default): during the push, move the xy command along the lateral contact force
+  (max 0.1 mm per step, deadband `--push-follow-deadband` 0.7 N).
+- Queued (`dev/yaw/run3.sh`, after step 0): A nominal + push-follow 2e-5 m/N; B yaw3 + sweep ±9°; C yaw3 + both.
+
 ### 2026-10-26 (16:45): jam recovery (`--jam-recovery`): wedge fixed, no false triggers
 - Trigger case from the cross-task run: H1 friction 1.0 at 0.63,1.57 (same offset failed at the weekend). The peg
   reaches the hole on probe 0, then wedges: from 19 s it presses 5.5 N sideways on the hole wall and 0 N on the
