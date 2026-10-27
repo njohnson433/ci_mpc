@@ -71,10 +71,12 @@ Read this before starting work (and before re-investigating something "new").
 - **Open follow-ups for task 4:** physics/control at 1 kHz (now 240 Hz); RTF is ~0.35 with the GPU shared;
   the ~2 mm friction offset does not converge out (integrator too weak?); friction compensation still off.
 - **Code that is not in this repo:**
-  - `~/franka_ros2_ws/src/cartesian_impedance_control` (upstream `LucasG2001/cartesian_impedance_control`,
-    no push access). Our work is on local branch `isaac-sim-pinocchio` (2 commits on top of `main` f8d5fe2).
-    Backup: `patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`.
-    Restore: `git checkout -b isaac-sim-pinocchio f8d5fe2 && git am < .../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
+  - `~/franka_ros2_ws/src/cartesian_impedance_control` (`LucasG2001/cartesian_impedance_control`). Our work is
+    on branch `isaac-sim-pinocchio` (7 commits on top of `main` f8d5fe2), **pushed to origin** since 2026-10-27
+    (we do have push access; only the branch, never merge into `main`). Push after each controller commit.
+    Get it: `git clone -b isaac-sim-pinocchio git@github.com:LucasG2001/cartesian_impedance_control.git`.
+    Fallback backup: `patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
+    (`git checkout -b isaac-sim-pinocchio f8d5fe2 && git am < .../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`).
   - `~/franka_ros2_ws/src` (franka_ros2 `humble`): `franka_bringup/config/controllers.yaml` registers
     `cartesian_impedance_controller`. Backup: `patches/franka_ros2_humble_controllers_yaml.patch` (`git apply`).
   - Assets outside git: `/home/njohnson/ci_mpc_assets/fr3_scene.usd`, `fr3.urdf`. The scene needs

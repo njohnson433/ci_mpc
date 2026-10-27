@@ -23,8 +23,8 @@ otherwise you have to fix those paths first (`grep -rn /home/njohnson`).
    git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch
    cd .. && git diff franka_bringup/config/controllers.yaml > ci_mpc/patches/franka_ros2_humble_controllers_yaml.patch
    ```
-   (`isaac-sim-pinocchio` = 7 commits on top of `main` f8d5fe2; upstream LucasG2001, no push access, so
-   the patch is the only copy.)
+   (`isaac-sim-pinocchio` = 7 commits on top of `main` f8d5fe2. Pushed to `LucasG2001/cartesian_impedance_control`
+   on 2026-10-27 at 153c12b; push again if you commit more. The patch is a fallback copy.)
 3. **Disable the nightly cron job** (`55 23 * * * .../scripts/nightly_update.sh`) on whichever machine you stop
    using, so the two don't push to `origin/main` against each other: `crontab -e`.
 4. **Copy the data that is not in git** (≈ 1.2 GB) to a drive or straight to the new machine:
@@ -75,14 +75,13 @@ vcs import src < src/dependency.repos --recursive --skip-existing
 rm -rf src/libfranka
 cd src
 git clone git@github.com:njohnson433/ci_mpc.git                      # needs your GitHub SSH key
-git clone https://github.com/LucasG2001/cartesian_impedance_control.git
+git clone -b isaac-sim-pinocchio git@github.com:LucasG2001/cartesian_impedance_control.git   # our branch, 153c12b
 git clone https://github.com/LucasG2001/messages_fr3.git             # main, 9d5f4ab, no local changes
+# (offline fallback for the controller: git checkout -b isaac-sim-pinocchio f8d5fe2 &&
+#  git am < ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch, or clone the T7 bundle)
 
-# our controller branch + controllers.yaml entry
-cd cartesian_impedance_control
-git checkout -b isaac-sim-pinocchio f8d5fe2
-git am < ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch
-cd .. && git apply ci_mpc/patches/franka_ros2_humble_controllers_yaml.patch
+# controllers.yaml entry
+git apply ci_mpc/patches/franka_ros2_humble_controllers_yaml.patch
 
 cd ~/franka_ros2_ws
 rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys="zed_wrapper libfranka"
