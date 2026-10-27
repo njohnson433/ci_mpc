@@ -37,6 +37,8 @@ ISAAC_PID=$!
 (
   source /opt/ros/humble/setup.bash
   source ~/franka_ros2_ws/install/setup.bash
+  # numpy-1 shim for apt-built ROS python when numpy 2 sits in /usr/local (docs/MIGRATION.md B.3a)
+  [ -d ~/.local/ros_numpy1 ] && export PYTHONPATH=~/.local/ros_numpy1:$PYTHONPATH
   exec python3 "$CHECKER" --sync-dir "$SYNC" "$@"
 ) &
 CHECK_PID=$!

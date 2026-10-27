@@ -109,13 +109,30 @@ ros2 run cartesian_impedance_control pinocchio_model_check        # home TCP ≈
 colcon test --packages-select ci_mpc_planner && colcon test-result --verbose   # 13 passed + 1 xfail
 # clean terminal (no ROS, no venv):
 ROS_DOMAIN_ID=42 ~/franka_ros2_ws/src/ci_mpc/scripts/isaac/run_impedance_test.sh
-#   expect hold 0.00 mm, reach ≈ 2.2 mm / 0.0035 rad, < 1 cm in ≈ 1.6 s (with identified friction)
+#   expect hold 0.00 mm, reach ≈ 0.11 mm / 0.0082 rad, < 1 cm in ≈ 1.5 s (identified friction + W2 integrator;
+#   the old 2.2 mm / 0.0035 rad predates W2, see PROGRESS.md)
 scripts/demo_peg.sh --offset 0,0                                  # peg inserts
 ```
 
 If these match, continue from "Where to resume" in `docs/PROGRESS.md`. Note on capacity: the old box had
 16 GB VRAM / 31 GB RAM and ran at most 4 Isaac instances in parallel; re-measure on the new machine before
 sizing the queue scripts.
+
+### B.3a numpy 2 in `/usr/local` (seen on the second workstation, 2026-10-27)
+
+If `python3 -c "import numpy; print(numpy.__file__)"` shows numpy ≥ 2 from `/usr/local` (there: a `sudo pip`
+install for the ZED SDK / opencv, which need it), every apt-built ROS Python module breaks: scipy 1.8 (`_ARRAY_API
+not found`, hits `osqp`) and the `pinocchio` bindings (segfault). Don't downgrade it globally; instead:
+
+```bash
+pip3 install --user scipy==1.15.3                          # scipy that works with numpy 1 and 2
+pip3 install --target ~/.local/ros_numpy1 numpy==1.26.4    # numpy 1 for ROS shells only
+# append to the ros_franka alias in ~/.bashrc:
+#   && export PYTHONPATH=~/.local/ros_numpy1:$PYTHONPATH
+```
+
+`scripts/isaac/run_impedance_test.sh` (and so every `demo_*.sh`) adds the shim itself when that folder exists.
+The Isaac side is unaffected (own venv, `env -i`).
 
 ### B.4 Real robot (not done yet)
 

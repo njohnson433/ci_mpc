@@ -22,9 +22,12 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
   must run inside Isaac's physics step (`isaacsim.ros2.control`), not via ROS topics.
 - Don't source `/opt/ros` in the Isaac environment (Python 3.10 vs Isaac's 3.12); use `scripts/isaac_ros.sh`.
 - Link Pinocchio before libfranka (libfranka embeds a Pinocchio with a different layout).
-- The GPU (RTX 4080, 16 GB) may be shared with other jobs; check `nvidia-smi` before starting Isaac.
-- RAM (31 GB): each headless Isaac instance takes ~6 GB RSS, each GPU MPC server ~1.4 GB. At most 4 Isaac
-  instances at once (3 benchmark + 1 collection); 5 plus 3 GPU servers filled RAM and swap (2026-10-25).
+- Since 2026-10-27 on omar-OMEN: RTX 4090 24 GB, 62 GB RAM (old box: RTX 4080 16 GB, 31 GB). The GPU may be
+  shared with other jobs; check `nvidia-smi` before starting Isaac.
+- Each headless Isaac instance takes ~6 GB RSS, each GPU MPC server ~1.4 GB. Old box limit: 4 Isaac instances
+  (5 plus 3 GPU servers filled 31 GB RAM and swap, 2026-10-25); re-measure the limit on the new box.
+- numpy 2 lives in `/usr/local` here (ZED SDK): ROS Python needs the `~/.local/ros_numpy1` shim
+  (`ros_franka` alias / `run_impedance_test.sh` add it; MIGRATION.md B.3a).
 - Use an isolated `ROS_DOMAIN_ID` (e.g. 42) for tests. Kill processes by exact PID (never `pgrep -f`/`pkill -f`
   from a one-line shell: it matches the shell itself).
 - Isaac ros2_control: Controller Manager targetPrim is `/fr3` (joints live in `/fr3/Physics`); the scene needs

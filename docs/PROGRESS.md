@@ -5,6 +5,9 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
+  all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
+  not yet re-measured here.
 - **2026-10-27 (vectorized sim, before the workstation move):** steps 1–3 done; **step 4 (fidelity) failed**:
   batched sim vs the ros2_control sweeps agree on only 46 % of probe classes (58 % on the first 10 probes per
   episode). Mechanisms found (entry "vectorized step 4"): the pipeline's grasp slips (logged flat tip drifts
@@ -85,6 +88,18 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: moved to the second workstation (omar-OMEN), all checks pass
+- Machine: Ubuntu 22.04.5, RTX 4090 24 GB (driver 595.91.07), 62 GB RAM, 32 threads. Data from the T7 transfer
+  (checksums OK); `cartesian_impedance_control` cloned from the bundle (branch `isaac-sim-pinocchio`, 7 commits on
+  f8d5fe2), `messages_fr3` 9d5f4ab; Isaac Sim 6.2.0.0 + IsaacLab 46d6cc3d7, extras already at the old versions.
+- Checks: `pinocchio_model_check` all OK (home TCP err 2.0e-5); `ci_mpc_planner` tests 13 passed + 1 xfail;
+  impedance test hold 0.00 mm, reach 0.11 mm / 0.0083 rad, < 1 cm in 1.54 s (same as the W2 reference; the
+  2.2 mm in MIGRATION.md predated W2, fixed there); `demo_peg.sh --offset 0,0 --headless`: success, depth err
+  0.02 mm, xy 0.44 mm, insert 2.16 s, peak 4.65 N, RTF 0.70–0.83.
+- Bug on the way: numpy 2.2.6 in `/usr/local` (ZED SDK) breaks apt-built ROS Python (scipy 1.8 `_ARRAY_API not
+  found` via osqp, `pinocchio` segfault). Fix without touching the ZED stack: user scipy 1.15.3 + a numpy 1.26.4
+  shim in `~/.local/ros_numpy1`, used by the `ros_franka` alias and by `run_impedance_test.sh` (MIGRATION.md B.3a).
 
 ### 2026-10-27: vectorized step 4: fidelity vs the ros2_control pipeline FAILS (grasp slip, press force) (`~/ci_mpc_runs/vec/step4`)
 - `scripts/isaac/fidelity_probe_replay.py`: the 120 logged sweep episodes (sweeps + sweeps2, 4800 probes), one env
