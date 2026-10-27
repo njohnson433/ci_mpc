@@ -55,6 +55,46 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-27: 3D C3 stall at 18–21 mm solved offline: stiction trap + cost, fixed by a goal below the bottom
+- Tool: `scripts/c3_stall_diag.py` (setup of `peg_c3_3d_offline.py` + per-step trace: depth, tilt, active contacts by
+  type, arm friction, violation; policies c3 / follow / press; `--set` C33Config overrides, `--goal-below`). Set: 16
+  offsets, r 0.8 / 1.13 / 1.47 / 1.8 mm × 4 directions (rotated 22.5° per radius), `~/ci_mpc_runs/c3_stall/set16`.
+  Success = tip 24 mm deep, 150 steps. Planner imported from the source tree (the install is stale).
+- **Not jamming:** at the stall tilt is ~1 mrad, contact force ~0, the arm is held by its own stiction.
+  1. Stiction trap: arm z stiction 3.5 N at K_z 500 needs a 7 mm command deflection to move; horizon 4 × du_max
+     0.5 mm reaches only 2 mm more, so once the deflection drops below 7 mm C3 never predicts motion again and
+     relaxes the command (absorbing; also why zero warm start fails).
+  2. Cost: r_force penalizes the whole deflection (contact + arm friction). Near the goal the position gain no
+     longer pays for the 7 mm, so C3 stops ~1–6 mm short even when it could move.
+  - The offline heuristic also stalls (2/16, 15.6–17 mm): its 3 N press while following is below the 3.5 N stiction.
+    Oracle press on the true axis (5 N) stalls on the chamfer at 0.5–1.2 mm (lateral stiction 2 N vs 2.25 N spring).
+
+  | variant (one lever vs base) | inserted | steps med | peak force med / p90 | entry (< 5 mm) / bore p90 |
+  |---|---|---|---|---|
+  | base (rollout every 4, du_max z 0.5) | 0/16 (17.9–18.5 mm) | – | 2.26 / 3.17 N | 3.06 / 2.60 N |
+  | du_max z 2 mm | 3/16 | 50 | 2.97 / 3.89 | |
+  | horizon 16 (3 offsets) | 0/3 (20.4, 23.7 mm, 1 at entry) | | | |
+  | r_force z ×0.1 + du2 (3 offsets) | 0/3 | | | |
+  | goal 5 mm below the bottom | 9/16 | 69 | 1.86 / 3.28 | |
+  | **goal 8 mm below** | **16/16** | 61 | **1.37 / 1.93** | 1.93 / 1.63 |
+  | **goal 11 mm below** | **16/16** | 60 | **1.18 / 1.96** | 1.79 / 1.80 |
+  | goal 15 mm below | 16/16 | 61 | 1.60 / 2.05 | 2.03 / 2.00 |
+  | du2 + goal 8 below | 16/16 | 40 | 5.11 / 5.31 | 3.12 / 5.31 |
+  | du_max z 1 mm + goal 8 below | 16/16 | 42 | 2.41 / 4.28 | 2.36 / 4.28 |
+  | follow heuristic | 2/16 | 124 | 3.82 / 6.59 | 6.59 / 2.25 |
+
+  - The goal below the bottom is the lever (the bottom stops the peg, so it only keeps the press on). Force is
+    non-monotone in it, best at 8–11 mm. A larger z step is faster (40 vs 60 steps) but loads a deeper spring that
+    hits the bore wall at 7–9 mm (bore p90 5.3 N): not adopted. Solve ~80 ms (Python).
+- **Hole-estimate error** (`set16e`, goal 11 below; direction varied per offset): 0.3 mm 16/16 at 2.08 / 2.40 N;
+  0.6 mm 14/16 at 4.15 / 5.65 N (max 14 N, both misses at the entry). Bore clearance is 0.51 mm, so with a larger
+  error C3 drives toward a wrong axis into the wall. In Isaac C3 needs a belief narrower than ~0.5 mm at handover;
+  the heuristic does not depend on the estimate.
+- Not changed: C33Config defaults (the goal is the caller's: `refine_mpc.py`, `sampled_teacher.py`, Isaac). Isaac
+  `--strategy c3` still runs the planar `c3.py`; a 3D C3 handover needs wiring in `peg_insert_demo.py` (gear/vec
+  session's active file) and the colcon rebuild. Planar c3 3 mm failure (arm friction 1.5 N, du_max 0.5) may be the
+  same trap: not checked yet.
+
 ### 2026-10-27: README rewritten with the stricter create-readme skill
 - The skill (`.claude/skills/create-readme`) now requires every number with its metric, set, n and baseline, every
   internal name (D1, R2, v3, GPU entry, ...) defined, a mechanism for each component and each dropped idea, and no
