@@ -117,7 +117,13 @@ p.add_argument("--calib-touch", type=float, default=None,
                help="probe: touch the flat top face this far from the hole estimate (diagonal) to calibrate the grasp "
                     "height before probing [m] (default 0.0095 for the Factory peg, 0 = off, i.e. calibrate on probe 0 "
                     "only if it lands flat; with --geo: off)")
-p.add_argument("--entry", default="follow", choices=["follow", "gpu"],
+p.add_argument("--c3-goal-below", type=float, default=0.011,
+               help="probe --entry c3: C3 goal this far below the hole bottom [m] (at the bottom itself C3 stalls at "
+                    "18 mm offline: stiction trap + force cost; 8-11 mm: 16/16, PROGRESS 2026-10-27)")
+p.add_argument("--c3-std-max", type=float, default=float("inf"),
+               help="probe --entry c3: hand over only when the belief std is below this [m]; otherwise center")
+p.add_argument("--c3-steps", type=int, default=150, help="probe --entry c3: max C3 decisions per engagement")
+p.add_argument("--entry", default="follow", choices=["follow", "gpu", "c3"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
                     "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
 p.add_argument("--strategy", default="spiral", choices=["spiral", "c3", "probe"],
@@ -567,6 +573,12 @@ elif args.strategy == "probe":
         mpc_sock = socket.create_connection(("127.0.0.1", port))
         mpc_io = mpc_sock.makefile("rw")
         print(f"  GPU MPC server up on port {port} ({time.time() - t_wait:.0f} s)", flush=True)
+    if args.entry == "c3":
+        from ci_mpc_planner.c3_3d import C33Config, PegHoleC3_3D
+        from ci_mpc_planner.peg_hole_3d import PegHole3D, rotxy
+
+        c3_comp = 1.0 / np.array([K_search[0], K_search[1], K_search[2], K_search[3] / 2.0, K_search[4] / 2.0])
+        c["c3_viol"] = []
     z_hover = tip_below_tcp + 0.001
     tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
     probes, target, c["phase"] = [], np.zeros(2), "probe"
@@ -657,6 +669,7 @@ elif args.strategy == "probe":
         sunk = tip_z(x) < -3e-4
         if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering) and std < args.gpu_std_max:
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
+            t_a = state["t"]
             for _ in range(80):
                 x, F = measure5(), force3(0.1)
                 est_now, _ = belief.estimate()
@@ -673,14 +686,38 @@ elif args.strategy == "probe":
                 spin_sim(dt)
                 if tip_z(measure5()) < -0.005:
                     break
+            c.setdefault("phases", []).append(("gpu", t_a, state["t"]))
             # the engaged contact informs the belief once, like a probe (2026-10-24: one update per GPU step counted up
             # to 80 correlated measurements as independent; the belief collapsed to 0.02 mm on a wrong spot and the
             # MPC chased it: track B 4/10 vs probe 24/30)
             belief.update(measure5(), force3(0.3))
             print(f"    GPU MPC: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
                   f"{np.mean(c['mpc_ms']):.0f} ms per decision", flush=True)
+        elif engaged and args.entry == "c3" and sunk and std < args.c3_std_max:
+            # sunk into the chamfer: 3D C3+ on the belief's hole estimate, down to the bottom (only a sink hands over:
+            # flat-face pushes started GPU phases far from the hole, B4)
+            mdl = PegHole3D(geo, hole_xy=est, n_ring=8, n_rim=12)
+            mpc = PegHoleC3_3D(mdl, c3_comp, C33Config())
+            goal = np.array([est[0], est[1], tip_below_tcp - geo.depth - args.c3_goal_below, 0.0, 0.0])
+            u, t_a = measure5(), state["t"]
+            for _ in range(args.c3_steps):
+                x = measure5()
+                t_s = time.perf_counter()
+                u, info = mpc.solve(x, goal, u)
+                c["mpc_ms"].append((time.perf_counter() - t_s) * 1000)
+                c["c3_viol"].append(info.get("viol", np.nan))
+                c["u_cmd"] = (np.array([O[0] + u[0], O[1] + u[1], O[2] + u[2] + c["z_bias"]]), rotxy(u[3], u[4]) @ R)
+                c["ff"] = np.zeros(3)
+                spin_sim(dt)
+                if geo.depth - (-tip_z(measure5())) < 0.001:
+                    break
+            c.setdefault("phases", []).append(("c3", t_a, state["t"]))
+            belief.update(measure5(), force3(0.3))  # once per engagement, like a probe
+            print(f"    C3: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
+                  f"{np.mean(c['mpc_ms']):.0f} ms per decision, violation {np.nanmean(c['c3_viol']):.3f}", flush=True)
         elif engaged:
             # engaged on the chamfer: follow its push towards the axis with a light normal force
+            t_a = state["t"]
             for _ in range(60):
                 x, F = measure5(), force3(0.1)
                 lat = F[:2]
@@ -694,6 +731,7 @@ elif args.strategy == "probe":
                     break
                 if args.centering_bound > 0 and np.linalg.norm(measure5()[:2]) > args.centering_bound:
                     break
+            c.setdefault("phases", []).append(("center", t_a, state["t"]))
             print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
                   flush=True)
         if tip_z(measure5()) < -args.engage and not (args.centering_bound > 0 and np.linalg.norm(measure5()[:2])
@@ -774,6 +812,7 @@ elif args.strategy == "probe":
                           f"lateral force {np.round(F_lat, 2)} N -> press at {np.round(anchor * 1000, 2)} mm",
                           flush=True)
             c["phase"], c["t_done"] = "done", state["t"]
+            c.setdefault("phases", []).append(("push", c["t_engage"], state["t"]))
             break
         target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
         if args.stuck_dither > 0:
@@ -905,6 +944,12 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "search_s": float(t_search), "insert_s": float(t_insert),
        "contact_phase_s": float((c["t_done"] or state["t"]) - c["t0"]), "peak_force_est_N": c["peak_f"],
        "total_s": float(state["t"] - t_start)}
+if c.get("phases"):  # engaged phases with the peak of the observer's force estimate (|F|, untared) in each
+    W_ = np.array(wrench_log)
+    res["phases"] = [(n, float(a), float(b), float(np.linalg.norm(W_[(W_[:, 0] >= a) & (W_[:, 0] <= b), 1:4], axis=1)
+                                                    .max()) if ((W_[:, 0] >= a) & (W_[:, 0] <= b)).any() else 0.0)
+                     for n, a, b in c["phases"]]
+    res["peak_force_engaged_N"] = max(ph[3] for ph in res["phases"])
 print("RESULT " + ", ".join(f"{k} {v:.2f}" if isinstance(v, float) else f"{k} {v}" for k, v in res.items()), flush=True)
 if args.out:
     json.dump(res, open(args.out, "w"), indent=1)
