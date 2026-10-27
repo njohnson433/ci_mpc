@@ -160,6 +160,7 @@ class CiCtrlFactoryEnv(FactoryEnv):
         self.tcp_idx = self._robot.body_names.index("panda_fingertip_centered")
         self.hand_idx = self._robot.body_names.index("fr3_hand")
         self.ci_qdd = torch.zeros(self.num_envs, 7, device=self.device)
+        self.ci_fsum, self.ci_fn = torch.zeros(self.num_envs, 6, device=self.device), 0
         self.ci_dq_prev = None
         self.ci_active = False
         self.ctrl_arm = torch.tensor([p["armature"] for p in _joint_params().values()], device=self.device)
@@ -283,6 +284,11 @@ class CiCtrlFactoryEnv(FactoryEnv):
     def _pre_physics_step(self, action):
         if not self.ci_active:
             return super()._pre_physics_step(action)
+        self.ci_fsum, self.ci_fn = torch.zeros(self.num_envs, 6, device=self.device), 0
+
+    def ci_force_mean(self):
+        """Mean wrench estimate (ctrl.F_ext, Franka sign) over the physics steps of the last env step."""
+        return self.ci_fsum / max(self.ci_fn, 1)
 
     def _apply_action(self):
         if not self.ci_active:
@@ -294,6 +300,7 @@ class CiCtrlFactoryEnv(FactoryEnv):
             self.ci_qdd = (dq - self.ci_dq_prev) / self.physics_dt
         self.ci_dq_prev = dq.clone()
         tau = self.ctrl.compute(*self.ci_state())
+        self.ci_fsum, self.ci_fn = self.ci_fsum + self.ctrl.F_ext, self.ci_fn + 1
         self.joint_torque = torch.zeros_like(self.joint_torque) if hasattr(self, "joint_torque") else torch.zeros(
             (self.num_envs, self._robot.num_joints), device=self.device)
         self.joint_torque[:, :7] = tau
