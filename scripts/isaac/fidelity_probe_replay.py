@@ -126,6 +126,10 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     cleanup.enter_context(torch.inference_mode())
     u = env.unwrapped
     dev = u.device
+    # the controller's velocity friction compensation goes with the plant's joint friction (scale 0 with the
+    # compensation on: it pushes along q_dot with nothing to cancel it, the arm ran away, xy error 280 mm)
+    u.ctrl.coulomb *= args.joint_friction_scale
+    u.ctrl.beta *= args.joint_friction_scale
     t = lambda a: torch.tensor(np.asarray(a), dtype=torch.float32, device=dev)  # noqa: E731
     u.ep_override = {
         "hole_err": t([[v / 1000.0 for v in e["params"]["offset"]] for e in eps]),
@@ -212,4 +216,4 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     print("FIDELITY " + json.dumps(out), flush=True)
     if args.out:
         np.savez(args.out, sim_x=sim_x, sim_F=sim_F, sim_zb=sim_zb, log_tip=log_tip, log_F=log_F, log_xy=log_xy,
-                 hole=hole, summary=json.dumps(out), dirs=np.array([e["dir"] for e in eps]))
+                 hole=hole, tip_off=tip_off, summary=json.dumps(out), dirs=np.array([e["dir"] for e in eps]))

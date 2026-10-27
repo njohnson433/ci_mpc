@@ -115,6 +115,16 @@ class FactoryFR3PegInsertCfg(FactoryTaskPegInsertCfg):
                     stiffness=7500.0, damping=173.0, friction=0.1, armature=0.0),
             },
         )
+        # fidelity test switches (vectorized step 4, in-hand slip): the pipeline scene (peg_scene.py) grasps with a
+        # force drive saturating at 20 N per finger (stiffness 20000, damping 200, no joint friction) and runs the peg
+        # at 32 position iterations (Factory: a 7500 PD at ~30 N per finger and 192 iterations)
+        if os.environ.get("FR3_GRIP") == "pipeline":
+            self.scene.robot.actuators["fr3_hand"] = self.scene.robot.actuators["fr3_hand"].replace(
+                joint_effort_limit=20.0, stiffness=20000.0, damping=200.0, friction=0.0)
+        if os.environ.get("FR3_PEG_ITERS"):
+            rp = self.task.held_asset.spawn.rigid_props
+            self.task.held_asset.spawn.rigid_props = rp.replace(
+                solver_position_iteration_count=int(os.environ["FR3_PEG_ITERS"]))
 
 
 @configclass
