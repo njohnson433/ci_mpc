@@ -28,6 +28,9 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
   (5 plus 3 GPU servers filled 31 GB RAM and swap, 2026-10-25); re-measure the limit on the new box.
 - numpy 2 lives in `/usr/local` here (ZED SDK): ROS Python needs the `~/.local/ros_numpy1` shim
   (`ros_franka` alias / `run_impedance_test.sh` add it; MIGRATION.md B.3a).
+- No Isaac / MPC runs while the real FR3 is in use: with the machine loaded (Isaac + MPC, load 15, GPU 97 %) the robot
+  stopped with `communication_constraints_violation` reflexes (non-RT kernel, even SCHED_FIFO 98; 2026-10-27).
+  Overnight queues must end before the robot session (the robot-side session messages when it starts / ends).
 - Use an isolated `ROS_DOMAIN_ID` (e.g. 42) for tests. Kill processes by exact PID (never `pgrep -f`/`pkill -f`
   from a one-line shell: it matches the shell itself).
 - Isaac ros2_control: Controller Manager targetPrim is `/fr3` (joints live in `/fr3/Physics`); the scene needs

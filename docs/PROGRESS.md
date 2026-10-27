@@ -143,7 +143,10 @@ Read this before starting work (and before re-investigating something "new").
   - MF2 > MF: compensation near the full stiction. MF2's one failure (−5,0): C3 drove the peg to 9.5 mm from a 3 mm
     estimate error, then the push timed out 11.2 mm short (bore jam; lateral ff in the bore is the suspect).
   - **MFR negative:** the rotational friction in the model (correct value, 30× the default) does not help; 0,0 still
-    stops at 3.9 mm in every arm (unexplained; same depth since d1_trace).
+    stops at 3.9 mm in every arm (unexplained; same depth since d1_trace). **Offline and Isaac disagree on this
+    lever:** offline (c3_stall_diag, real-arm plant) the measured model incl. rx/ry 1.56 / 0.61 inserts 16/16 (entry
+    "Offline C3 check with real-arm stiction"). The quasi-static plant misses whatever stops C3 in Isaac (also: offline
+    measured model without ff 16/16 vs Isaac M 0/11 phases), so offline C3 results are not predictive for Isaac yet.
 - **Real-arm match in Isaac:** `fr3_scene_realfric.usd` = `prepare_scene.py --params
   ci_mpc_sysid/config/fr3_joint_params_sim_realfric.yaml` (joints 1–4 static/Coulomb ×0.5, wrist unchanged) **plus**
   `ci_mpc_sim_gripper/config/isaac_pick_place_nofc.yaml` (`friction_compensation: none`, as `real_robot_controllers.yaml`).
