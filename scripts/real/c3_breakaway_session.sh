@@ -9,14 +9,22 @@
 #      measure: c3_breakaway_real.py
 #   5. on exit (also Ctrl-C): deactivate the controller, stop the launch
 #
-# Usage: c3_breakaway_session.sh hold|measure [args for c3_breakaway_real.py]
+# Usage: c3_breakaway_session.sh home|probe          (presets: measure all 10 directions at home / at Isaac's
+#                                                     probe pose, results in ~/ci_mpc_runs/real/breakaway/<preset>_<time>)
+#        c3_breakaway_session.sh hold|measure [args for c3_breakaway_real.py]
 #   c3_breakaway_session.sh hold
 #   c3_breakaway_session.sh hold --goto 0.307,0,0.487
 #   c3_breakaway_session.sh measure --goto 0.5,0.1,0.28 --dirs +x,-x,+y,-y,+z,-z,+rx,-rx,+ry,-ry \
 #       --out ~/ci_mpc_runs/real/breakaway/probe_cold
 # Env: ROBOT_IP (192.168.1.200), ROS_DOMAIN_ID (61), EE_PROFILE (the Desk profile next to this script).
 MODE=$1; shift
-case "$MODE" in hold|measure) ;; *) sed -n 2,17p "$0"; exit 1 ;; esac
+ALLDIRS=+x,-x,+y,-y,+z,-z,+rx,-rx,+ry,-ry
+case "$MODE" in
+  home)  set -- --goto 0.307,0,0.487 --dirs $ALLDIRS --out ~/ci_mpc_runs/real/breakaway/home_$(date +%H%M) "$@"; MODE=measure ;;
+  probe) set -- --goto 0.5,0.1,0.28 --dirs $ALLDIRS --out ~/ci_mpc_runs/real/breakaway/probe_$(date +%H%M) "$@"; MODE=measure ;;
+  hold|measure) ;;
+  *) sed -n 2,20p "$0"; exit 1 ;;
+esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROBOT_IP=${ROBOT_IP:-192.168.1.200}
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-61}
