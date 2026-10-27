@@ -14,6 +14,12 @@
 # --abort-mm ball around the start pose or moves faster than --abort-speed; without a command for 50 ms the
 # controller holds the pose it is at (mpc_timeout), so killing this script is safe.
 #
+# Frames: on the robot the controller (model_source franka) tracks franka::Frame::kEndEffector, i.e. the TCP of
+# the Desk end-effector profile; pass the same profile with --ee-profile (real: desk_ee_hand_camera_mount_v0.1,
+# TCP 111.9 mm from the flange vs 103.4 mm for the URDF fr3_hand_tcp), or every command is 8.5 mm off. --goto is
+# given in URDF fr3_hand_tcp coordinates (Isaac's numbers -> the same arm posture). A start-up guard aborts if the
+# arm moves > 2 mm when the hold starts (frame mismatch).
+#
 #   python3 c3_breakaway_real.py --dry-run            # read-only: pose, joint_states rate, controller params
 #   python3 c3_breakaway_real.py --goto 0.5,0.1,0.28 --out ...   # move there first (Isaac's probe pose, tip 10 mm
 #                                                       # above the hole), orientation kept, then measure
@@ -51,6 +57,8 @@ p.add_argument("--joint-states", default="/joint_states")
 p.add_argument("--controller", default="/cartesian_impedance_controller")
 p.add_argument("--urdf", default=os.path.expanduser("~/ci_mpc_assets/fr3.urdf"))
 p.add_argument("--out", default="", help="output dir (breakaway.json)")
+p.add_argument("--ee-profile", default="", help="Desk end-effector profile JSON (tcp translation / rpy relative "
+               "to the flange): the controller's EE frame on the robot; empty = URDF fr3_hand_tcp (Isaac)")
 p.add_argument("--goto", default="", help="x,y,z [m]: before measuring, move the set-point there in a straight line "
                "(orientation kept) at --goto-speed, then measure at the reached pose. Isaac poses: home "
                "0.307,0,0.487; probe pose 0.5,0.1,0.28")
@@ -65,12 +73,22 @@ full = pin.buildModelFromUrdf(args.urdf)
 ARM = [f"fr3_joint{i}" for i in range(1, 8)]
 model = pin.buildReducedModel(full, [j for j in range(1, full.njoints) if full.names[j] not in ARM], pin.neutral(full))
 data = model.createData()
-ee_id = model.getFrameId("fr3_hand_tcp")
+tcp_id, flange_id = model.getFrameId("fr3_hand_tcp"), model.getFrameId("fr3_link8")
+F_T_EE = None
+if args.ee_profile:
+    tcp = json.load(open(args.ee_profile))["tcp"]
+    F_T_EE = pin.SE3(pin.rpy.rpyToMatrix(*(tcp["rotation"][k] for k in ("roll", "pitch", "yaw"))),
+                     np.array([tcp["translation"][k] for k in ("x", "y", "z")]))
 
 
-def fk(q):
+def fk_tcp(q):  # URDF fr3_hand_tcp
     pin.framesForwardKinematics(model, data, q)
-    return data.oMf[ee_id].copy()
+    return data.oMf[tcp_id].copy()
+
+
+def fk(q):  # the controller's EE frame
+    pin.framesForwardKinematics(model, data, q)
+    return data.oMf[flange_id] * F_T_EE if F_T_EE is not None else data.oMf[tcp_id].copy()
 
 
 rclpy.init()
@@ -118,13 +136,17 @@ print(f"joint_states {state['n'] - n0:.0f} Hz, TCP {np.round(x0.translation, 4).
       f"{os.path.basename(args.urdf)}), external wrench {np.round(state['wrench'], 2).tolist()}")
 for k, v in params.items():
     print(f"  {k}: {v}")
+d_ee = fk_tcp(state["q"]).actInv(x0)
+print(f"EE frame: {os.path.basename(args.ee_profile) if args.ee_profile else 'URDF fr3_hand_tcp'}; relative to "
+      f"fr3_hand_tcp {np.round(d_ee.translation * 1000, 2).tolist()} mm, {np.round(pin.log3(d_ee.rotation), 4).tolist()} rad")
 goal = None
 if args.goto:
-    goal = np.array([float(v) for v in args.goto.split(",")])
-    r_xy, dist = float(np.hypot(*goal[:2])), float(np.linalg.norm(goal - x0.translation))
+    goal_tcp = np.array([float(v) for v in args.goto.split(",")])
+    goal = goal_tcp + (x0.translation - fk_tcp(state["q"]).translation)  # same posture, the controller's EE frame
+    r_xy, dist = float(np.hypot(*goal_tcp[:2])), float(np.linalg.norm(goal - x0.translation))
     if len(goal) != 3 or not (0.25 <= r_xy <= 0.75 and 0.15 <= goal[2] <= 0.7 and dist <= 0.5):
         sys.exit(f"--goto {args.goto} outside the allowed box (xy radius 0.25-0.75 m, z 0.15-0.7 m, at most 0.5 m away)")
-    print(f"goto {goal.tolist()}: {dist * 1000:.0f} mm in a straight line at {args.goto_speed * 1000:.0f} mm/s "
+    print(f"goto fr3_hand_tcp {goal_tcp.tolist()} = EE {np.round(goal, 4).tolist()}: {dist * 1000:.0f} mm in a straight line at {args.goto_speed * 1000:.0f} mm/s "
           f"({dist / args.goto_speed:.0f} s), orientation kept")
 if args.dry_run:
     sys.exit(0)
@@ -200,6 +222,12 @@ def goto(target):
           f"from the goal)", flush=True)
 
 
+# start-up guard: holding the pose the script computed must not move the arm (else the EE frames differ)
+spin(1.0)
+jump = float(np.linalg.norm(fk(state["q"]).translation - x0.translation) * 1000)
+if jump > 2.0:
+    abort(f"the arm moved {jump:.1f} mm when the hold started: the script's EE frame does not match the controller's "
+          f"(--ee-profile = the Desk end-effector profile on the robot, empty in Isaac)")
 if goal is not None:
     goto(goal)
 AXES = {"x": 0, "y": 1, "z": 2, "rx": 3, "ry": 4}

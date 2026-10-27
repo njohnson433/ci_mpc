@@ -110,6 +110,15 @@ Read this before starting work (and before re-investigating something "new").
   Per-direction values move with the settled state (+x 1.53 / 2.23, −x 3.14 / 2.68) but the pair sums do not
   (4.67 / 4.90): use the symmetric stiction, not single directions. Abort path checked (`--goto-abort-mm 1` →
   exit 2, feedforward 0, controller holds).
+- **Frame bug caught before the robot:** the real controller (`model_source: franka`) tracks
+  `franka::Frame::kEndEffector` = the Desk profile TCP. The robot's profile (`desk_ee_hand_camera_mount_v0.1`, copied
+  to `scripts/real/`: 0.88 kg, COM (−12.5, 4.4, 33.8) mm, TCP z 111.9 mm, yaw −45°) puts it 8.5 mm beyond the URDF
+  `fr3_hand_tcp` (103.4 mm), so the script's set-points would have been 8.5 mm off (Isaac never shows it: there
+  the controller uses the same URDF). Fix: `--ee-profile` (EE = fr3_link8 · profile TCP), `--goto` in fr3_hand_tcp
+  coordinates (same posture as Isaac), start-up guard (abort if the arm moves > 2 mm when the hold starts).
+  Isaac: matched frames → normal run (`sim_frameA`); profile vs Isaac's URDF controller → abort at 4.2 mm, before
+  any ramp (`sim_frameB`). Side note: the mount makes the payload 0.88 kg vs 0.71 kg (hand + fingers) in our URDF;
+  irrelevant on the robot (Franka's model uses the profile), relevant for the Isaac / Pinocchio model later.
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.

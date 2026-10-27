@@ -1,0 +1,1 @@
+{"id":"db092e3b-cb98-11f1-8001-0030591b29ee","name":"desk_ee_hand_camera_mount_v0.1_Matteo","inertial":{"mass":0.88,"centerOfMass":{"x":-0.0125,"y":0.0044,"z":0.0338},"inertia":{"x11":0.001,"x12":0,"x13":0,"x22":0.0025,"x23":0,"x33":0.0017}},"tcp":{"rotation":{"pitch":0,"roll":0,"yaw":-0.7853981633974483},"translation":{"x":0,"y":0,"z":0.1119}},"deviceId":"ee-gripper"}

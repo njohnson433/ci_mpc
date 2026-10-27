@@ -54,12 +54,16 @@ Parameters for the C3 variant that worked best offline (true stiction in the C3 
 Needs section 4 up to the hold test (controller active, `friction_compensation` set to what C3 will use).
 - No fixture needed: free space, hand mounted, no peg (a few grams; the ± pairs cancel the bias anyway).
   Enabling device in hand.
-- [ ] `python3 scripts/real/c3_breakaway_real.py --dry-run --goto 0.5,0.1,0.28` (read only: pose, /joint_states rate,
+- On the robot always pass `--ee-profile scripts/real/desk_ee_hand_camera_mount_v0.1.endeffector-profile.json`
+  (the Desk profile in use: hand + camera mount, 0.88 kg, TCP 111.9 mm from the flange, yaw −45°). The controller
+  (`model_source: franka`) tracks that TCP, 8.5 mm beyond the URDF `fr3_hand_tcp`; without it the script aborts at
+  start (the arm jumps toward the mismatched set-point). `--goto` stays in `fr3_hand_tcp` coordinates (Isaac's numbers).
+- [ ] `python3 scripts/real/c3_breakaway_real.py --ee-profile ... --dry-run --goto 0.5,0.1,0.28` (read only: pose, /joint_states rate,
       controller params, planned move).
 - [ ] Two poses, both measured in Isaac: home (`--goto 0.307,0,0.487`) and Isaac's probe pose (`--goto 0.5,0.1,0.28`,
       tip 10 mm above where the hole is in sim). `--goto` moves the set-point in a straight line at 15 mm/s,
       orientation kept, aborts at 15 mm lag, refuses goals outside xy radius 0.25–0.75 m, z 0.15–0.7 m, > 0.5 m away.
-  `python3 scripts/real/c3_breakaway_real.py --goto 0.5,0.1,0.28 --dirs +x,-x,+y,-y,+z,-z,+rx,-rx,+ry,-ry
+  `python3 scripts/real/c3_breakaway_real.py --ee-profile ... --goto 0.5,0.1,0.28 --dirs +x,-x,+y,-y,+z,-z,+rx,-rx,+ry,-ry
   --out ~/ci_mpc_runs/real/breakaway/<name>` (3 repeats, 0.5 N/s up to 8 N, 0.1 Nm/s up to 2 Nm, aborts at
   5 mm / 0.03 m/s; ~6 min per pose).
 - [ ] Repeat with the robot warm and at a second pose; per axis stiction = (f+ + f−)/2, bias = (f+ − f−)/2.
