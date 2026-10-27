@@ -103,6 +103,33 @@ Read this before starting work (and before re-investigating something "new").
   a recommended peg command. Run IDs stay in this log. Fixed on the way: the model path is
   `ci_mpc_planner/models/...` (the old README said `models/...`).
 
+### 2026-10-27: vectorized step 3: batched probe strategy, first 1024-episode benchmark (`~/ci_mpc_runs/vec/step3`)
+- `scripts/isaac/batched_probe.py`: the probe strategy of `peg_insert_demo.py` as per-env state machines (touch:
+  hover / move / settle / tare / press / hold / measure; calibration touch; learned v3 belief batched in torch;
+  next probe; centering; push; jam recovery), planning step 0.1 s = one env step, recommended settings (v3,
+  track-height 5, centering bound 8 mm, stuck dither 0.8 mm, 25 probes, 150 s). `run_batched_probe.py` scores with
+  the demo's rule (peg bottom within 1 mm of the hole bottom, xy within 1.5 mm, hole frame) on randomized episodes.
+- Seed 1, 1024 episodes (step-2 randomization), one process; jam recovery 3 / lift 3 mm / shift 0.6 mm vs off,
+  same episodes (search identical: probes per env equal in all 1024):
+
+  | arm | inserted | contact mean / median (successes) | probes | search failed | wedged |
+  |---|---|---|---|---|---|
+  | plain probe + v3 | 960 (93.8 %) | 28.6 / 17.1 s | 6.4 | 43 | 21 |
+  | + jam recovery 3 | **974 (95.1 %)** | 29.4 / 17.6 s | 6.4 | 43 | 7 |
+  | ros2_control held-out R (30 runs) | 30/30 | 23.9 / 17.5 s | 3.8 | | |
+
+  Jam recovery: fixes 16, breaks 2 (McNemar exact p = 0.0013), same contact time on the common successes (28.6 s).
+  The ros2_control D1 check (10/10, 0 false triggers) could not separate it; 1024 paired episodes can.
+- Failure modes (base): search failures grow with the estimate error (97.5 % at < 1 mm, 89.3 % at 4-5 mm; belief
+  flat, std 4.6 mm, after 25 probes); wedges (peg ~3 mm in at 0.5 mm off-axis while the TCP slid ~19 mm down the
+  peg, the H1 friction-1.0 mechanism) grow with friction (97.3 % at mu < 0.67, 89.2 % > 0.83). Tilt and grasp offset:
+  no effect.
+- Throughput: 1024 episodes x 160 s in 29-33 min wall (82-93 sim s / wall s, with a ros2_control Isaac instance of the
+  C3 session on the same GPU). The ros2_control pipeline needs ~4 h for 30 episodes.
+- Caveat: step 4 (fidelity vs ros2_control) not done; until then these are statements about the batched sim. The
+  batched rate (93.8 %) is below the ros2_control R result (30/30) on a harder distribution (|e| U(0, 5 mm) incl.
+  tilt / friction / grasp / sensor randomization vs R's fixed offsets); a matched comparison is step 4.
+
 ### 2026-10-27: vectorized step 2: per-env episode randomization (`~/ci_mpc_runs/vec/step2`)
 - `factory_fr3.TASK_CI` (cfg `FactoryFR3CiCfg`, `RAND`): per env and episode, the ranges of `collect_probes.sh`:
   hole estimate error |e| U(0, 5 mm), contact friction (peg, hole) U(0.5, 1.0), hole tilt U(0, 1.5 deg) about its x

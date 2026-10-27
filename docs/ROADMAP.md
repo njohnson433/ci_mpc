@@ -121,8 +121,10 @@ with a batched task-space impedance controller in torch.
 - [x] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,
       joint friction / armature (as `collect_probes.sh`, but per env).
       (2026-10-27 done: `factory_fr3.RAND`, all values read back exactly by `test_ci_rand.py`; armature not randomized.)
-- [ ] 3. Batched probe strategy: belief grid as an (N × H) tensor, learned likelihood batched, probe / centering /
+- [x] 3. Batched probe strategy: belief grid as an (N × H) tensor, learned likelihood batched, probe / centering /
       push-to-bottom / jam recovery as per-env state machines.
+      (2026-10-27 done: `batched_probe.py`, `run_batched_probe.py`; 1024 episodes: 93.8 % plain, 95.1 % with jam
+      recovery, paired p = 0.0013; ~30 min per 1024 episodes.)
 - [ ] 4. Fidelity check against the ros2_control pipeline: the same probe sequences in both, compare force and
       tip-height distributions (and the momentum observer output) before trusting any batched data.
 - [ ] 5. Use: probe datasets at scale → likelihood retraining; on-policy rounds (closed loop with the learned belief);
