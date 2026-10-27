@@ -696,18 +696,28 @@ elif args.strategy == "probe":
             mpc = PegHoleC3_3D(mdl, c3_comp, C33Config())
             goal = np.array([est[0], est[1], tip_below_tcp - geo.depth - args.c3_goal_below, 0.0, 0.0])
             u, t_a = measure5(), state["t"]
+            est_err = float(np.linalg.norm(est - (-offset[:2])))
+            print(f"    C3 handover: belief {np.round(est * 1000, 2)} mm (std {std * 1000:.2f}), true hole "
+                  f"{np.round(-offset[:2] * 1000, 2)} mm: estimate error {est_err * 1000:.2f} mm", flush=True)
+            # trace for offline replay (scripts/c3_isaac_replay.py): model-frame state, command, tared force per step
+            tr_c3 = {"est": est.tolist(), "std": float(std), "true": (-offset[:2]).tolist(), "goal": goal.tolist(),
+                     "comp": c3_comp.tolist(), "tip_below_tcp": float(tip_below_tcp), "steps": []}
+            c.setdefault("c3_trace", []).append(tr_c3)
             for _ in range(args.c3_steps):
                 x = measure5()
                 t_s = time.perf_counter()
                 u, info = mpc.solve(x, goal, u)
                 c["mpc_ms"].append((time.perf_counter() - t_s) * 1000)
                 c["c3_viol"].append(info.get("viol", np.nan))
+                tr_c3["steps"].append([float(state["t"]), *x.tolist(), *u.tolist(), *force3(0.1).tolist(),
+                                       float(info.get("viol", np.nan)), c["mpc_ms"][-1]])
                 c["u_cmd"] = (np.array([O[0] + u[0], O[1] + u[1], O[2] + u[2] + c["z_bias"]]), rotxy(u[3], u[4]) @ R)
                 c["ff"] = np.zeros(3)
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
                     break
             c.setdefault("phases", []).append(("c3", t_a, state["t"]))
+            tr_c3["depth_end"] = float(-tip_z(measure5()))
             belief.update(measure5(), force3(0.3))  # once per engagement, like a probe
             print(f"    C3: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
                   f"{np.mean(c['mpc_ms']):.0f} ms per decision, violation {np.nanmean(c['c3_viol']):.3f}", flush=True)
@@ -946,6 +956,10 @@ if c.get("phases"):  # engaged phases with the peak of the observer's force esti
                                                     .max()) if ((W_[:, 0] >= a) & (W_[:, 0] <= b)).any() else 0.0)
                      for n, a, b in c["phases"]]
     res["peak_force_engaged_N"] = max(ph[3] for ph in res["phases"])
+if c.get("c3_trace"):  # per C3 handover: estimate error, belief std [mm], depth reached [mm]
+    res["c3_handovers"] = [(float(np.linalg.norm(np.array(t["est"]) - np.array(t["true"])) * 1000),
+                            t["std"] * 1000, t.get("depth_end", float("nan")) * 1000) for t in c["c3_trace"]]
+    json.dump(c["c3_trace"], open(os.path.join(args.log_dir, "c3_trace.json"), "w"))
 print("RESULT " + ", ".join(f"{k} {v:.2f}" if isinstance(v, float) else f"{k} {v}" for k, v in res.items()), flush=True)
 if args.out:
     json.dump(res, open(args.out, "w"), indent=1)

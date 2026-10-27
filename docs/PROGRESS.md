@@ -5,6 +5,19 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
+  The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
+  while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
+  model's 2 / 3.5 N) C3 inserts 0/16; **with the true stiction in the model + friction-compensation feedforward
+  (2 N lateral along the commanded motion, 3 N down): 16/16, 58 steps, peak 2.18 / 3.46 N** (entry 2026-10-27
+  "C3 friction"). Next, in order:
+  1. Measure Isaac's effective Cartesian breakaway (force ramp ±x, ±y, −z in free space above the block, at the
+     probe pose) → C3 model `arm_friction`.
+  2. Port `--stiction-ff` (and the contact re-estimate, optional) from `scripts/c3_stall_diag.py` into
+     `peg_insert_demo.py --entry c3` (+ `--c3-arm-friction`), rerun `scripts/queue_c3_isaac.sh` (ARMS=c3) on D1 vs the
+     plain arm in `~/ci_mpc_runs/c3_isaac/d1/plain`.
+  3. Belief-std gate is useless (std at the sink 2.5–5.7 mm in 12/14 handovers; 0.5 mm gate never opened).
+  Replay tool: `scripts/c3_isaac_replay.py RUN_DIR [--grasp-offset]` on `c3_trace.json` (written by `--entry c3`).
 - **2026-10-26 evening:** C3 ADMM dual-rescale bug fixed (found by comparing with dairlib); the fast C3 now
   enters 16/16 offline (was 5/16). Next: rerun refine-MPC / sampled teacher / Isaac C3 with the fix; find why
   insertion stalls at 18–21 mm.
@@ -54,6 +67,43 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: C3 friction: the Isaac failure is underestimated stiction; true stiction + compensation fixes it offline
+- **Handover estimate error** (14 handovers of the ungated D1 run, from the probe lines): errors 1.3–3.2 mm → all
+  stuck at the entry (≤ 1.1 mm); 0.16–1.1 mm → 3 of 4 deep (≥ 21.9 mm); belief std at the sink 2.5–5.7 mm in 12/14.
+- **Gated queue** (`--c3-std-max 0.0005`, `~/ci_mpc_runs/c3_isaac/d1_gate`): 0 handovers in the first 2 runs (the gate
+  never opens), stopped by process group; a third run (3,0) was killed mid-run (its Traceback is the kill).
+- **Trace queue** (`~/ci_mpc_runs/c3_isaac/d1_trace`, ungated, `--entry c3` now logs the estimate error and
+  `c3_trace.json`): 0,0 handover with only 0.25 mm error still stopped at 3.95 mm; 3,0 (1.00 mm) → 12.9 mm; −3,0
+  (1.11 / 0.80 / 0.46 mm) → 0.7 / 1.7 / 22.7 mm; 5,0 (4.85 / 3.96 / 1.42 mm) → 0.0 / 0.7 / 12.0 mm; 2,0, −5,0, 0,4, 3,3
+  had no handover; −4,2 (0.84 / 1.10 mm) → 1.7 / 7.0 mm, inserted; **−3,−2 (3.98 / 4.24 mm) → 0.8 / 7.2 mm, FAILED
+  8.8 mm short** (the first C3-arm failure in Isaac). 9/10 inserted, the push-to-bottom heuristic finishing the rest.
+- **Replay** (`scripts/c3_isaac_replay.py`) of the 0,0 handover: from the exact Isaac start state, offline C3 inserts
+  (24.4 mm / 57 steps / 3.4 N; with the true grasp offset (0.04, −0.32) mm in the plant: 24.0 mm / 77 steps). In Isaac
+  the TCP sat 0.64 mm from the hole axis (> 0.51 mm clearance: the peg is off-centre in the fingers + 4.5 mrad tilt),
+  measured z and xy motion 0.000 mm per step for 150 steps, while the model predicts ~0.16 mm lateral motion per step;
+  C3 commanded only 1–3.8 mm z deflection (< 7 mm needed) and alternated rollout (~700 ms, violation 1.4) / shifted
+  (~40 ms, 0.9) solves with the lateral force toggling 0 ↔ 2 N: a limit cycle on a plant stickier than the model.
+- **Offline levers** (`c3_stall_diag.py`, 16 offsets, estimate error 0.3 mm, goal 11 mm below; `~/ci_mpc_runs/c3_stall/set16g`, `set16s`):
+
+  | plant / C3 change | inserted | steps med | peak med / p90 |
+  |---|---|---|---|
+  | nominal plant | 16/16 | 64 | 2.08 / 2.40 N |
+  | + grasp offset 0.3 mm (plant only) | 16/16 | 88 | 2.70 / 3.95 N |
+  | + grasp offset + contact re-estimate (`--reest 0.3`, 0.5 N noise) | 16/16 | 62 | 2.62 / 6.16 N |
+  | sticky plant (3, 3, 5 N) + grasp offset, model 2 / 3.5 N | **0/16** (0–6 mm) | – | 1.14 / 17.17 N |
+  | + friction compensation 1.5 / 3 N (model friction reduced by it) | 11/16 | 111 | 1.04 / 5.92 N |
+  | + compensation 1.0 / 3, 2.0 / 3, 1.5 / 4.5 N | 10 / 11 / 10 of 16 | 115 / 99 / 53 | |
+  | + compensation 2.0 / 3 + re-estimate | 12/16 | 115 | 1.26 / 3.83 N (max 18.9) |
+  | + compensation 2.0 / 3, lateral only above 1 mm depth | 7/16 (9/16 with re-estimate) | | negative: fails at the chamfer–bore transition |
+  | model knows the true stiction, no compensation | 9/16 | 80 | 2.23 / 6.52 N |
+  | **true stiction in the model + compensation 2.0 / 3** | **16/16** | **58** | **2.18 / 3.46 N** |
+
+  - The contact re-estimate (hole = TCP + (R + c − d − (a − pc)) along the lateral force on the chamfer, (R − a) in
+    the bore; it absorbs the grasp offset) needs contact: with a 1.1 mm estimate error and no lateral force it never
+    triggers (C3 frozen at 0.5 mm). Marginal on its own (+1 of 16).
+  - The fix is the pair: a correctly identified stiction **and** compensating it in the controller. The 2 / 3.5 N in
+    `C33Config` / `gpu_mpc_server.py` are guesses; Isaac's effective value is not measured yet (Where to resume).
 
 ### 2026-10-27: 3D C3 handover in Isaac (D1): 10/10 but slower and no force gain, negative
 - `peg_insert_demo.py --entry c3` (879d625): on a tip sink, 3D C3+ on the belief estimate, goal 11 mm below the bottom
