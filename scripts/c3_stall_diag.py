@@ -38,6 +38,8 @@ p.add_argument("--stiction-ff", default="0,0", help="C3: friction compensation l
 p.add_argument("--ff-lat-depth", type=float, default=float("inf"),
                help="lateral friction compensation only while the tip is less than this deep [mm] (the chamfer; in the "
                     "bore it pushes the peg into the wall)")
+p.add_argument("--plant-bias", default="0,0,0", help="plant only: constant unmodelled force on the TCP fx,fy,fz [N] "
+               "(the real FR3's model / gravity error at the probe pose: about -1.1,-0.85,-0.9)")
 p.add_argument("--arm-friction", default="2.0,2.0,3.5,0.05,0.05", help="plant arm stiction (the model keeps cfg)")
 args = p.parse_args()
 
@@ -45,6 +47,7 @@ off = np.array([float(v) for v in args.offset.split(",")]) / 1000.0
 err = np.array([float(v) for v in args.est_error.split(",")]) / 1000.0
 comp = np.array([1 / 1500, 1 / 1500, 1 / 500, 1 / 130, 1 / 130])
 fa = np.array([float(v) for v in args.arm_friction.split(",")])
+pb = np.array([*(float(v) for v in args.plant_bias.split(",")), 0.0, 0.0])
 plant = PegHole3D(hole_xy=-off, n_ring=8, n_rim=12)
 model = PegHole3D(hole_xy=-off + err, n_ring=8, n_rim=12)
 g, tb = plant.g, plant.g.tip_below_tcp
@@ -55,7 +58,7 @@ x = np.array([0.0, 0.0, tb + 0.0005, 0.0, 0.0])
 u = x.copy()
 for _ in range(10):
     u = np.array([0.0, 0.0, x[2] - 0.004, 0.0, 0.0])
-    x, lam, nc = plant.step(x, u + comp * np.array([0, 0, -3.0, 0, 0]), comp, fa)
+    x, lam, nc = plant.step(x, u + comp * (np.array([0, 0, -3.0, 0, 0]) + pb), comp, fa)
 goal = np.array([*(-off + err), tb - g.depth - args.goal_below / 1000.0, 0.0, 0.0])
 cfg = C33Config()
 for s in args.set:
@@ -127,9 +130,9 @@ for k in range(args.steps):
     else:  # oracle press on the true axis
         u = np.array([-off[0], -off[1], x[2] - args.press_force * comp[2], 0, 0])
     cmd = u + comp * ff
-    xn, lam, nc = plant.step(x, cmd, comp, fa)
+    xn, lam, nc = plant.step(x, cmd + comp * pb, comp, fa)
     w = plant.contact_wrench(lam) if nc else np.zeros(5)
-    f_arm = (xn - cmd) / comp - w  # arm friction the plant applied (x+ = u + C (W lam + f))
+    f_arm = (xn - cmd - comp * pb) / comp - w  # arm friction the plant applied (x+ = u + C (W lam + f))
     act = contact_types(x, lam, nc)
     x = xn
     F = w[:3]

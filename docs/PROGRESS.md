@@ -185,6 +185,29 @@ Read this before starting work (and before re-investigating something "new").
   30× above. Feedforward by the offline ratios: ≈ 0.75 lateral, 0.75 down. Offline check running:
   `~/ci_mpc_runs/c3_stall/real_probe` (set16s offsets, plant = real values; model default / matched / matched + ff
   0.5, 0.75, 1.0).
+- **Offline check with the real-arm values** (`c3_stall_diag.py`, set16s offsets / estimate errors / grasp offsets,
+  plant arm friction = the real values; new `--plant-bias fx,fy,fz` = unmodelled constant force, real ≈ −1.1, −0.85,
+  −0.9 N; `~/ci_mpc_runs/c3_stall/real_probe`):
+
+  | plant | C3 model / compensation | inserted | steps med | peak \|F\| med / p90 / max |
+  |---|---|---|---|---|
+  | real friction | C33Config default (2, 2, 3.5, 0.05, 0.05) | 10/16 (fail 13.9–22.1 mm) | 52.5 | 2.67 / 3.03 / 3.50 N |
+  | real friction | measured, no ff | **16/16** | 49 | **1.88 / 2.72 / 3.32 N** |
+  | real friction | measured + ff 0.5 / 0.75 / 1.0 | 16/16 each | 46.5–47 | 1.99–2.32 / 2.61–2.94 / 3.25–3.64 N |
+  | real friction | measured + ff 1.1/1.0, 1.4/1.25 | 16/16 each | 46.5–47 | 2.38–2.67 / 3.38–3.99 / 4.84–5.11 N |
+  | real friction + bias | default | 13/16 (fail 20–22.6 mm) | 66 | 3.86 / 4.77 / 5.05 N |
+  | real friction + bias | measured, no ff | 16/16 | 45.5 | 3.03 / 4.34 / 5.45 N |
+  | real friction + bias | measured + ff 0.75/0.75 | 15/16 (one stuck at 0.4 mm) | 45 | 3.10 / 3.57 / 6.51 N |
+  | real friction + bias | measured + ff 1.4/1.25 | **16/16** | 44 | 3.60 / 4.19 / **4.32 N** |
+
+  - The lever is the friction model: measured values instead of the guesses +6/16 (bias-free) and +3/16 (with bias).
+    The default fails in the bore with no contact (13.9–22.6 mm, contacts 0/0/0): the model's z stiction 3.5 N /
+    rotational 0.05 Nm is wrong in both directions.
+  - Feedforward is not needed on the real arm's (lower) friction without bias; above ~1 N it only raises the p90 / max
+    force. With the bias, near-full compensation (1.4/1.25) is the most robust (lowest max force), consistent with
+    src-f1's Isaac D1 (ff 2.2/2.0 5/12 vs ff 1.5/1.3 2–3/13). One-sample differences (15 vs 16 of 16) are noise.
+  - **Recommendation for the real arm:** `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25`; fallback
+    without ff. The bias was measured only at the probe pose and the plant is the quasi-static model.
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
