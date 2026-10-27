@@ -5,6 +5,8 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-27 (real-robot C3 parameters):** `scripts/real/c3_breakaway_real.py` is ready and validated on Isaac;
+  run REAL_ROBOT.md 5b when the user connects the robot (after section 4 up to the hold test).
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
   not yet re-measured here.
@@ -88,6 +90,23 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: real-robot breakaway tool for the C3 stiction / feedforward parameters (robot not connected yet)
+- `scripts/real/c3_breakaway_real.py`: standalone ROS node (no sim clock, no MPC node) for the real FR3 via
+  `franka_hardware` + `cartesian_impedance_controller`: set-point fixed, integral off, contact K, feedforward ramp per
+  direction until 0.1 mm / 1 mrad motion; repeats; stiction = (f+ + f−)/2, bias = (f+ − f−)/2; prints
+  `--c3-arm-friction` / `--c3-stiction-ff` (offline ratios 2/3 lateral, 3/5 down). Safety: force / torque cap,
+  abort outside a 5 mm ball or above 0.03 m/s, `--dry-run` read only, typed confirmation; killing it is safe
+  (controller mpc_timeout holds the pose). Procedure: REAL_ROBOT.md 5b.
+- Robot not reachable from omar-OMEN today (enp3s0 is on the shared lab LAN 10.0.0.0/24; 172.16.0.2 and the
+  launch default 192.168.1.200 have no route); stock kernel, no RT. The user will say when the robot is connected.
+- Smoke test on Isaac's ros2_control pipeline (home pose, no peg, velocity friction compensation 1.0,
+  `~/ci_mpc_runs/real_prep/sim_smoke`, `sim_rot`): x 2.26 N (bias +0.22), y 2.65 (+0.09), z 2.15 (+0.06);
+  **rx 1.21 Nm, ry 0.55 Nm** (2 repeats within 0.03 Nm). The C3 model's rotational arm friction is 0.05 Nm:
+  10–25× below Isaac at this pose. Check at the probe pose before reading much into it.
+- Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
+  ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
+  singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
 
 ### 2026-10-27: moved to the second workstation (omar-OMEN), all checks pass
 - Machine: Ubuntu 22.04.5, RTX 4090 24 GB (driver 595.91.07), 62 GB RAM, 32 threads. Data from the T7 transfer

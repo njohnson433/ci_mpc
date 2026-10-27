@@ -48,6 +48,19 @@ On the robot, replace the demo's gripper calls (`scripts/pick_place_demo.py`) by
 
 Real actions block until done: wait for the result instead of the sim's fixed settle times.
 
+## 5b. C3 arm stiction + friction-compensation feedforward (`scripts/real/c3_breakaway_real.py`)
+Parameters for the C3 variant that worked best offline (true stiction in the C3 model + compensation feedforward:
+16/16, PROGRESS 2026-10-27 "C3 friction"): `--c3-arm-friction x,y,z,rx,ry` and `--c3-stiction-ff lateral,z`.
+Needs section 4 up to the hold test (controller active, `friction_compensation` set to what C3 will use).
+- [ ] Arm in free space at the probe pose (~10 mm above the hole block, peg in hand), enabling device in hand.
+- [ ] `python3 scripts/real/c3_breakaway_real.py --dry-run` (read only: pose, /joint_states rate, controller params).
+- [ ] `python3 scripts/real/c3_breakaway_real.py --out ~/ci_mpc_runs/real/breakaway/<name>` (default ±x, ±y, ±z,
+      3 repeats, 0.5 N/s up to 8 N, aborts at 5 mm / 0.03 m/s); then `--dirs +rx,-rx,+ry,-ry` (0.1 Nm/s up to 2 Nm).
+- [ ] Repeat with the robot warm and at a second pose; per axis stiction = (f+ + f−)/2, bias = (f+ − f−)/2.
+- [ ] Check the printed suggestion offline before C3 runs on the robot: `c3_stall_diag.py` with the measured values
+      as the plant and the suggested values in the model, sweep the feedforward ±1 step.
+Validated against Isaac's ros2_control pipeline (home pose, PROGRESS 2026-10-27 "real-robot breakaway tool").
+
 ## 5. Identification and tests
 - [ ] `JointIdController`: one joint, small amplitude, warm robot; then all joints, 2–3 poses (SYSID.md).
 - [ ] Fitted values → sim scene (`prepare_scene.py --params`) and controller.
