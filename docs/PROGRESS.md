@@ -43,8 +43,10 @@ Read this before starting work (and before re-investigating something "new").
   high); near-full feedforward (MF2, 2.2 / 2.0 N) is best so far: 8 / 20 C3 phases finish (MF 1.5 / 1.3: 5 / 26);
   rotational friction in the model: negative (entry "C3 in Isaac"). Overnight result (entry "C3 overnight result"):
   MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
-  (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). Plain still wins (30/30, 25 vs 35 s). Running: MF4, then MF3 + std gate 3 mm.
-  Next: pick ff from MF3 vs MF4, judge the gate (deep %, contact time vs plain).
+  (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). MF4 = MF3, so keep MF3. **MF3 + std gate 3 mm: 40/40, 20/20 phases deep, time = plain (25.1 vs 25.0 s), engaged
+  peak 7.5 vs 10.2 N.** Whether that force gain comes from C3 or from the c3-arm path is not yet attributed. Running
+  (until ~00:15): never-hand-over control, gate 2.5 / 3.5 mm, real-arm match + gate. Next: attribute the force gain,
+  then pick the gate.
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -145,8 +147,24 @@ Read this before starting work (and before re-investigating something "new").
 - **C3 vs plain: plain still wins** on success (30/30 vs 35/40) and time (median 25 vs 35 s nominal; 16 vs 39 s
   real-arm match). The force gain is small: engaged median 8.3 vs 10.2 N nominal, none on the real match (6.6 vs 6.4 N).
   Plain's peak is the push to the bottom, so even a working C3 phase removes only ~2 N. Not adopted; `--entry c3` stays off.
-- Running (20:15 →): MF4 (ff 3.6 / 3.4, one step above, to find the optimum), then MF3 + `--c3-std-max 0.003`
-  (`night/run_mf4.sh`, `run_gate.sh`; both end ~22:30, before the robot session).
+- Follow-ups (20:15–21:45, `night/run_mf4.sh`, `run_gate.sh`, 4 repeats each):
+
+  | arm | inserted | contact mean / median | engaged peak median / p90 | C3 phases deep |
+  |---|---|---|---|---|
+  | MF3 (above) | 35/40 | 40.5 / 35.3 s | 8.3 / 13.2 N | 25/42 (60 %) |
+  | MF4: ff 3.6 / 3.4 | 36/40 | 39.8 / 32.9 s | 8.2 / 13.3 N | 24/39 (62 %) |
+  | **MF3 + `--c3-std-max 0.003`** | **40/40** | **30.9 / 25.1 s** | **7.5 / 9.9 N** | **20/20 (100 %)** |
+  | plain (above) | 30/30 | 31.5 / 25.0 s | 10.2 / 11.0 N | – |
+
+  - MF4 = MF3: the ff is already above breakaway, so more does not help. **Keep MF3** (less ff for the real arm).
+  - **The std gate fixes the handover**: C3 starts only on 20 of 40 runs (the rest center until the push), and every
+    phase reaches the bottom. Success and time now **equal plain**; the engaged peak is 2.7 N lower (median) and
+    1.1 N lower (p90).
+  - **Caveat, not yet attributed:** inside the gated arm, the push peak is the same with and without a C3 phase
+    (7.2 vs 7.4 N). The c3-arm push peak was also lower than plain on D1 before any C3 phase worked (8.1 vs 10.8 N).
+    So part or all of the force gain may come from the c3-arm path (how it reaches the push), not from C3.
+- Running (21:46 →, `night/run_sweep.sh`, ends ~00:15): the never-hand-over control (`--c3-std-max 0`, the c3-arm
+  path without C3), gate ±1 step (2.5 / 3.5 mm), and the real-arm match + 3 mm gate.
 
 ### 2026-10-27: vectorized step 4b: fidelity levers: joint friction reproduces the slip, but the batched breakaway matches; the batched arm stalls in the stiction band (`~/ci_mpc_runs/vec/step4b`)
 - 40-episode replays (`fidelity_probe_replay.py --max-episodes 40`), one lever each, sequential (the GPU is shared:
