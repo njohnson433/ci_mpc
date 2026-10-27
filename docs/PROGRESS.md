@@ -55,6 +55,14 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-27: README rewritten with the stricter create-readme skill
+- The skill (`.claude/skills/create-readme`) now requires every number with its metric, set, n and baseline, every
+  internal name (D1, R2, v3, GPU entry, ...) defined, a mechanism for each component and each dropped idea, and no
+  filler words. The nightly prompt follows it.
+- README: status table (result vs baseline per component), "How it works" per component, benchmark/term definitions,
+  a recommended peg command. Run IDs stay in this log. Fixed on the way: the model path is
+  `ci_mpc_planner/models/...` (the old README said `models/...`).
+
 ### 2026-10-27: gear round 3 (push dither 0.25 mm + per-step yaw drop check, `dev/yaw/r3`): 1/5, negative
 - Round-2 settings (`--yaw-search 9 --push-follow 2e-5`, release fix) + `--push-dither 0.00025` (1 Hz xy circle) and the
   yaw-drop check per sweep step instead of against the sweep start.
