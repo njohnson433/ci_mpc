@@ -495,13 +495,9 @@ elif args.strategy == "probe":
     # penetration tolerance shrank each probe's exclusion to ~1.3 mm, and the search crawled)
     belief = HoleBelief(geo, f_lateral=1e9, touch=1.5e-4)
     if args.belief_model:
-        # from the source tree (the colcon install of ci_mpc_planner is older and is not rebuilt mid-benchmark)
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("probe_likelihood", os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "ci_mpc_planner", "ci_mpc_planner", "probe_likelihood.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        lik = mod.ProbeLikelihood(os.path.expanduser(args.belief_model), scale=args.belief_scale)
+        from ci_mpc_planner.probe_likelihood import ProbeLikelihood
+
+        lik = ProbeLikelihood(os.path.expanduser(args.belief_model), scale=args.belief_scale)
 
         def learned_update(x, force, b=belief):
             b.logw += lik(b.h, x[:2], x[2] - b.g.tip_below_tcp, np.array(force, float))
