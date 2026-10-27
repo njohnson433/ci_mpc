@@ -22,19 +22,20 @@ Read this before starting work (and before re-investigating something "new").
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
   not yet re-measured here.
-- **2026-10-27 (vectorized sim, before the workstation move):** steps 1–3 done; **step 4 (fidelity) failed**:
-  batched sim vs the ros2_control sweeps agree on only 46 % of probe classes (58 % on the first 10 probes per
-  episode). Mechanisms found (entry "vectorized step 4"): the pipeline's grasp slips (logged flat tip drifts
-  −0.03 → −0.28 mm over 40 probes, −1.15 mm right after an in-hole probe; batched peg stays at 0.00), and the
-  pipeline presses ~2.3 N harder at the same command (5.07 vs 2.75 N flat; not the PhysX backend: CPU gives 2.74 N).
-  So step 5 (training on batched data) is **not started**. Next, in order:
-  1. Find the 2.3 N: log the pipeline's commanded vs measured TCP z during a hold (one sweep episode), compare with
-     `fidelity_probe_replay.py --max-episodes 1`; candidates: joint stiction holding the press preload, the press-loop
-     overshoot, the gripper (40 N force grasp vs batched PD 7500 / friction 0.1). `--joint-friction-scale 0` run was
-     started and stopped by the pause (not measured).
-  2. Model in-hand slip in `factory_fr3` (softer / force-limited grip, peg-finger friction) and rerun the full
-     replay (`fidelity_probe_replay.py --out ...`, ~25 min at N 120): target ≥ 80 % class agreement, flat Fz within
-     0.5 N, the tip drift over k reproduced.
+- **2026-10-27 evening (vectorized step 4b, fidelity levers):** step 4 still fails; the cause is narrowed to the
+  arm, not the gripper (entry "vectorized step 4b"). Joint friction off (with its compensation) reproduces the
+  pipeline's tip drift over k (−0.03 → −0.22 vs −0.03 → −0.20 mm) and closes a third of the press gap (Fz 3.57 vs
+  2.80, pipeline 4.93 N); pipeline grip drive and solver iterations 32 do ~nothing. But the batched static breakaway
+  at scale 1 **matches** the pipeline's (x 2.51 / y 1.85 / z 2.30 vs 2.33 / 1.85 / 2.2 N), so scaling friction down
+  is not the fix. Difference found: the pipeline arm reaches its set-point (start error 0.004–0.17 mm; the MPC
+  approach runs the integrator, `mpc_sim.yaml` integral_enabled true) while the batched arm stalls in the stiction
+  band (4.5 mm short, spring = stiction). Next, in order:
+  1. Log the pipeline's commanded vs measured TCP z through the probe phases of one sweep episode (an external
+     recorder on joint states + the MpcCommand topic; `peg_insert_demo.py` logs nothing in probe mode) and the same
+     from `fidelity_probe_replay.py --max-episodes 1`: where does the pipeline arm get past stiction that the batched
+     one does not (integrator state carried over from the approach, the press loop, the 1 kHz vs 240 Hz command)?
+  2. Put that mechanism into the batched probe / replay, rerun the full replay (~40 min at N 120 on the shared GPU):
+     target ≥ 80 % class agreement, flat Fz within 0.5 N, the tip drift over k.
   3. Then step 5: batched random-probe collection (as `peg_insert_demo.py --collect`: r U(0, 9) or U(2, 6) mm,
      hold U(0.5, 2) mm, settle U(0.2, 0.6) s; reuse the `Replay` class with sampled targets) → `probe_dataset.py`
      format → `train_probe_likelihood.py`, validated on held-out *pipeline* sweeps2.
@@ -108,6 +109,41 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: vectorized step 4b: fidelity levers: joint friction reproduces the slip, but the batched breakaway matches; the batched arm stalls in the stiction band (`~/ci_mpc_runs/vec/step4b`)
+- 40-episode replays (`fidelity_probe_replay.py --max-episodes 40`), one lever each, sequential (the GPU is shared:
+  5 Isaac processes time-sliced made 8-env runs crawl; one process at a time, ~35–50 min each next to 3 C3 Isaac
+  instances). Summary by `scripts/isaac/fidelity_slip.py` (tip of probes > 6.5 mm from the hole, not class-filtered:
+  a slipped tip reads "engaged"); the f1 baseline on the same 40 episodes:
+
+  | run | switch | tip k 1–10 / 10–20 / 20–30 / 30–40 mm | after in-hole | flat Fz | class agree | xy track |
+  |---|---|---|---|---|---|---|
+  | pipeline | – | −0.03 / −0.08 / −0.20 / −0.20 | −0.37 (n 7) | 4.93 N | – | – |
+  | f1 | – | flat (−0.15 offset) | −0.14 | 2.80 | 0.449 | 0.72 mm |
+  | grip | `FR3_GRIP=pipeline` (force drive 20 N / finger) | 0.00 / −0.01 / −0.05 / −0.08 | +0.04 | 2.65 | 0.449 | 0.70 |
+  | iters | `FR3_PEG_ITERS=32` | flat | +0.01 | 2.87 | 0.444 | 0.73 |
+  | iters32 | + `FR3_ITERS=32,1` (robot) | flat | +0.01 | 2.76 | 0.453 | 0.70 |
+  | grip_iters | grip + iters32 | 0.00 / 0.02 / −0.01 / −0.04 | 0.00 | 2.62 | 0.458 | 0.70 |
+  | nojf2 | `--joint-friction-scale 0` | **−0.03 / −0.08 / −0.13 / −0.22** | −0.11 | **3.57** | **0.507** | **0.20** |
+
+- Bugs on the way: `--joint-friction-scale 0` left the controller's velocity friction compensation on: it pushes
+  along q̇ with nothing to cancel it, the arm ran away (xy 280 mm, run `nojf`); the replay now scales
+  `ctrl.coulomb` / `ctrl.beta` with it (also why the pre-move attempt "stopped"). `FR3_PEG_ITERS` alone changed
+  nothing: the held peg is in the robot's island, which runs at the max count (robot 192); the pipeline robot runs
+  the PhysX default 32 (`fr3_scene.usd` authors none). The replay npz now stores `tip_off`.
+- **Batched breakaway** (`scripts/isaac/batched_breakaway.py`, as `peg_insert_demo.py --breakaway`: peg in hand, 10 mm
+  above the opening, K 1500 / 1500 / 500, 1 N/s to 0.1 mm, one env per direction × scale, compensation scaled too,
+  set-point re-anchored at the settled pose; `breakaway2.json`): scale 1: +x 2.09, −x 2.93, +y 2.03, −y 1.67, +z 2.18,
+  −z 2.43 → symmetric **x 2.51, y 1.85, z 2.30 N** vs the pipeline 2.33 / 1.85 / ~2.2 (rep_a): the static friction
+  matches. Scale 0.75 / 0.5 / 0.25 / 0: x 2.17 / 1.87 / 1.07 / 0.29, y 1.58 / 0.94 / 0.20 / 0.33, z 1.98 / 1.45 /
+  0.26 / 0.28 N.
+- **The difference:** approaching the start pose by a set-point jump, the batched arm stops 4.5 mm short (spring =
+  stiction); the pipeline's breakaway runs start 0.004–0.17 mm from x0 (its MPC approach runs the integrator).
+  Without friction the batched arm reaches its set-points (xy track 0.72 → 0.20 mm), presses harder and the peg
+  creeps: that is why friction off "fixes" the slip. So the pipeline gets past stiction somewhere in its command
+  path that the batched replay lacks; not measured yet (Where to resume 1).
+- First attempt (`breakaway.json`) invalid: full compensation on reduced-friction plants ran away (100–1000 mm), and
+  the 4.5 mm stall preload biased + vs −.
 
 ### 2026-10-27: C3 in Isaac: arm stiction ~2 N is not above the model; stiction feedforward deepens C3 but does not fix it (`~/ci_mpc_runs/c3_isaac/{breakaway,d1_meas,d1_meas_ff}`)
 - **Breakaway at the probe pose** (`peg_insert_demo.py --breakaway=-x,+x,...`, peg in hand, 10 mm above the opening,

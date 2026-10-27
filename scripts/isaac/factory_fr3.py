@@ -117,14 +117,16 @@ class FactoryFR3PegInsertCfg(FactoryTaskPegInsertCfg):
         )
         # fidelity test switches (vectorized step 4, in-hand slip): the pipeline scene (peg_scene.py) grasps with a
         # force drive saturating at 20 N per finger (stiffness 20000, damping 200, no joint friction) and runs the peg
-        # at 32 position iterations (Factory: a 7500 PD at ~30 N per finger and 192 iterations)
+        # and hole at 32 position iterations, the robot at the PhysX default 32 (fr3_scene.usd authors none; Factory: a
+        # 7500 PD at ~30 N per finger and 192 iterations). A held peg shares the robot's island, which runs at the max
+        # count: FR3_PEG_ITERS alone left the robot at 192 and changed nothing (step 4b); set FR3_ITERS too
         if os.environ.get("FR3_GRIP") == "pipeline":
             self.scene.robot.actuators["fr3_hand"] = self.scene.robot.actuators["fr3_hand"].replace(
                 joint_effort_limit=20.0, stiffness=20000.0, damping=200.0, friction=0.0)
-        if os.environ.get("FR3_PEG_ITERS"):
-            rp = self.task.held_asset.spawn.rigid_props
-            self.task.held_asset.spawn.rigid_props = rp.replace(
-                solver_position_iteration_count=int(os.environ["FR3_PEG_ITERS"]))
+        if os.environ.get("FR3_PEG_ITERS"):  # peg and hole
+            for asset in (self.task.held_asset, self.task.fixed_asset):
+                asset.spawn.rigid_props = asset.spawn.rigid_props.replace(
+                    solver_position_iteration_count=int(os.environ["FR3_PEG_ITERS"]))
 
 
 @configclass
