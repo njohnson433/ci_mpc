@@ -46,7 +46,8 @@ else:
     task = factory_fr3.TASK_CI
 env_cfg, _ = resolve_task_config(task, "")
 env_cfg.scene.num_envs = 1 if args.stock_frame else args.num_envs
-env_cfg.sim.dt, env_cfg.decimation = 1.0 / 240.0, 2  # physics / controller 240 Hz, command 120 Hz
+hz = float(os.environ.get("CI_PHYS_HZ", 240.0))  # test switch
+env_cfg.sim.dt, env_cfg.decimation = 1.0 / hz, max(1, round(hz / 120.0))  # physics / controller 240 Hz, command 120 Hz
 env_cfg.episode_length_s = 1e4
 res = {"num_envs": env_cfg.scene.num_envs}
 
@@ -114,9 +115,12 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         t0 = time.perf_counter()
         errs, model_rows = [], []
 
+        fext = []
+
         def circle_and_log(t):
             circle(t)
             errs.append((t, c.pos_d.clone()))
+            fext.append(c.F_ext[:, :3].norm(dim=1).clone())
 
         rows = run(2 * period, circle_and_log)
         torch.cuda.synchronize()
@@ -128,6 +132,10 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         res["circle_sim_s_per_wall_s"] = N * 2 * period / wall
         print(f"CIRCLE r 5 cm / 5 s pose + twist: RMS mean {rms.mean():.2f} mm (envs {rms.min():.2f}-{rms.max():.2f}), "
               f"max {e.max():.2f} mm (ros2_control 1.29 mm); {N * 2 * period / wall:.0f} sim s / wall s", flush=True)
+        fe = torch.stack(fext[len(fext) // 4:])
+        res["circle_F_ext_N"] = {"rms": fe.pow(2).mean().sqrt().item(), "max": fe.max().item()}
+        print(f"CIRCLE free-motion |F_ext| RMS {fe.pow(2).mean().sqrt():.2f} N, max {fe.max():.2f} N (pipeline 0.1-0.4 N "
+              "RMS with the sensor model)", flush=True)
         model_rows = [rows[i] for i in (len(rows) // 3, len(rows) // 2)]
         c.twist_d[:] = 0.0
         go_home()
@@ -200,6 +208,9 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
             b = rob.body_names.index(f"fr3_link{i}")
             print(f"OBSERVER incoming fr3_link{i}: {[round(v, 3) for v in inc[b].tolist()]} expected tau "
                   f"{tau_link[0, i - 1]:.3f} meas {tau[0, i - 1]:.3f}", flush=True)
+        W = u.ci_hand_wrench()
+        print(f"OBSERVER hand wrench env 0 (should be -F at rest): force {W[0, :3].tolist()}, |W_f + F| mean "
+              f"{(W[:, :3] + F).norm(dim=1).mean():.3f} N", flush=True)
         rob.permanent_wrench_composer.reset()
 
     print("RESULT " + json.dumps(res), flush=True)

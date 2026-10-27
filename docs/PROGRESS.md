@@ -63,6 +63,42 @@ Read this before starting work (and before re-investigating something "new").
   a recommended peg command. Run IDs stay in this log. Fixed on the way: the model path is
   `ci_mpc_planner/models/...` (the old README said `models/...`).
 
+### 2026-10-27: vectorized step 1: our controller + observer batched in torch, validated (`~/ci_mpc_runs/vec/step1`)
+- `scripts/isaac/ci_ctrl_torch.py` (BatchedImpedance): line-by-line port of `CartesianImpedanceController::update`
+  with `isaac_sim_controllers.yaml` (critically damped D from Λ, conditional integral, 18 N / 9 Nm / 2 Nm clamps,
+  velocity friction compensation, 1 Nm/ms rate limit, momentum observer K_O 30 with the sensor bias / noise model).
+  `factory_fr3.py` env `TASK_CI` runs it every physics step (240 Hz, like ros2_control); Factory's controller only
+  does the reset. FR3 joints now get static / Coulomb / viscous friction (was static only).
+- Checks (`scripts/isaac/test_ci_ctrl.py`, 16 envs):
+
+  | check | batched | ros2_control |
+  |---|---|---|
+  | M / C q̇ / J / TCP vs Pinocchio | 0.17 % / 0.03 of 4.8 Nm / 4e-7 / 0.0004 mm | (Pinocchio) |
+  | circle r 5 cm pose+twist RMS | **1.25 mm** | 1.29 mm |
+  | observer, known 10.6 N at the TCP | **0.26 N** mean error | exact (no sensor model) |
+  | observer, free motion (circle) | 0.27 N RMS | 0.1–0.4 N RMS |
+  | press with K_z 500, 1 cm (N 1024) | F_ext 5.05 N mean | (5 N commanded) |
+
+- Bugs found on the way:
+  - Factory adds 0.01 kg m² to every body's inertia (IsaacGymEnvs armature workaround): M 30 % off → removed in TASK_CI.
+  - PhysX's mass matrix **excludes** joint armature (diag = Pinocchio); subtracting it gave negative diagonals,
+    garbage Λ / D, circle 2.09 mm.
+  - **PhysX joint-force reporting is wrong on the proximal joints** of this imported FR3: with a known force at the TCP
+    at rest, joint 2 reads −0.6 instead of −2.6 Nm (joints 5–7 right), and the link incoming forces are not even
+    consistent along the chain (9.7 N at links 6–7, 8.8 at 4–5, 4.2 at 2–3). Observer 4.6 N off. Not friction,
+    armature, solver iterations (32/192, vel 1–32), GPU vs CPU, link inertia, force body, physics rate (960 Hz).
+    Root cause open (our ros2_control scene's effort state was exact; different importer / asset).
+    Fix: link-side torque = M q̈ + C q̇ + J_handᵀ W_hand from the hand's incoming wrench (the pipeline's wrist F/T,
+    correct to 0.003 N), i.e. exact for everything acting through the hand / fingers / held part; neglects the hand
+    subtree's inertial force and forces on links 1–7 (`CI_TAU_SOURCE=projected` keeps the PhysX value).
+- Throughput with our controller + observer, FR3, 240 Hz, contact press, N 1024: **124 sim s / wall s**
+  (29,800 physics steps/s, GPU 5.1 GB, RSS 6.2 GB): ~100× the ros2_control pipeline. (FR3 with Factory's controller
+  measured 64 yesterday; that run had other Isaac jobs on the machine.)
+- Fingertip frame: the stock Panda's `panda_fingertip_centered` is 112.1 mm from the hand, ours = `fr3_hand_tcp`
+  103.4 mm (the frame ros2_control / the FR3 control). Kept ours; Factory's grasp then holds the peg 8.7 mm higher in
+  the fingers than the stock task. Grasp offset parity with our pipeline → step 2.
+- Next: step 2 (per-env randomization incl. grasp offset) / 3 (batched probe strategy).
+
 ### 2026-10-27: gear round 3 (push dither 0.25 mm + per-step yaw drop check, `dev/yaw/r3`): 1/5, negative
 - Round-2 settings (`--yaw-search 9 --push-follow 2e-5`, release fix) + `--push-dither 0.00025` (1 Hz xy circle) and the
   yaw-drop check per sweep step instead of against the sweep start.

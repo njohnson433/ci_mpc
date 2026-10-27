@@ -31,6 +31,8 @@ p.add_argument("--physics-hz", type=float, default=0.0,
                help="override the physics rate (ours: 240); decimation scales to keep the control rate (0 = stock)")
 p.add_argument("--out", default="", help="append the result as a JSON line")
 p.add_argument("--fr3", action="store_true", help="our FR3 (factory_fr3.py) instead of the stock Panda")
+p.add_argument("--ci", action="store_true", help="FR3 driven by our controller + observer (factory_fr3.TASK_CI); "
+               "contact mode presses the TCP 1 cm below itself with soft K, random xy as the Factory contact mode")
 add_launcher_args(p)
 p.set_defaults(device=None)
 args, rest = p.parse_known_args()
@@ -49,10 +51,10 @@ def rss_gib():
             return int(l.split()[1]) / 2**20
 
 
-if args.fr3:
+if args.fr3 or args.ci:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import factory_fr3
-    args.task = factory_fr3.TASK
+    args.task = factory_fr3.TASK_CI if args.ci else factory_fr3.TASK
 env_cfg, _ = resolve_task_config(args.task, "")
 env_cfg.scene.num_envs = args.num_envs
 if args.physics_hz > 0:
@@ -109,7 +111,21 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         raise
     u = env.unwrapped
     n_act = u.cfg.action_space if isinstance(u.cfg.action_space, int) else u.single_action_space.shape[0]
-    if args.mode == "random":
+    if args.ci:
+        c = u.ctrl
+        c.K[:] = torch.tensor((1500.0, 1500.0, 500.0, 260.0, 260.0, 90.0), device=u.device)  # peg_insert_demo K_search
+        c.integral_enabled[:] = False
+        _act = torch.zeros(args.num_envs, n_act, device=u.device)
+
+        def act():
+            pos = u.ci_state()[5]
+            if args.mode == "contact":
+                c.pos_d[:, :2] = pos[:, :2] + 0.003 * (2.0 * torch.rand(args.num_envs, 2, device=u.device) - 1.0)
+                c.pos_d[:, 2] = pos[:, 2] - 0.01
+            else:
+                c.pos_d[:] = pos + 0.01 * (2.0 * torch.rand(args.num_envs, 3, device=u.device) - 1.0)
+            return _act
+    elif args.mode == "random":
         act = lambda: 2.0 * torch.rand(args.num_envs, n_act, device=u.device) - 1.0  # noqa: E731
     else:
         def act():
@@ -131,6 +147,10 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     print(f"SANITY envs with NaN joints {int(torch.isnan(jp).any(dim=1).sum())}/{args.num_envs}, fingertip z "
           f"[{ft[:, 2].min():.3f}, {ft[:, 2].max():.3f}] m, held-asset z [{u.held_pos[:, 2].min():.3f}, "
           f"{u.held_pos[:, 2].max():.3f}] m" if ft is not None and hasattr(u, "held_pos") else "SANITY n/a", flush=True)
+    if args.ci:
+        print(f"SANITY ci: |F_ext| mean {u.ctrl.F_ext[:, :3].norm(dim=1).mean():.2f} N, max "
+              f"{u.ctrl.F_ext[:, :3].norm(dim=1).max():.2f} N, NaN torques {int(torch.isnan(u.ctrl.tau_prev).any(1).sum())}",
+              flush=True)
     r = {"task": args.task, "mode": args.mode, "num_envs": args.num_envs, "steps": args.steps, "wall_s": round(wall, 2),
          "env_steps_per_s": round(args.num_envs * args.steps / wall, 1),
          "sim_s_per_wall_s_total": round(args.num_envs * args.steps * dt_env / wall, 2),

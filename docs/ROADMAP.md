@@ -105,13 +105,17 @@ with a batched task-space impedance controller in torch.
 - [x] 0b. Close the step-0 caveat where it is cheap: 240 Hz physics, contact-heavy actions (press on the hole), N 4096,
       and the FR3 asset (`scripts/isaac/factory_fr3.py`), each measured with `bench_factory_vec.py`.
       (2026-10-26: Panda 240 Hz + contact 157 sim s / wall s at N 1024, 224 at 4096; FR3 64 at N 1024, ~50× ours.)
-- [ ] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
+- [x] 1. Port our controller to batched torch: Cartesian impedance law (K, D, friction compensation, torque rate
       limit, as `cartesian_impedance_control`), momentum observer → EE force estimate (link-side torques → −pinv(Jᵀ) r).
       Scene parity: the stock task uses a **Panda** (`franka_mimic.usd`) with zero joint friction / armature at
       120 Hz physics; swap in our FR3 asset with armature + identified friction (`prepare_scene.py`) at 240 Hz.
       First version: `scripts/isaac/factory_fr3.py` (fr3.urdf via the URDF importer, Panda body names mapped in a
       generated `fr3_factory.urdf`, friction / armature from `fr3_joint_params_sim.yaml`); fingertip frame = TCP, TODO
       check against the Panda's.
+      (2026-10-27 done: `ci_ctrl_torch.py` + `factory_fr3.TASK_CI`; circle 1.25 vs 1.29 mm, observer 0.26 N on known
+      forces, 124 sim s / wall s at N 1024 in contact. PhysX joint-force reporting is wrong on the proximal joints of
+      the imported FR3 → link-side torque from the hand's incoming wrench + model; root cause open. Fingertip frame
+      = FR3 TCP, 8.7 mm above the Panda's.)
       Factory's `compute_dof_torque` has the same structure as ours (Kp·e − Kd·v → Jᵀ, nullspace), so it is the
       starting point; add our twist / feedforward / friction compensation / 100 Nm/s rate limit.
 - [ ] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,

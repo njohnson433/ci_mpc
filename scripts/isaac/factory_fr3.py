@@ -57,6 +57,8 @@ def factory_urdf():
   </joint>
 </robot>''')
     # a link without <inertial> is dropped by the importer (no body): give the frame a negligible mass
+    if os.environ.get("FR3_DIAG_INERTIA"):  # test switch: drop the off-diagonal inertia terms
+        s = re.sub(r'(i(?:xy|xz|yz))="[^"]*"', r'\1="0.0"', s)
     if not os.path.exists(URDF_FACTORY) or open(URDF_FACTORY).read() != s:
         open(URDF_FACTORY, "w").write(s)
     return URDF_FACTORY
@@ -129,13 +131,26 @@ class CiCtrlFactoryEnv(FactoryEnv):
             factory_utils.set_body_inertias = orig
         self.ctrl = BatchedImpedance(self.num_envs, self.device, self.physics_dt)
         self.tcp_idx = self._robot.body_names.index("panda_fingertip_centered")
+        self.hand_idx = self._robot.body_names.index("fr3_hand")
+        self.ci_qdd = torch.zeros(self.num_envs, 7, device=self.device)
+        self.ci_dq_prev = None
         self.ci_active = False
         self.ctrl_arm = torch.tensor([p["armature"] for p in _joint_params().values()], device=self.device)
         self.ci_reset_ctrl()
 
+    # Link-side joint torques (the FR3 torque sensors; Isaac's ros2_control effort state in our pipeline):
+    #   "projected": PhysX get_dof_projected_joint_forces. In this env it is wrong on the proximal joints (known force
+    #     at the TCP at rest: joint 2 reads -0.6 instead of -2.6 Nm; the link incoming forces are not even consistent
+    #     along the chain, 9.7 N at links 6-7, 4.2 N at links 2-3), independent of friction, armature, solver
+    #     iterations, GPU / CPU, inertia (test_ci_ctrl.py, PROGRESS 2026-10-27). Joints 5-7 and the hand are right.
+    #   "wrist": M qdd + C dq + J_hand^T W_hand, W_hand = the hand's incoming joint wrench (world-aligned, about the hand
+    #     origin), i.e. the link-side torque for everything acting through the hand (fingers, held part: all our
+    #     contacts); neglects the hand subtree's inertial force (~0.1 N at our accelerations), forces on links 1-7.
+    ci_tau_source = os.environ.get("CI_TAU_SOURCE", "wrist")
+
     def ci_state(self):
         """Inputs of the C++ controller from PhysX: q, dq, M (no armature), C dq, J at the TCP (world-aligned), TCP
-        pose, link-side joint torques (what Isaac's ros2_control reports as effort state)."""
+        pose, link-side joint torques (ci_tau_source)."""
         d, view = self._robot.data, self._robot.root_view
         q, dq = d.joint_pos.torch[:, :7], d.joint_vel.torch[:, :7]
         M = d.mass_matrix.torch[:, :7, :7] - torch.diag_embed(self.ctrl_arm) * self.ci_M_has_armature
@@ -143,13 +158,28 @@ class CiCtrlFactoryEnv(FactoryEnv):
         J = d.body_link_jacobian_w.torch[:, self.tcp_idx - 1, 0:6, 0:7]  # fixed base: no root body in the Jacobian
         pos = d.body_pos_w.torch[:, self.tcp_idx] - self.scene.env_origins
         rot = torch_utils.matrix_from_quat(d.body_quat_w.torch[:, self.tcp_idx])
-        tau = wp.to_torch(view.get_dof_projected_joint_forces())[:, :7]
+        if self.ci_tau_source == "projected":
+            tau = wp.to_torch(view.get_dof_projected_joint_forces())[:, :7]
+        else:
+            tau = (M @ self.ci_qdd.unsqueeze(-1)).squeeze(-1) + cor + (
+                self.ci_hand_jacobian().transpose(1, 2) @ self.ci_hand_wrench().unsqueeze(-1)).squeeze(-1)
         return q, dq, M, cor, J, pos, rot, tau
+
+    def ci_hand_jacobian(self):
+        return self._robot.data.body_link_jacobian_w.torch[:, self.hand_idx - 1, 0:6, 0:7]
+
+    def ci_hand_wrench(self):
+        """Wrench the arm exerts on the hand subtree, world-aligned, torque about the hand origin (Franka sign: at
+        rest = the force of the robot on the environment); the pipeline's simulated wrist F/T (wrist_ft.py)."""
+        raw = wp.to_torch(self._robot.root_view.get_link_incoming_joint_force())[:, self.hand_idx]
+        R = torch_utils.matrix_from_quat(self._robot.data.body_quat_w.torch[:, self.hand_idx])
+        return torch.cat(((R @ raw[:, :3, None]).squeeze(-1), (R @ raw[:, 3:, None]).squeeze(-1)), 1)
 
     def ci_reset_ctrl(self, env_ids=None):
         env_ids = torch.arange(self.num_envs, device=self.device) if env_ids is None else env_ids
         _, _, _, _, _, pos, rot, _ = self.ci_state()
         self.ctrl.reset(env_ids, pos, rot)
+        self.ci_qdd[env_ids], self.ci_dq_prev = 0.0, None
         self.ci_active = True
 
     ci_M_has_armature = 0.0  # PhysX's mass matrix excludes the joint armature (= Pinocchio, test_ci_ctrl.py)
@@ -163,6 +193,10 @@ class CiCtrlFactoryEnv(FactoryEnv):
             return super()._apply_action()
         if self.last_update_timestamp < self._robot._data._sim_timestamp:
             self._compute_intermediate_values(dt=self.physics_dt)
+        dq = self._robot.data.joint_vel.torch[:, :7]
+        if self.ci_dq_prev is not None:
+            self.ci_qdd = (dq - self.ci_dq_prev) / self.physics_dt
+        self.ci_dq_prev = dq.clone()
         tau = self.ctrl.compute(*self.ci_state())
         self.joint_torque = torch.zeros_like(self.joint_torque) if hasattr(self, "joint_torque") else torch.zeros(
             (self.num_envs, self._robot.num_joints), device=self.device)
