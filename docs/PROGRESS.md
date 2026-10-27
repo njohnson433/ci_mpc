@@ -158,6 +158,17 @@ Read this before starting work (and before re-investigating something "new").
   prompt (no motion): /joint_states 200 Hz, clean shutdown. franka.launch.py needs `robot_type:=fr3`.
   Controller commit e56a1c5 (real_robot_controllers.yaml) is local only: the push was blocked by a permission check;
   backup in patches/ (base f8d5fe2, no local `main` on this machine).
+- **First real measurement (probe pose, cold, `~/ci_mpc_runs/real/breakaway/probe_cold`, friction compensation none,
+  K 1500/1500/500/260/260/90, 3 repeats):** x 1.44 N (+1.68 / −1.19), y 0.79 (+0.94 / −0.65), z 1.11 (down 1.02),
+  rx 1.52 Nm, ry 0.61 Nm. Translational ~half of Isaac's (2.4 / 1.9 / 2.5 N), rotational about the same.
+  The arm settled 0.5–0.8 mm off x0 between ramps (≈ 1 N of spring preload on the next ramp).
+- **Home run aborted** (`home_cold`, after the goto, before the first ramp result): user reports oscillation; no
+  Franka reflex in launch.log, so the script's 5 mm / 0.03 m/s stop fired (message only on the terminal). Changes:
+  rotational K 260/260/90 → 130/130/45 (controller default, held fine near home at activation), watchdog on TCP
+  speed in every phase (was ramps only), raw 200 Hz log (`raw.npz`, also on abort), abort reason in the JSON,
+  session tees the output; each ramp now starts from the settled pose (spring force 0). Isaac with the changes
+  (`real_prep/sim_v3`): +x 2.45 / −x 2.48 N, +rx 1.67 / −rx 1.67 Nm: the single-direction "bias" in Isaac was the
+  spring preload, now gone.
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.

@@ -43,7 +43,7 @@ from sensor_msgs.msg import JointState
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 p.add_argument("--dirs", default="+x,-x,+y,-y,+z,-z", help="directions; rotations +rx,-rx,+ry,-ry also possible")
 p.add_argument("--repeats", type=int, default=3)
-p.add_argument("--stiffness", default="1500,1500,500,260,260,90", help="K during the ramp (the demo's contact K)")
+p.add_argument("--stiffness", default="1500,1500,500,130,130,45", help="K during the ramp (translational: the demo's contact K; rotational: the controller default; 260/260/90 oscillated at home on the real arm, 2026-10-27)")
 p.add_argument("--rate", type=float, default=0.5, help="force ramp [N/s] (Isaac used 1.0)")
 p.add_argument("--torque-rate", type=float, default=0.1, help="torque ramp [Nm/s] for rx / ry")
 p.add_argument("--move", type=float, default=0.1, help="breakaway threshold along the direction [mm]")
@@ -63,7 +63,7 @@ p.add_argument("--goto", default="", help="x,y,z [m]: before measuring, move the
                "(orientation kept) at --goto-speed, then measure at the reached pose. Isaac poses: home "
                "0.307,0,0.487; probe pose 0.5,0.1,0.28")
 p.add_argument("--goto-speed", type=float, default=0.015, help="--goto set-point speed [m/s]")
-p.add_argument("--goto-stiffness", default="1500,1500,1500,260,260,90", help="K during --goto")
+p.add_argument("--goto-stiffness", default="1500,1500,1500,130,130,45", help="K during --goto")
 p.add_argument("--goto-abort-mm", type=float, default=15.0, help="--goto: abort if the TCP lags the set-point this much")
 p.add_argument("--dry-run", action="store_true", help="read only, publish nothing")
 p.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
@@ -112,10 +112,23 @@ node.create_subscription(WrenchStamped, args.controller + "/external_wrench", on
 cmd_pub = node.create_publisher(MpcCommand, args.controller + "/mpc_command", qos_profile_sensor_data)
 
 
+watch = {"on": False, "aborting": False, "prev": None}
+
+
 def spin(seconds):
     t_end = time.monotonic() + seconds
     while time.monotonic() < t_end:
         rclpy.spin_once(node, timeout_sec=0.002)
+        # watchdog in every phase (hold, settle, ramp; goto has its own lag check): TCP speed
+        if watch["on"] and not watch["aborting"] and state["q"] is not None:
+            t, x = time.monotonic(), fk(state["q"]).translation
+            if watch["prev"] is not None and t - watch["prev"][0] >= 0.01:
+                v = float(np.linalg.norm(x - watch["prev"][1]) / (t - watch["prev"][0]))
+                watch["prev"] = (t, x)
+                if v > args.abort_speed:
+                    abort(f"watchdog: TCP speed {v:.3f} m/s (oscillation?)")
+            elif watch["prev"] is None:
+                watch["prev"] = (t, x)
 
 
 def param(name):
@@ -156,20 +169,26 @@ if not args.yes and input(("move to --goto, then " if goal is not None else "")
     sys.exit("not confirmed")
 
 K = [float(v) for v in args.stiffness.split(",")]
-quat = pin.Quaternion(x0.rotation)
-cmd = {"ff": np.zeros(6), "p": x0.translation.copy(), "K": K}
+cmd = {"ff": np.zeros(6), "p": x0.translation.copy(), "q": pin.Quaternion(x0.rotation), "K": K}
+raw = []  # every published command with the measured pose: t, x(3), rot(3) [rad, vs x0 at start], p_cmd(3), ff(6), K(6)
+t_start = time.monotonic()
 
 
 def publish():
     m = MpcCommand()
     m.header.stamp = node.get_clock().now().to_msg()
     m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, cmd["p"])
-    m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat.x, quat.y, quat.z, quat.w
+    q = cmd["q"]
+    m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = q.x, q.y, q.z, q.w
     m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, cmd["ff"][:3])
     m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z = map(float, cmd["ff"][3:])
     m.stiffness = cmd["K"]
     m.integral_enabled = False
     cmd_pub.publish(m)
+    if state["q"] is not None:
+        x = fk(state["q"])
+        raw.append([time.monotonic() - t_start, *x.translation, *pin.log3(x.rotation @ R_start.T), *cmd["p"], *cmd["ff"],
+                    *cmd["K"]])
 
 
 node.create_timer(0.005, publish)
@@ -179,10 +198,16 @@ def rot_err(R):  # small-angle rotation of R relative to the start orientation, 
     return pin.log3(R @ x0.rotation.T)
 
 
+R_start = x0.rotation.copy()
+
+
 def abort(msg):
+    watch["aborting"] = True
     cmd["ff"] = np.zeros(6)
+    cmd["p"], cmd["q"] = fk(state["q"]).translation.copy(), pin.Quaternion(fk(state["q"]).rotation)  # hold where it is
     spin(0.5)
     print("ABORT: " + msg, flush=True)
+    out["abort"] = msg
     finish(2)
 
 
@@ -194,6 +219,8 @@ def finish(code):
         os.makedirs(args.out, exist_ok=True)
         json.dump(out, open(os.path.join(args.out, "breakaway.json"), "w"), indent=1)
         print(f"wrote {os.path.join(args.out, 'breakaway.json')}")
+        np.savez_compressed(os.path.join(args.out, "raw.npz"), raw=np.array(raw), x0=x0.translation, R_start=R_start,
+                            cols="t x y z rx ry rz px py pz fx fy fz tx ty tz kx ky kz krx kry krz")
     node.destroy_node()
     rclpy.shutdown()
     sys.exit(code)
@@ -217,7 +244,7 @@ def goto(target):
     spin(2.0)
     # measure from where the arm settled (spring force ~0 there), at the measurement stiffness
     x0 = fk(state["q"])
-    cmd["p"], cmd["K"] = x0.translation.copy(), K
+    cmd["p"], cmd["q"], cmd["K"] = x0.translation.copy(), pin.Quaternion(x0.rotation), K
     print(f"reached {np.round(x0.translation, 4).tolist()} m ({np.linalg.norm(x0.translation - target) * 1000:.1f} mm "
           f"from the goal)", flush=True)
 
@@ -228,8 +255,11 @@ jump = float(np.linalg.norm(fk(state["q"]).translation - x0.translation) * 1000)
 if jump > 2.0:
     abort(f"the arm moved {jump:.1f} mm when the hold started: the script's EE frame does not match the controller's "
           f"(--ee-profile = the Desk end-effector profile on the robot, empty in Isaac)")
+watch["on"] = True
 if goal is not None:
+    watch["on"] = False  # goto has its own lag check; the set-point itself moves
     goto(goal)
+    watch["on"], watch["prev"] = True, None
 AXES = {"x": 0, "y": 1, "z": 2, "rx": 3, "ry": 4}
 out.update({"x0": x0.translation.tolist(), "R0": x0.rotation.tolist(), "goto": args.goto, "stiffness": K,
             "rate": args.rate, "torque_rate": args.torque_rate, "move_mm": args.move, "move_mrad": args.move_rot,
@@ -249,6 +279,8 @@ for rep in range(args.repeats):
         drift = float(np.linalg.norm(xs.translation - x0.translation) * 1000)
         if drift > args.abort_mm:
             abort(f"start pose drifted {drift:.2f} mm")
+        # ramp from where the arm settled (friction keeps it ~0.5 mm off x0): spring force 0 at the start
+        cmd["p"], cmd["q"] = xs.translation.copy(), pin.Quaternion(xs.rotation)
         t0, x_prev, t_prev, trace, f_brk = time.monotonic(), xs.translation.copy(), time.monotonic(), [], None
         while True:
             spin(0.005)
@@ -273,6 +305,7 @@ for rep in range(args.repeats):
             if f > lim:
                 break
         cmd["ff"] = np.zeros(6)
+        cmd["p"], cmd["q"] = x0.translation.copy(), pin.Quaternion(x0.rotation)
         unit = "Nm" if rot else "N"
         out["runs"].append({"dir": name, "repeat": rep, "f_breakaway": f_brk, "start_drift_mm": drift, "trace": trace[::4]})
         print(f"  [{rep}] {name}: " + (f"{f_brk:.3f} {unit}" if f_brk is not None else f"none up to {lim} {unit}")

@@ -27,7 +27,7 @@ source /opt/ros/humble/setup.bash
 source ~/franka_ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 [ -d ~/.local/ros_numpy1 ] && export PYTHONPATH=~/.local/ros_numpy1:$PYTHONPATH
-BRK="python3 $HERE/c3_breakaway_real.py --ee-profile $EE_PROFILE"
+BRK="python3 -u $HERE/c3_breakaway_real.py --ee-profile $EE_PROFILE"
 
 ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"; exit 1; }
 [ "$(ulimit -r)" = 0 ] && echo "warning: no realtime priority (ulimit -r 0): sudo usermod -aG realtime $USER, log in again"
@@ -70,9 +70,9 @@ ros2 control list_controllers
 
 if [ "$MODE" = hold ]; then
   echo "--- 4. hold test (no force ramps)"
-  $BRK --repeats 0 --out "$LOG/hold" "$@"
+  $BRK --repeats 0 --out "$LOG/hold" "$@" 2>&1 | tee "$LOG/breakaway.out"
   read -r -p "arm holding; nudge test now if wanted. Enter to stop: " _
 else
   echo "--- 4. measurement"
-  $BRK "$@"
+  $BRK "$@" 2>&1 | tee "$LOG/breakaway.out"
 fi
