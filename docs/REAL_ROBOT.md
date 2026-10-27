@@ -52,10 +52,16 @@ Real actions block until done: wait for the result instead of the sim's fixed se
 Parameters for the C3 variant that worked best offline (true stiction in the C3 model + compensation feedforward:
 16/16, PROGRESS 2026-10-27 "C3 friction"): `--c3-arm-friction x,y,z,rx,ry` and `--c3-stiction-ff lateral,z`.
 Needs section 4 up to the hold test (controller active, `friction_compensation` set to what C3 will use).
-- [ ] Arm in free space at the probe pose (~10 mm above the hole block, peg in hand), enabling device in hand.
-- [ ] `python3 scripts/real/c3_breakaway_real.py --dry-run` (read only: pose, /joint_states rate, controller params).
-- [ ] `python3 scripts/real/c3_breakaway_real.py --out ~/ci_mpc_runs/real/breakaway/<name>` (default ±x, ±y, ±z,
-      3 repeats, 0.5 N/s up to 8 N, aborts at 5 mm / 0.03 m/s); then `--dirs +rx,-rx,+ry,-ry` (0.1 Nm/s up to 2 Nm).
+- No fixture needed: free space, hand mounted, no peg (a few grams; the ± pairs cancel the bias anyway).
+  Enabling device in hand.
+- [ ] `python3 scripts/real/c3_breakaway_real.py --dry-run --goto 0.5,0.1,0.28` (read only: pose, /joint_states rate,
+      controller params, planned move).
+- [ ] Two poses, both measured in Isaac: home (`--goto 0.307,0,0.487`) and Isaac's probe pose (`--goto 0.5,0.1,0.28`,
+      tip 10 mm above where the hole is in sim). `--goto` moves the set-point in a straight line at 15 mm/s,
+      orientation kept, aborts at 15 mm lag, refuses goals outside xy radius 0.25–0.75 m, z 0.15–0.7 m, > 0.5 m away.
+  `python3 scripts/real/c3_breakaway_real.py --goto 0.5,0.1,0.28 --dirs +x,-x,+y,-y,+z,-z,+rx,-rx,+ry,-ry
+  --out ~/ci_mpc_runs/real/breakaway/<name>` (3 repeats, 0.5 N/s up to 8 N, 0.1 Nm/s up to 2 Nm, aborts at
+  5 mm / 0.03 m/s; ~6 min per pose).
 - [ ] Repeat with the robot warm and at a second pose; per axis stiction = (f+ + f−)/2, bias = (f+ − f−)/2.
 - [ ] Check the printed suggestion offline before C3 runs on the robot: `c3_stall_diag.py` with the measured values
       as the plant and the suggested values in the model, sweep the feedforward ±1 step.

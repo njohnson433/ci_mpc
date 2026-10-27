@@ -15,6 +15,8 @@
 # controller holds the pose it is at (mpc_timeout), so killing this script is safe.
 #
 #   python3 c3_breakaway_real.py --dry-run            # read-only: pose, joint_states rate, controller params
+#   python3 c3_breakaway_real.py --goto 0.5,0.1,0.28 --out ...   # move there first (Isaac's probe pose, tip 10 mm
+#                                                       # above the hole), orientation kept, then measure
 #   python3 c3_breakaway_real.py --out ~/ci_mpc_runs/real/breakaway/r1
 import argparse
 import json
@@ -49,6 +51,12 @@ p.add_argument("--joint-states", default="/joint_states")
 p.add_argument("--controller", default="/cartesian_impedance_controller")
 p.add_argument("--urdf", default=os.path.expanduser("~/ci_mpc_assets/fr3.urdf"))
 p.add_argument("--out", default="", help="output dir (breakaway.json)")
+p.add_argument("--goto", default="", help="x,y,z [m]: before measuring, move the set-point there in a straight line "
+               "(orientation kept) at --goto-speed, then measure at the reached pose. Isaac poses: home "
+               "0.307,0,0.487; probe pose 0.5,0.1,0.28")
+p.add_argument("--goto-speed", type=float, default=0.015, help="--goto set-point speed [m/s]")
+p.add_argument("--goto-stiffness", default="1500,1500,1500,260,260,90", help="K during --goto")
+p.add_argument("--goto-abort-mm", type=float, default=15.0, help="--goto: abort if the TCP lags the set-point this much")
 p.add_argument("--dry-run", action="store_true", help="read only, publish nothing")
 p.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 args = p.parse_args()
@@ -110,25 +118,34 @@ print(f"joint_states {state['n'] - n0:.0f} Hz, TCP {np.round(x0.translation, 4).
       f"{os.path.basename(args.urdf)}), external wrench {np.round(state['wrench'], 2).tolist()}")
 for k, v in params.items():
     print(f"  {k}: {v}")
+goal = None
+if args.goto:
+    goal = np.array([float(v) for v in args.goto.split(",")])
+    r_xy, dist = float(np.hypot(*goal[:2])), float(np.linalg.norm(goal - x0.translation))
+    if len(goal) != 3 or not (0.25 <= r_xy <= 0.75 and 0.15 <= goal[2] <= 0.7 and dist <= 0.5):
+        sys.exit(f"--goto {args.goto} outside the allowed box (xy radius 0.25-0.75 m, z 0.15-0.7 m, at most 0.5 m away)")
+    print(f"goto {goal.tolist()}: {dist * 1000:.0f} mm in a straight line at {args.goto_speed * 1000:.0f} mm/s "
+          f"({dist / args.goto_speed:.0f} s), orientation kept")
 if args.dry_run:
     sys.exit(0)
-if not args.yes and input(f"ramp {args.dirs} x{args.repeats} up to {args.max_force} N at this pose, enabling device "
+if not args.yes and input(("move to --goto, then " if goal is not None else "")
+                          + f"ramp {args.dirs} x{args.repeats} up to {args.max_force} N at this pose, enabling device "
                           f"in hand? type 'go': ").strip() != "go":
     sys.exit("not confirmed")
 
 K = [float(v) for v in args.stiffness.split(",")]
 quat = pin.Quaternion(x0.rotation)
-cmd = {"ff": np.zeros(6)}
+cmd = {"ff": np.zeros(6), "p": x0.translation.copy(), "K": K}
 
 
 def publish():
     m = MpcCommand()
     m.header.stamp = node.get_clock().now().to_msg()
-    m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, x0.translation)
+    m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, cmd["p"])
     m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat.x, quat.y, quat.z, quat.w
     m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, cmd["ff"][:3])
     m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z = map(float, cmd["ff"][3:])
-    m.stiffness = K
+    m.stiffness = cmd["K"]
     m.integral_enabled = False
     cmd_pub.publish(m)
 
@@ -147,10 +164,7 @@ def abort(msg):
     finish(2)
 
 
-AXES = {"x": 0, "y": 1, "z": 2, "rx": 3, "ry": 4}
-out = {"x0": x0.translation.tolist(), "R0": x0.rotation.tolist(), "stiffness": K, "rate": args.rate,
-       "torque_rate": args.torque_rate, "move_mm": args.move, "move_mrad": args.move_rot, "controller": params,
-       "runs": []}
+out = {"runs": []}
 
 
 def finish(code):
@@ -161,6 +175,37 @@ def finish(code):
     node.destroy_node()
     rclpy.shutdown()
     sys.exit(code)
+
+
+def goto(target):
+    # straight-line set-point at --goto-speed; the arm follows on the impedance spring (integral off)
+    global x0
+    cmd["K"] = [float(v) for v in args.goto_stiffness.split(",")]
+    start, t0 = cmd["p"].copy(), time.monotonic()
+    T = float(np.linalg.norm(target - start)) / args.goto_speed
+    while True:
+        spin(0.005)
+        a = min((time.monotonic() - t0) / max(T, 1e-3), 1.0)
+        cmd["p"] = start + a * (target - start)
+        lag = float(np.linalg.norm(fk(state["q"]).translation - cmd["p"]) * 1000)
+        if lag > args.goto_abort_mm:
+            abort(f"goto: TCP {lag:.1f} mm from the set-point")
+        if a >= 1.0:
+            break
+    spin(2.0)
+    # measure from where the arm settled (spring force ~0 there), at the measurement stiffness
+    x0 = fk(state["q"])
+    cmd["p"], cmd["K"] = x0.translation.copy(), K
+    print(f"reached {np.round(x0.translation, 4).tolist()} m ({np.linalg.norm(x0.translation - target) * 1000:.1f} mm "
+          f"from the goal)", flush=True)
+
+
+if goal is not None:
+    goto(goal)
+AXES = {"x": 0, "y": 1, "z": 2, "rx": 3, "ry": 4}
+out.update({"x0": x0.translation.tolist(), "R0": x0.rotation.tolist(), "goto": args.goto, "stiffness": K,
+            "rate": args.rate, "torque_rate": args.torque_rate, "move_mm": args.move, "move_mrad": args.move_rot,
+            "controller": params})
 
 
 spin(args.settle)

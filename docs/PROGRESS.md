@@ -104,6 +104,12 @@ Read this before starting work (and before re-investigating something "new").
   `~/ci_mpc_runs/real_prep/sim_smoke`, `sim_rot`): x 2.26 N (bias +0.22), y 2.65 (+0.09), z 2.15 (+0.06);
   **rx 1.21 Nm, ry 0.55 Nm** (2 repeats within 0.03 Nm). The C3 model's rotational arm friction is 0.05 Nm:
   10–25× below Isaac at this pose. Check at the probe pose before reading much into it.
+- `--goto x,y,z` (user: no fixture at the robot, free space only, hand mounted): straight-line set-point move at
+  15 mm/s, orientation kept, then measure where it settled. Isaac (`~/ci_mpc_runs/real_prep/sim_goto`, home →
+  0.5, 0.1, 0.28, reached 0.8 mm off; 2 repeats): x 2.39 N, y 1.94, z 2.46 (down 2.65), rx 1.53 Nm, ry 0.57 Nm.
+  Per-direction values move with the settled state (+x 1.53 / 2.23, −x 3.14 / 2.68) but the pair sums do not
+  (4.67 / 4.90): use the symmetric stiction, not single directions. Abort path checked (`--goto-abort-mm 1` →
+  exit 2, feedforward 0, controller holds).
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
