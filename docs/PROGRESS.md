@@ -39,8 +39,11 @@ Read this before starting work (and before re-investigating something "new").
      hold U(0.5, 2) mm, settle U(0.2, 0.6) s; reuse the `Replay` class with sampled targets) → `probe_dataset.py`
      format → `train_probe_likelihood.py`, validated on held-out *pipeline* sweeps2.
 - **2026-10-27 (C3 in Isaac, after the move):** steps 1–2 below done. Translational stiction ~2 N (model z 3.5 too
-  high); feedforward 1.5 / 1.3 N deepens C3 (median 2.8 → 8.5 mm) but 2 / 13 phases finish (entry "C3 in Isaac").
-  Next: MF2 / MF repeat results; then rotational arm friction in the model (0.05 vs ~0.55–1.2 Nm measured).
+  high); near-full feedforward (MF2, 2.2 / 2.0 N) is best so far: 8 / 20 C3 phases finish (MF 1.5 / 1.3: 5 / 26);
+  rotational friction in the model: negative (entry "C3 in Isaac"). **Overnight run in progress**
+  (`~/ci_mpc_runs/c3_isaac/night`, `night.log`): MF2 / MF3 / lateral-ff gate / plain reference + the real-arm match
+  scene. Next: summarize per arm (pool repeats), decide MF2 vs MF3, C3 vs plain on contact time / force; explain the
+  0,0 stall at 3.9 mm (offline replay of its trace).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -127,8 +130,33 @@ Read this before starting work (and before re-investigating something "new").
 
   MF with estimate error ≤ 0.4 mm: 22.5 / 21.7 / 20.3 mm, but 0,0 (0.4 mm) stuck at 3.9 mm. The contact-time gain is
   within the one-repeat spread (d1/c3 52.6 s). Reading: compensation at 60–70 % of the stiction leaves the total push
-  just under breakaway in the stickiest direction; C3 does not finish alone. Running: MF2 (ff 2.2 / 2.0) and an MF
-  repeat (`d1_meas_ff2`, `d1_meas_ff_r2`).
+  just under breakaway in the stickiest direction; C3 does not finish alone.
+- **Repeats + next levers** (`d1_meas_ff_r2`, `d1_meas_ff2`, `d1_meas_ff2_r2`, `d1_meas_ff_rot`):
+
+  | arm | repeats | C3 phases ≥ 21.9 mm | C3 depth med per repeat | inserted | contact med per repeat |
+  |---|---|---|---|---|---|
+  | MF (ff 1.5 / 1.3) | 2 | 5 / 26 (19 %) | 8.5 / 15.3 mm | 20/20 | 47.5 / 47.0 s |
+  | **MF2 (ff 2.2 / 2.0)** | 2 | **8 / 20 (40 %)** | 16.7 / 12.1 mm | 19/20 | 39.7 / 43.2 s |
+  | MFR (MF + rot. friction 1.53 / 0.57 Nm in the model) | 1 | 1 / 10 | 11.9 mm | 9/10 | 49.6 s |
+
+  - Repeat noise is large (MF 8.5 vs 15.3 mm median depth on identical settings): one repeat does not separate arms.
+  - MF2 > MF: compensation near the full stiction. MF2's one failure (−5,0): C3 drove the peg to 9.5 mm from a 3 mm
+    estimate error, then the push timed out 11.2 mm short (bore jam; lateral ff in the bore is the suspect).
+  - **MFR negative:** the rotational friction in the model (correct value, 30× the default) does not help; 0,0 still
+    stops at 3.9 mm in every arm (unexplained; same depth since d1_trace).
+- **Real-arm match in Isaac:** `fr3_scene_realfric.usd` = `prepare_scene.py --params
+  ci_mpc_sysid/config/fr3_joint_params_sim_realfric.yaml` (joints 1–4 static/Coulomb ×0.5, wrist unchanged) **plus**
+  `ci_mpc_sim_gripper/config/isaac_pick_place_nofc.yaml` (`friction_compensation: none`, as `real_robot_controllers.yaml`).
+  Without the config change the velocity compensation (tuned to the full friction) drives the arm away (4–110 mm drift
+  between ramps). `--breakaway` (now also ±rx, ±ry: torque ramp 0.1 Nm/s, 1 mrad) symmetric / bias:
+  x 1.49 / −0.91, y 1.08 / +0.42, z 1.40 / −0.65 N, rx ≥ 1.55 Nm, ry 0.57 Nm; real FR3 (entry below) x 1.43, y 0.80,
+  z 1.25 N, rx 1.56, ry 0.61 Nm, bias ≈ −1.1 / −0.85 / −0.9 N. Matches except the y bias sign. Nominal scene rotation:
+  ry 0.54 / 0.54, rx +: none to 2 Nm / −: 0.88 Nm (src-54's tool: 1.53 / 0.57 symmetric).
+- **Overnight** (`~/ci_mpc_runs/c3_isaac/night/run_night.sh`, 18 D1 queue runs, 3 workers, domains 170–190): MF2 r3–r4,
+  MF3 (ff 2.9 / 2.7, one step above MF2) ×4, MF2 + `--c3-ff-lat-depth 5` ×3 (bore jam), plain probe ×3 (reference on
+  this machine), real-arm match: plain ×3 and `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` ×3.
+  Throughput: every run at RTF 0.26 with 2–3 instances + src-35's batched replay vs 0.70–0.83 alone (the machine is
+  saturated; ~13 min machine time per D1 queue run).
 - Fixed on the way: `segment()` waits for the planner's path/goal subscriptions (a path published before discovery
   is lost and the arm stays home: seen with two Isaac instances starting together). `queue_c3_isaac.sh`:
   `DOMAIN_BASE` env for parallel queues.

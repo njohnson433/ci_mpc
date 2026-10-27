@@ -167,6 +167,7 @@ p.add_argument("--breakaway", default="", help="instead of the contact phase: at
                "(+x,-x,+y,-y,-z) and report the force where the TCP starts to move = the arm's Cartesian stiction "
                "(C3 arm_friction); results in <log-dir>/breakaway.json")
 p.add_argument("--breakaway-rate", type=float, default=1.0, help="--breakaway: force ramp [N/s]")
+p.add_argument("--breakaway-torque-rate", type=float, default=0.1, help="--breakaway +rx..-ry: torque ramp [Nm/s]")
 p.add_argument("--breakaway-max", type=float, default=10.0, help="--breakaway: give up at this force [N]")
 p.add_argument("--breakaway-move", type=float, default=0.1, help="--breakaway: motion threshold along the direction [mm]")
 args = p.parse_args()
@@ -501,9 +502,13 @@ spin_sim(0.05)
 if args.breakaway:
     # Cartesian stiction of the arm: set-point held at the start pose, feedforward ramped along one direction until
     # the TCP has moved --breakaway-move; the spring is ~0 at breakaway, so the feedforward is the static friction
-    dirs = {"+x": (1, 0, 0), "-x": (-1, 0, 0), "+y": (0, 1, 0), "-y": (0, -1, 0), "+z": (0, 0, 1), "-z": (0, 0, -1)}
-    x0 = fk(state["q"]).translation.copy()
-    bk = {"p": x0.copy(), "ff": np.zeros(3)}
+    # rotations (+rx..-ry: torque about the TCP, base axes) use --breakaway-torque-rate and a 1 mrad threshold, as
+    # scripts/real/c3_breakaway_real.py; motion = rotation vector of R R_start^T along the axis
+    dirs = {"+x": (1, 0, 0), "-x": (-1, 0, 0), "+y": (0, 1, 0), "-y": (0, -1, 0), "+z": (0, 0, 1), "-z": (0, 0, -1),
+            "+rx": (1, 0, 0), "-rx": (-1, 0, 0), "+ry": (0, 1, 0), "-ry": (0, -1, 0)}
+    T0 = fk(state["q"])
+    x0 = T0.translation.copy()
+    bk = {"p": x0.copy(), "ff": np.zeros(3), "tq": np.zeros(3)}
 
     def command_breakaway():
         m = MpcCommand()
@@ -511,40 +516,47 @@ if args.breakaway:
         m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, bk["p"])
         m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat.x, quat.y, quat.z, quat.w
         m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, bk["ff"])
+        m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z = map(float, bk["tq"])
         m.stiffness = K_search
         m.integral_enabled = False
         cmd_pub.publish(m)
 
     timer = node.create_timer(0.005, command_breakaway)
-    out = {"x0": x0.tolist(), "stiffness": K_search[:3], "rate": args.breakaway_rate, "move_mm": args.breakaway_move,
-           "dirs": {}}
+    out = {"x0": x0.tolist(), "stiffness": K_search, "rate": args.breakaway_rate, "move_mm": args.breakaway_move,
+           "torque_rate": args.breakaway_torque_rate, "move_mrad": 1.0, "dirs": {}}
     for name in args.breakaway.split(","):
         d = np.array(dirs[name], float)
-        bk["ff"] = np.zeros(3)
+        rot = "r" in name
+        rate, thr, fmax = ((args.breakaway_torque_rate, 1e-3, 2.0) if rot else
+                           (args.breakaway_rate, args.breakaway_move / 1000, args.breakaway_max))
+        bk["ff"], bk["tq"] = np.zeros(3), np.zeros(3)
         bk["p"] = x0.copy()
         spin_sim(1.0)  # back to the start pose and settled
-        xs, t0, trace = fk(state["q"]).translation.copy(), state["t"], []
+        Ts, t0, trace = fk(state["q"]), state["t"], []
+        xs, Rs = Ts.translation.copy(), Ts.rotation.copy()
         f_brk = None
         while True:
             spin_sim(0.01)
-            f = args.breakaway_rate * (state["t"] - t0)
-            bk["ff"] = f * d
-            x = fk(state["q"]).translation
-            s = float(d @ (x - xs))
-            trace.append((state["t"] - t0, f, s * 1000, *((x - xs) * 1000)))
-            if s > args.breakaway_move / 1000:
+            f = rate * (state["t"] - t0)
+            bk["tq" if rot else "ff"] = f * d
+            T = fk(state["q"])
+            mv = pin.log3(T.rotation @ Rs.T) if rot else T.translation - xs
+            s = float(d @ mv)
+            trace.append((state["t"] - t0, f, s * 1000, *(mv * 1000)))
+            if s > thr:
                 f_brk = f
                 break
-            if f > args.breakaway_max:
+            if f > fmax:
                 break
-        bk["ff"] = np.zeros(3)
-        side = float(np.linalg.norm((x - xs) - s * d) * 1000)
+        bk["ff"], bk["tq"] = np.zeros(3), np.zeros(3)
+        side = float(np.linalg.norm(mv - s * d) * 1000)
+        unit, mu = ("Nm", "mrad") if rot else ("N", "mm")
         out["dirs"][name] = {"f_breakaway": f_brk, "start_drift_mm": float(np.linalg.norm(xs - x0) * 1000),
-                             "off_axis_mm": side, "trace": trace[::5]}
-        print(f"  breakaway {name}: " + (f"{f_brk:.2f} N" if f_brk is not None else f"none up to {args.breakaway_max} N")
-              + f" (moved {s * 1000:.2f} mm along, {side:.2f} mm off-axis; start {np.linalg.norm(xs - x0) * 1000:.2f} mm "
+                             "off_axis": side, "trace": trace[::5]}
+        print(f"  breakaway {name}: " + (f"{f_brk:.2f} {unit}" if f_brk is not None else f"none up to {fmax} {unit}")
+              + f" (moved {s * 1000:.2f} {mu} along, {side:.2f} {mu} off-axis; start {np.linalg.norm(xs - x0) * 1000:.2f} mm "
               f"from x0)", flush=True)
-    bk["ff"] = np.zeros(3)
+    bk["ff"], bk["tq"] = np.zeros(3), np.zeros(3)
     spin_sim(0.5)
     json.dump(out, open(os.path.join(args.log_dir, "breakaway.json"), "w"))
     print("RESULT breakaway " + " ".join(f"{k} {v['f_breakaway']}" for k, v in out["dirs"].items()), flush=True)

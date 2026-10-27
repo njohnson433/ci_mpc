@@ -1,0 +1,47 @@
+# Isaac scene friction matched to the real FR3's Cartesian stiction (scripts/isaac/prepare_scene.py --params).
+source: 'fr3_joint_params_sim.yaml with joints 1-4 static/coulomb x0.5, joints 5-7 unchanged: Isaac''s Cartesian
+  stiction at the probe pose matched to the real FR3 (src-54 2026-10-27: x 1.43, y 0.80, z 1.25 N, rx 1.56, ry 0.61
+  Nm; Isaac nominal ~2.4/1.9/2.5 N, 1.53/0.57 Nm)'
+joints:
+  fr3_joint1:
+    static: 0.512706
+    coulomb: 0.512706
+    viscous: 1.18
+    offset: 0.0
+    armature: 0.60571
+  fr3_joint2:
+    static: 0.629957
+    coulomb: 0.629957
+    viscous: 0.0
+    offset: 0.0
+    armature: 0.60571
+  fr3_joint3:
+    static: 0.419007
+    coulomb: 0.419007
+    viscous: 0.55
+    offset: 0.0
+    armature: 0.46247
+  fr3_joint4:
+    static: 0.502607
+    coulomb: 0.48
+    viscous: 0.87
+    offset: 0.0
+    armature: 0.46247
+  fr3_joint5:
+    static: 1.2928
+    coulomb: 1.2928
+    viscous: 0.935
+    offset: 0.0
+    armature: 0.20554
+  fr3_joint6:
+    static: 0.41525
+    coulomb: 0.41525
+    viscous: 0.54
+    offset: 0.0
+    armature: 0.20554
+  fr3_joint7:
+    static: 0.5341655
+    coulomb: 0.5341655
+    viscous: 0.45
+    offset: 0.0
+    armature: 0.20554
