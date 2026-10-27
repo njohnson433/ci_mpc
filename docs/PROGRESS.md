@@ -44,9 +44,10 @@ Read this before starting work (and before re-investigating something "new").
   rotational friction in the model: negative (entry "C3 in Isaac"). Overnight result (entry "C3 overnight result"):
   MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
   (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). MF4 = MF3, so keep MF3. **MF3 + std gate 3 mm: 40/40, 20/20 phases deep, time = plain (25.1 vs 25.0 s), engaged
-  peak 7.5 vs 10.2 N.** Whether that force gain comes from C3 or from the c3-arm path is not yet attributed. Running
-  (until ~00:15): never-hand-over control, gate 2.5 / 3.5 mm, real-arm match + gate. Next: attribute the force gain,
-  then pick the gate.
+  peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. Of the 2.7 N force gain, ~1.6 N is C3 and ~1.1 N the c3-arm path
+  (never-hand-over control). Real-arm match: gated C3 30/30 but 9 s slower than plain, peak −0.6 N, so no gain.
+  Next (after the robot session): explain why the never-hand-over path pushes softer (centering on a sink?) and adopt
+  it in plain if it is free; real-arm C3 needs a speed fix (its phases are long) before it is worth trying on the robot.
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -163,8 +164,27 @@ Read this before starting work (and before re-investigating something "new").
   - **Caveat, not yet attributed:** inside the gated arm, the push peak is the same with and without a C3 phase
     (7.2 vs 7.4 N). The c3-arm push peak was also lower than plain on D1 before any C3 phase worked (8.1 vs 10.8 N).
     So part or all of the force gain may come from the c3-arm path (how it reaches the push), not from C3.
-- Running (21:46 →, `night/run_sweep.sh`, ends ~00:15): the never-hand-over control (`--c3-std-max 0`, the c3-arm
-  path without C3), gate ±1 step (2.5 / 3.5 mm), and the real-arm match + 3 mm gate.
+- Sweep + control (21:46–00:13, `night/run_sweep.sh`, 4 repeats; real-arm match 3):
+
+  | arm | inserted | contact mean / median | engaged peak median / p90 | C3 phases deep |
+  |---|---|---|---|---|
+  | plain | 30/30 | 31.5 / 25.0 s | 10.2 / 11.0 N | – |
+  | MF3, never hand over (`--c3-std-max 0`) | 40/40 | 36.3 / 28.4 s | 9.1 / 11.0 N | – |
+  | MF3 + gate 2.5 mm | 40/40 | 35.8 / 30.6 s | 7.5 / 10.3 N | 18/19 |
+  | **MF3 + gate 3 mm** | **40/40** | **30.9 / 25.1 s** | **7.5 / 9.9 N** | **20/20** |
+  | MF3 + gate 3.5 mm | 39/40 | 33.8 / 29.7 s | 8.0 / 10.5 N | 17/18 |
+  | real-arm match: plain | 30/30 | 20.7 / 16.0 s | 6.4 / 7.7 N | – |
+  | real-arm match: C3 + gate 3 mm | 30/30 | 24.1 / 24.9 s | 5.8 / 7.7 N | 9/10 |
+
+  - **Gate: 3 mm is the best of the three** on time (25 vs 30–31 s) at the same force, so it is not on a slope. The
+    time differences between gates (~5 s median) are close to repeat noise (MF2 repeats differed by more).
+  - **Force attribution (nominal):** the never-hand-over control takes 1.1 N off plain's 10.2 N, with no C3 phase. That
+    part is the c3-arm path. A probable cause is the different centering on a sink: the gate falls through to centering
+    instead of pushing. The C3 phase takes off ~1.6 N more (9.1 → 7.5 N). Across all gated runs, the push after a C3 phase
+    peaks at 6.9–7.5 N vs 7.4–9.3 N without one. **So C3 does reduce force, by ~1.5 N (~15 %), at plain's time and success.**
+  - **Real-arm match: no gain.** C3 + gate is 30/30 but 9 s slower than plain (median 24.9 vs 16.0 s), and the peak
+    is only 0.6 N lower (p90 equal). With the real arm's lower friction, plain's push is already gentle (6.4 N).
+    For the real robot, plain stays the default. Gated C3 is safe (no failures) but brings no benefit there yet.
 
 ### 2026-10-27: vectorized step 4b: fidelity levers: joint friction reproduces the slip, but the batched breakaway matches; the batched arm stalls in the stiction band (`~/ci_mpc_runs/vec/step4b`)
 - 40-episode replays (`fidelity_probe_replay.py --max-episodes 40`), one lever each, sequential (the GPU is shared:
