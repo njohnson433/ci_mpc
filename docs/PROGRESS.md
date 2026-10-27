@@ -63,6 +63,21 @@ Read this before starting work (and before re-investigating something "new").
   a recommended peg command. Run IDs stay in this log. Fixed on the way: the model path is
   `ci_mpc_planner/models/...` (the old README said `models/...`).
 
+### 2026-10-27: vectorized step 2: per-env episode randomization (`~/ci_mpc_runs/vec/step2`)
+- `factory_fr3.TASK_CI` (cfg `FactoryFR3CiCfg`, `RAND`): per env and episode, the ranges of `collect_probes.sh`:
+  hole estimate error |e| U(0, 5 mm), contact friction (peg, hole) U(0.5, 1.0), hole tilt U(0, 1.5 deg) about its x
+  in 1/3 of the episodes, grasp offset dx / dz U(-1, 1 mm), torque-sensor noise U(0.02, 0.12) Nm, per-joint offsets
+  U(-0.3, 0.3) Nm, observer gain U(20, 40); joint friction scale U(lo, hi) (off by default). Our grasp (TCP 10 mm
+  below the peg top + offset) replaces Factory's in-hand noise; `ci_hole_top()` / `ci_hole_estimate()` give the true
+  opening and what the strategy is told.
+- `scripts/isaac/test_ci_rand.py` (64 envs) reads every parameter back from the sim: friction, tilt (20/64 tilted,
+  0.0004 deg), joint friction (scale 0.7-1.3 in the test), sensor model, hole error all exact; grasp offset as the
+  peg's pose in the TCP frame: depth 0.0003 mm, across 0.11 mm (corr 1.0 / 0.997), new values on every reset; a 2 s
+  press (K_z 500) stays stable (no NaN).
+- Bug found: Factory starts the hand 47 +- 10 mm above the opening, sized for its grasp (peg 32 mm below the
+  fingertip frame); with ours (40 mm) a low start put the peg into the block at the grasp (2/64 dropped it, others
+  slipped up to 2.4 mm). Now 55 mm, no start noise (Factory's +-2 cm xy also pushed pegs off the block's side).
+
 ### 2026-10-27: vectorized step 1: our controller + observer batched in torch, validated (`~/ci_mpc_runs/vec/step1`)
 - `scripts/isaac/ci_ctrl_torch.py` (BatchedImpedance): line-by-line port of `CartesianImpedanceController::update`
   with `isaac_sim_controllers.yaml` (critically damped D from Λ, conditional integral, 18 N / 9 Nm / 2 Nm clamps,

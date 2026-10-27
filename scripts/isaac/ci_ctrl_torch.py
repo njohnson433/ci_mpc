@@ -29,8 +29,10 @@ class BatchedImpedance:
                  delta_tau_max=1.0, generator=None):
         f = dict(device=device, dtype=torch.float32)
         self.n, self.device, self.dt = num_envs, device, dt
-        self.obs_gain, self.noise, self.gen = observer_gain, torque_noise, generator
-        self.bias = torch.tensor(torque_bias, **f).repeat(num_envs, 1)  # per env, so it can be randomized
+        self.gen = generator
+        # sensor model and observer gain per env, so they can be randomized (step 2)
+        self.obs_gain, self.noise = torch.full((num_envs, 1), observer_gain, **f), torch.full((num_envs, 1), torque_noise, **f)
+        self.bias = torch.tensor(torque_bias, **f).repeat(num_envs, 1)
         self.wI, self.limI = torch.tensor(integrator_weights, **f), torch.tensor(integrator_limits, **f)
         self.winI, self.vwin = torch.tensor(integrator_windows, **f), integrator_velocity_window
         self.leak, self.off_leak = integrator_leak, integral_off_leak
@@ -64,8 +66,7 @@ class BatchedImpedance:
 
     def _observer(self, M, dq, coriolis, J, tau_meas):
         tau = tau_meas + self.bias
-        if self.noise > 0:
-            tau = tau + self.noise * torch.randn(tau.shape, device=self.device, generator=self.gen)
+        tau = tau + self.noise * torch.randn(tau.shape, device=self.device, generator=self.gen)
         p = (M @ dq.unsqueeze(-1)).squeeze(-1)
         new = ~self.obs_init
         if new.any():

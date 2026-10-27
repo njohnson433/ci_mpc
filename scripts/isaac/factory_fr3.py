@@ -11,6 +11,7 @@ TASK_CI: the same scene driven by our controller (ci_ctrl_torch.BatchedImpedance
 Factory's; the env's `ctrl` holds the per-env command (pos_d, rot_d, twist_d, F_ff, K, D_cmd, integral_enabled) and
 the wrench estimate (ctrl.F_ext); step() actions are ignored. Import registers both gym ids.
 """
+import math
 import os
 import re
 
@@ -116,6 +117,32 @@ class FactoryFR3PegInsertCfg(FactoryTaskPegInsertCfg):
         )
 
 
+@configclass
+class FactoryFR3CiCfg(FactoryFR3PegInsertCfg):
+    """TASK_CI scene: as our pipeline's peg scene, the hole height is known (Factory randomizes it +-5 cm) and the grasp
+    is ours (CiCtrlFactoryEnv.get_handheld_asset_relative_pose, offsets from RAND) instead of Factory's in-hand noise."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.task.fixed_asset_init_pos_noise = [0.05, 0.05, 0.0]
+        self.task.held_asset_pos_noise = [0.0, 0.0, 0.0]
+        # start with the TCP 55 mm above the opening (peg bottom 15 mm above; Factory: 47 +- 10 mm for its grasp 32 mm
+        # below the fingertip frame, which with ours put the peg into the block at the grasp: 2/64 dropped it) and no
+        # xy noise (Factory +-2 cm pushed pegs off the block's side; the xy error is the hole estimate's, RAND)
+        self.task.hand_init_pos = [0.0, 0.0, 0.055]
+        self.task.hand_init_pos_noise = [0.0, 0.0, 0.0]
+
+
+# Per-env episode randomization (ROADMAP 9 step 2), the ranges of scripts/collect_probes.sh: hole estimate error
+# |e| ~ U(0, 5 mm) (uniform angle), contact friction (peg, hole) U(0.5, 1.0), hole tilt U(0, 1.5 deg) about its x in a
+# third of the episodes, grasp offset dx (hand x, across the fingers) / dz (deeper +) U(-1, 1 mm), torque-sensor noise
+# U(0.02, 0.12) Nm, per-joint offsets U(-0.3, 0.3) Nm, observer gain U(20, 40); joint friction scale (static, Coulomb,
+# viscous) U(lo, hi), off by default (the identified values; the controller keeps compensating the nominal ones).
+RAND = dict(hole_err_mm=(0.0, 5.0), friction=(0.5, 1.0), tilt_deg=(0.0, 1.5), tilt_frac=1.0 / 3.0, grasp_mm=1.0,
+            noise=(0.02, 0.12), bias=0.3, gain=(20.0, 40.0), joint_friction_scale=(1.0, 1.0))
+GRASP_DEPTH = 0.010  # TCP below the peg top (peg_insert_demo.py --grasp-depth)
+
+
 class CiCtrlFactoryEnv(FactoryEnv):
     """Factory PegInsert (FR3) with our impedance controller + observer at the physics rate (like ros2_control at
     240 Hz). Factory's own controller still runs the reset (IK, grasp); our controller then starts from the current
@@ -136,7 +163,76 @@ class CiCtrlFactoryEnv(FactoryEnv):
         self.ci_dq_prev = None
         self.ci_active = False
         self.ctrl_arm = torch.tensor([p["armature"] for p in _joint_params().values()], device=self.device)
+        self.rand = dict(RAND)  # edit before env.reset() to change the ranges (degenerate range = fixed value)
+        self.rand_gen = torch.Generator(device=self.device).manual_seed(int(os.environ.get("CI_SEED", 0)))
+        self.ep = {}  # per-env parameters of the current episode (sample_episode)
+        self.sample_episode()
         self.ci_reset_ctrl()
+
+    def _u(self, lo, hi, *shape):
+        return lo + (hi - lo) * torch.rand((self.num_envs, *shape), device=self.device, generator=self.rand_gen)
+
+    def sample_episode(self):
+        r, N = self.rand, self.num_envs
+        m, a = self._u(*r["hole_err_mm"]), self._u(0.0, 2 * math.pi)
+        tilt = self._u(*r["tilt_deg"]) * (self._u(0.0, 1.0) < r["tilt_frac"])
+        self.ep = {"hole_err": 1e-3 * torch.stack((m * torch.cos(a), m * torch.sin(a)), 1),
+                   "friction": self._u(*r["friction"]), "tilt_deg": tilt,
+                   "grasp": 1e-3 * self._u(-r["grasp_mm"], r["grasp_mm"], 2),
+                   "noise": self._u(*r["noise"]), "bias": self._u(-r["bias"], r["bias"], 7), "gain": self._u(*r["gain"]),
+                   "joint_friction_scale": self._u(*r["joint_friction_scale"])}
+        assert all(v.shape[0] == N for v in self.ep.values())
+
+    def _apply_episode_physics(self):
+        """Contact friction of peg / hole and joint friction, per env (before the reset's grasp)."""
+        for asset in (self._held_asset, self._fixed_asset):
+            mat = wp.to_torch(asset.root_view.get_material_properties()).clone()
+            f = self.ep["friction"].to(mat.device)
+            mat[..., 0] = f[:, None]
+            mat[..., 1] = f[:, None]
+            ids = torch.arange(self.num_envs, dtype=torch.int32, device=mat.device)
+            asset.root_view.set_material_properties(wp.from_torch(mat.contiguous()), wp.from_torch(ids))
+        jp, s = _joint_params(), self.ep["joint_friction_scale"][:, None]
+        nominal = {k: torch.tensor([p[k] for p in jp.values()], device=self.device) for k in ("static", "coulomb", "viscous")}
+        self._robot.write_joint_friction_coefficient_to_sim_index(
+            joint_friction_coeff=s * nominal["static"], joint_dynamic_friction_coeff=s * nominal["coulomb"],
+            joint_viscous_friction_coeff=s * nominal["viscous"], joint_ids=list(range(7)))
+
+    def _apply_hole_tilt(self):
+        """Tilt the hole block about its x axis through the hole bottom (peg_scene.py: RotateX on the block)."""
+        pose = self._fixed_asset.data.root_pose_w.torch.clone() if hasattr(self._fixed_asset.data, "root_pose_w") else \
+            torch.cat((self._fixed_asset.data.root_pos_w.torch, self._fixed_asset.data.root_quat_w.torch), 1).clone()
+        t = torch.deg2rad(self.ep["tilt_deg"])
+        q_t = torch_utils.quat_from_euler_xyz(roll=t, pitch=torch.zeros_like(t), yaw=torch.zeros_like(t))
+        pose[:, 3:7] = torch_utils.quat_mul(pose[:, 3:7], q_t)
+        self._fixed_asset.write_root_pose_to_sim_index(root_pose=pose)
+        self._fixed_asset.write_root_velocity_to_sim_index(root_velocity=torch.zeros(self.num_envs, 6, device=self.device))
+        self._fixed_asset.reset()
+
+    def _apply_episode_sensor(self):
+        self.ctrl.noise[:, 0], self.ctrl.bias[:], self.ctrl.obs_gain[:, 0] = (
+            self.ep["noise"], self.ep["bias"], self.ep["gain"])
+
+    def get_handheld_asset_relative_pose(self):
+        """Our grasp (TCP GRASP_DEPTH below the peg top, + the episode's offset) instead of Factory's (fingertip frame
+        fingerpad length above ... ); TCP position in the peg frame (Factory's convention)."""
+        pos, quat = super().get_handheld_asset_relative_pose()
+        pos[:, 0] = self.ep["grasp"][:, 0]
+        pos[:, 2] = self.cfg_task.held_asset_cfg.height - GRASP_DEPTH - self.ep["grasp"][:, 1]
+        return pos, quat
+
+    def ci_hole_top(self):
+        """True hole opening centre (env frame) after the tilt: fixed origin + R [0, 0, height + base height]."""
+        fc = self.cfg_task.fixed_asset_cfg
+        local = torch.zeros(self.num_envs, 3, device=self.device)
+        local[:, 2] = fc.height + fc.base_height
+        return self.fixed_pos + torch_utils.quat_apply(self.fixed_quat, local)
+
+    def ci_hole_estimate(self):
+        """What the strategy is told (the detection): true opening + the episode's xy error."""
+        est = self.ci_hole_top().clone()
+        est[:, :2] += self.ep["hole_err"]
+        return est
 
     # Link-side joint torques (the FR3 torque sensors; Isaac's ros2_control effort state in our pipeline):
     #   "projected": PhysX get_dof_projected_joint_forces. In this env it is wrong on the proximal joints (known force
@@ -212,11 +308,16 @@ class CiCtrlFactoryEnv(FactoryEnv):
 
     def _reset_idx(self, env_ids):
         self.ci_active = False  # Factory's reset uses its own controller
+        self.sample_episode()
+        self._apply_episode_physics()
         super()._reset_idx(env_ids)
+        self._apply_hole_tilt()
+        self.step_sim_no_action()
+        self._apply_episode_sensor()
         self.ci_reset_ctrl()
 
 
 gym.register(id=TASK, entry_point="isaaclab_tasks.contrib.factory.factory_env:FactoryEnv", disable_env_checker=True,
              kwargs={"env_cfg_entry_point": f"{__name__}:FactoryFR3PegInsertCfg"})
 gym.register(id=TASK_CI, entry_point=f"{__name__}:CiCtrlFactoryEnv", disable_env_checker=True,
-             kwargs={"env_cfg_entry_point": f"{__name__}:FactoryFR3PegInsertCfg"})
+             kwargs={"env_cfg_entry_point": f"{__name__}:FactoryFR3CiCfg"})

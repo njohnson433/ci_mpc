@@ -118,8 +118,9 @@ with a batched task-space impedance controller in torch.
       = FR3 TCP, 8.7 mm above the Panda's.)
       Factory's `compute_dof_torque` has the same structure as ours (Kp·e − Kd·v → Jᵀ, nullspace), so it is the
       starting point; add our twist / feedforward / friction compensation / 100 Nm/s rate limit.
-- [ ] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,
+- [x] 2. Per-env randomization: hole offset, friction, hole tilt, grasp offset, sensor noise / bias / gain,
       joint friction / armature (as `collect_probes.sh`, but per env).
+      (2026-10-27 done: `factory_fr3.RAND`, all values read back exactly by `test_ci_rand.py`; armature not randomized.)
 - [ ] 3. Batched probe strategy: belief grid as an (N × H) tensor, learned likelihood batched, probe / centering /
       push-to-bottom / jam recovery as per-env state machines.
 - [ ] 4. Fidelity check against the ros2_control pipeline: the same probe sequences in both, compare force and
