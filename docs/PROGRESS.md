@@ -41,10 +41,10 @@ Read this before starting work (and before re-investigating something "new").
      format → `train_probe_likelihood.py`, validated on held-out *pipeline* sweeps2.
 - **2026-10-27 (C3 in Isaac, after the move):** steps 1–2 below done. Translational stiction ~2 N (model z 3.5 too
   high); near-full feedforward (MF2, 2.2 / 2.0 N) is best so far: 8 / 20 C3 phases finish (MF 1.5 / 1.3: 5 / 26);
-  rotational friction in the model: negative (entry "C3 in Isaac"). **Overnight run in progress**
-  (`~/ci_mpc_runs/c3_isaac/night`, `night.log`): MF2 / MF3 / lateral-ff gate / plain reference + the real-arm match
-  scene. Next: summarize per arm (pool repeats), decide MF2 vs MF3, C3 vs plain on contact time / force; explain the
-  0,0 stall at 3.9 mm (offline replay of its trace).
+  rotational friction in the model: negative (entry "C3 in Isaac"). Overnight result (entry "C3 overnight result"):
+  MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
+  (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). Plain still wins (30/30, 25 vs 35 s). Running: MF4, then MF3 + std gate 3 mm.
+  Next: pick ff from MF3 vs MF4, judge the gate (deep %, contact time vs plain).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -109,6 +109,44 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27 (20:30): C3 overnight result: feedforward MF3 fixes the stiction stall, the handover estimate is now the limit; plain still wins (`~/ci_mpc_runs/c3_isaac/night`)
+- 18 D1 queue runs (`night/run_night.sh`, 3 workers, 16:38–20:14, no tracebacks), pooled with the earlier repeats
+  (`scripts/c3_night_cmp.py`). "Deep" = a C3 phase reached ≥ 21.9 mm.
+
+  | arm (scene) | reps | inserted | contact mean / median | engaged peak median / p90 | C3 phases deep |
+  |---|---|---|---|---|---|
+  | M: measured friction, no ff (nominal) | 1 | 10/10 | 44.4 / 43.8 s | 10.4 / 12.7 N | 0/11 |
+  | MF: ff 1.5 / 1.3 | 2 | 20/20 | 47.2 / 47.5 s | 9.3 / 11.3 N | 5/26 (19 %) |
+  | MF2: ff 2.2 / 2.0 | 4 | 36/40 | 45.5 / 38.1 s | 8.6 / 11.4 N | 17/38 (45 %) |
+  | **MF3: ff 2.9 / 2.7** | 4 | 35/40 | 40.5 / 35.3 s | 8.3 / 13.2 N | **25/42 (60 %)** |
+  | MF2, lateral ff only above 5 mm | 3 | 27/30 | 45.4 / 42.0 s | 8.7 / 11.1 N | 0/30 |
+  | **plain probe (nominal)** | 3 | **30/30** | **31.5 / 25.0 s** | 10.2 / 11.0 N | – |
+  | real-arm match: C3 (real friction + ff 1.4 / 1.25) | 3 | 28/30 | 38.6 / 39.0 s | 6.6 / 8.8 N | 13/33 (39 %) |
+  | **real-arm match: plain** | 3 | **30/30** | **20.7 / 16.0 s** | 6.4 / 7.7 N | – |
+
+- **Feedforward ladder is monotone so far** (19 → 45 → 60 % deep): at MF3 the applied ff (2.9 / 2.7 N) is above the
+  measured breakaway (x 2.3, y 1.85, z 2.2 N), so the commanded force no longer has to beat stiction. The **0,0 stall at
+  3.9 mm is gone at MF3**: 4/4 reach 24–25 mm (MF2: 1/4, the rest 5 mm). Lateral ff gated to the first 5 mm: 0/30 deep.
+  The lateral ff is needed in the bore too, so the stall is lateral stiction all the way down, not only at the chamfer.
+- **The remaining limit is the hole estimate at the handover, not friction** (MF2 + MF3, 80 phases):
+
+  | estimate error at handover | phases | deep | depth median |
+  |---|---|---|---|
+  | < 1 mm | 36 | 86 % | 24.2 mm |
+  | 1–2 mm | 20 | 55 % | 22.4 mm |
+  | 2–3 mm | 14 | 0 % | 10.3 mm |
+  | ≥ 3 mm | 10 | 0 % | 0.7 mm |
+
+  On the real-arm match it is the same (< 1 mm: 13/14; ≥ 1 mm: 0/19). All 11 failures (MF2 / MF3 / real C3) are at
+  −5,0 / −4,2 / 5,0. The handover came with an estimate 1.6–4.9 mm off (belief std 4–6 mm), the peg wedged in the bore at
+  7–11 mm, and push-to-bottom timed out. Belief std predicts it: std < 3 mm → 79 % deep (47 phases),
+  std ≥ 3 mm → 27 %.
+- **C3 vs plain: plain still wins** on success (30/30 vs 35/40) and time (median 25 vs 35 s nominal; 16 vs 39 s
+  real-arm match). The force gain is small: engaged median 8.3 vs 10.2 N nominal, none on the real match (6.6 vs 6.4 N).
+  Plain's peak is the push to the bottom, so even a working C3 phase removes only ~2 N. Not adopted; `--entry c3` stays off.
+- Running (20:15 →): MF4 (ff 3.6 / 3.4, one step above, to find the optimum), then MF3 + `--c3-std-max 0.003`
+  (`night/run_mf4.sh`, `run_gate.sh`; both end ~22:30, before the robot session).
 
 ### 2026-10-27: vectorized step 4b: fidelity levers: joint friction reproduces the slip, but the batched breakaway matches; the batched arm stalls in the stiction band (`~/ci_mpc_runs/vec/step4b`)
 - 40-episode replays (`fidelity_probe_replay.py --max-episodes 40`), one lever each, sequential (the GPU is shared:
