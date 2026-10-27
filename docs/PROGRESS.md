@@ -55,6 +55,30 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-27: 3D C3 handover in Isaac (D1): 10/10 but slower and no force gain, negative
+- `peg_insert_demo.py --entry c3` (879d625): on a tip sink, 3D C3+ on the belief estimate, goal 11 mm below the bottom
+  (`--c3-goal-below`), up to `--c3-steps` 150, one belief update per phase. `res.json` now has `phases` (name, start,
+  end, peak |F| of the observer estimate) and `peak_force_engaged_N` for every strategy. Planner install rebuilt with
+  `--symlink-install` (the stale 10-23 copy is gone; tests 13 passed + 1 xfail).
+- `scripts/queue_c3_isaac.sh`, D1 × 1 repeat, interleaved per offset, one Isaac instance (`~/ci_mpc_runs/c3_isaac/d1`):
+
+  | arm | inserted | contact mean / median | probes | engaged-phase peak median / p90 | push-phase peak median |
+  |---|---|---|---|---|---|
+  | plain probe + v3 (recommended) | 10/10 | **30.3 / 24.8 s** | 4.8 | centering 6.07 / 7.11 N | 10.81 N |
+  | + `--entry c3` | 10/10 | 52.6 / 52.9 s | 4.1 | C3 phases 6.04 / **12.41 N** | 8.08 N |
+
+  - 14 C3 phases (median 18.6 s, max 33.8 s): only 2 reached 24 mm; 7 stopped at 0.1–3.8 mm, 5 at 13–22 mm, and the
+    push-to-bottom heuristic finished. Violation 0.3–1.2 (offline 0.1–0.3), 100–600 ms per decision (offline ~80).
+  - Smoke test before (3,−2): the first handover came with the estimate 1.7 mm off and lost contact for ~24 s;
+    the second (0.4 mm off) inserted.
+- **Reading:** the offline gain (16/16 at 1.2–1.4 N) does not transfer. Likely causes, not yet separated: the hole
+  estimate at the sink is ~1 mm off (offline 0.6 mm already broke it), and model mismatch (arm stiction / grasp /
+  force estimate vs the quasi-static model; the high violation says the QP and the projection disagree on Isaac
+  states). The peak forces are dominated by the push to the bottom in both arms (~8–11 N) and centering phases are
+  ~6 N, so even a working C3 phase would have to beat ~6 N, not the offline heuristic's numbers.
+- Not adopted; `--entry c3` stays off by default. Possible next: gate the handover on belief std < 0.5 mm
+  (`--c3-std-max`), log the estimate error at handover, replay Isaac states offline to separate the two causes.
+
 ### 2026-10-27: 3D C3 stall at 18–21 mm solved offline: stiction trap + cost, fixed by a goal below the bottom
 - Tool: `scripts/c3_stall_diag.py` (setup of `peg_c3_3d_offline.py` + per-step trace: depth, tilt, active contacts by
   type, arm friction, violation; policies c3 / follow / press; `--set` C33Config overrides, `--goal-below`). Set: 16
