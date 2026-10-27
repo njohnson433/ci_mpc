@@ -1,8 +1,20 @@
+<div align="center">
+
 # CI-MPC on the Franka FR3
 
-Contact-implicit model predictive control (CI-MPC) for a Franka Research 3 arm. An MPC sends pose, twist and
-feedforward-wrench setpoints to a Cartesian impedance controller, which turns them into joint torques. Everything
-below was measured in **Isaac Sim 6.2 only**: the real robot has not been connected yet
+[![ROS 2 Humble](https://img.shields.io/badge/ROS_2-Humble-22314E?style=flat-square&logo=ros)](https://docs.ros.org/en/humble/)
+[![Isaac Sim 6.2](https://img.shields.io/badge/Isaac_Sim-6.2-76B900?style=flat-square&logo=nvidia)](https://developer.nvidia.com/isaac/sim)
+[![libfranka 0.21.3](https://img.shields.io/badge/libfranka-0.21.3-blue?style=flat-square)](https://github.com/frankaemika/libfranka)
+![Real robot: not tested](https://img.shields.io/badge/real_robot-not_tested-lightgrey?style=flat-square)
+
+Contact-implicit model predictive control for a Franka Research 3: developed in Isaac Sim first, then deployed on the real robot.
+
+[Status](#status) • [How it works](#how-it-works) • [Benchmarks](#benchmarks-and-terms) • [Getting started](#getting-started) • [Usage](#usage) • [Documentation](#documentation)
+
+</div>
+
+An MPC sends pose, twist and feedforward-wrench setpoints to a Cartesian impedance controller, which turns them into
+joint torques. Everything below was measured in **Isaac Sim 6.2 only**: the real robot has not been connected yet
 ([bring-up checklist](docs/REAL_ROBOT.md)).
 
 The current focus is peg-in-hole insertion when the hole position from perception is off by up to 5 mm. The robot

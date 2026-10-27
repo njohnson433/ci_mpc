@@ -45,7 +45,7 @@ imply generality beyond what was tested (one peg size, one friction value, N run
 ### 5. No filler
 - Banned words unless backed by a number in the same sentence: robust, realistic, comprehensive, seamless,
   powerful, efficient, state-of-the-art, cutting-edge, leverages, enables, simply, easily, significant(ly).
-- No badges (except real versions the reader needs), no nav bars, no emojis (✅/❌ included), no marketing
+- Keep the centered header (see Structure 1); outside it, no badges, nav bars or emojis (✅/❌ included), no marketing
   "Features" list, no "Key highlights", no closing summary paragraph.
 - One idea per sentence. Prefer a table when 3+ items share the same fields (task, metric, result, baseline,
   conditions).
@@ -68,7 +68,10 @@ dropping it from the README.
 
 Use this order. Drop a section only if it would be empty.
 
-1. **Title + 2–3 sentences:** what the system does, on which robot, current stage, sim or real.
+1. **Centered header (the user likes it, keep it):** `<div align="center">` with the title, shields.io badges for the
+   real versions (ROS 2, Isaac Sim, libfranka) and the real-robot status, a one-line tagline, and a `•`-separated nav
+   bar linking the main sections. Then 2–3 sentences below it: what the system does, on which robot, current stage,
+   sim or real.
 2. **Status table:** component | what it does | result (metric, n, conditions) | baseline | status. One row per
    component, best configuration only.
 3. **How it works:** architecture diagram (setpoint interface, rates), then one subsection per component following
