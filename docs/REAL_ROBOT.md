@@ -60,6 +60,11 @@ Needs section 4 up to the hold test (controller active, `friction_compensation` 
   start (the arm jumps toward the mismatched set-point). `--goto` stays in `fr3_hand_tcp` coordinates (Isaac's numbers).
 - [ ] `python3 scripts/real/c3_breakaway_real.py --ee-profile ... --dry-run --goto 0.5,0.1,0.28` (read only: pose, /joint_states rate,
       controller params, planned move).
+- **Session script** (run in your own terminal; asks before anything moves; Ctrl-C deactivates and stops all):
+  `scripts/real/c3_breakaway_session.sh hold [--goto x,y,z]` (bring-up hold test) and
+  `scripts/real/c3_breakaway_session.sh measure --goto ... --dirs ... --out ...`. It launches franka_bringup
+  (`robot_type:=fr3`, robot 192.168.1.200, ROS_DOMAIN_ID 61), checks read-only, activates the controller with
+  `cartesian_impedance_control/config/real_robot_controllers.yaml`, passes `--ee-profile` itself.
 - [ ] Two poses, both measured in Isaac: home (`--goto 0.307,0,0.487`) and Isaac's probe pose (`--goto 0.5,0.1,0.28`,
       tip 10 mm above where the hole is in sim). `--goto` moves the set-point in a straight line at 15 mm/s,
       orientation kept, aborts at 15 mm lag, refuses goals outside xy radius 0.25–0.75 m, z 0.15–0.7 m, > 0.5 m away.

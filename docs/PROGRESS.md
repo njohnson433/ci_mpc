@@ -149,6 +149,15 @@ Read this before starting work (and before re-investigating something "new").
   Isaac: matched frames → normal run (`sim_frameA`); profile vs Isaac's URDF controller → abort at 4.2 mm, before
   any ramp (`sim_frameB`). Side note: the mount makes the payload 0.88 kg vs 0.71 kg (hand + fingers) in our URDF;
   irrelevant on the robot (Franka's model uses the profile), relevant for the Isaac / Pinocchio model later.
+- **Robot connected (15:00):** FR3 at 192.168.1.200 (PC 192.168.1.145, enp3s0), ping 0.12 ms, 0 % loss over 200.
+  User added to the `realtime` group (rtprio 99). Kernel is not RT: libfranka examples refuse (kEnforce);
+  franka_hardware falls back to kIgnore itself. Read-only `readOnce` (scratch tool, kIgnore): server version 10,
+  Idle, no errors; Desk profile active (F_T_EE z 0.1119, yaw −45°, m_ee 0.88). **Pinocchio + profile vs Franka
+  O_T_EE: 0.001 mm, 1e-5 rad** (REAL_ROBOT.md step 3 passes). `scripts/real/c3_breakaway_session.sh` (bringup →
+  read-only check → [asks] activate → hold or measure; cleanup on exit) tested on the robot up to the activation
+  prompt (no motion): /joint_states 200 Hz, clean shutdown. franka.launch.py needs `robot_type:=fr3`.
+  Controller commit e56a1c5 (real_robot_controllers.yaml) is local only: the push was blocked by a permission check;
+  backup in patches/ (base f8d5fe2, no local `main` on this machine).
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
