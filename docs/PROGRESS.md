@@ -227,8 +227,10 @@ stuck dither, + learned v3 belief on H1 only (no jam recovery, yaw search or pus
 - `nightly_update.sh` stages only README.md / docs / patches (the blanket `git add -A` pushed WIP `--jam-recovery`
   code in 1606d5f). OSQP `polish=` → `polishing=`; pyflakes 12 → 3 (deliberate side-effect imports).
 - Baseline: planner tests 13 passed + 1 xfail (needs the workspace sourced: `test_translational_mpc` imports
-  ci_mpc_msgs). Open cleanup (deferred, `peg_insert_demo.py` is being edited by the gear session): drop the planar
-  `estimate` strategy and `--follow-force`; `command()` is a 549-line closure, 57 flags.
+  ci_mpc_msgs). `peg_insert_demo.py` pruned (2026-10-27): the planar `estimate` strategy, `--follow-force`,
+  `--lateral-stiction-ff` and `--force-debias` (negative: 2.5 mm worse) are gone (-51 lines). `--strategy c3`
+  (planar) stays until the planar line is decided. Isaac smoke test (D1, offset 2,1, probe + v3 belief):
+  inserted, 4 probes, 15.4 s contact. Still open: `command()` is a 549-line closure.
 
 ### 2026-10-26 (17:20): vectorized sim step 0 (Isaac Lab Factory PegInsert, one process) + gear fixes, first runs
 - **Step 0** (`scripts/isaac/bench_factory_vec.py`, random actions, 300 timed steps; 3 ros2_control Isaac

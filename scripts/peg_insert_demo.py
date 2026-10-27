@@ -85,10 +85,6 @@ p.add_argument("--centering-bound", type=float, default=0.0,
                help="probe: stop centering, and do not take a drop as 'in the hole', beyond this distance from the "
                     "estimate [m] (0 = off; hole errors are <= 5.4 mm; a misread push drove centering off the block "
                     "edge twice, B9 rep3 / A4 rep1 0,4)")
-p.add_argument("--force-debias", type=int, default=0,
-               help="learned belief: subtract the median lateral force of the last N flat probes of the run before "
-                    "the likelihood (0 = off; the estimate's lateral bias is ~constant within a run, ~0.6-0.9 N, vs a "
-                    "0.17 N chamfer signal, and the belief treats probes as independent: A4 rep1 0,4 drifted)")
 p.add_argument("--stuck-dither", type=float, default=0.0,
                help="probe: when the last 3 probes landed within 0.4 mm of each other, offset the next target by this "
                     "much in a random direction [m] (0 = off; A6 rep3 -5,0: the belief locked on at std 0 with the peg "
@@ -124,19 +120,14 @@ p.add_argument("--calib-touch", type=float, default=None,
 p.add_argument("--entry", default="follow", choices=["follow", "gpu"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
                     "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
-p.add_argument("--strategy", default="spiral", choices=["spiral", "estimate", "c3", "probe"],
-               help="contact phase: spiral search (hand-written); estimate = hole localization from contact "
-                    "(particle filter on the measured wrench) + straight down; c3 = localization + C3+ CI-MPC; "
-                    "probe = 3D hole belief (x and y) + information-driven probing + chamfer centering")
+p.add_argument("--strategy", default="spiral", choices=["spiral", "c3", "probe"],
+               help="contact phase: spiral search (hand-written); c3 = hole localization from contact (particle "
+                    "filter on the measured wrench) + planar C3+ CI-MPC; probe = 3D hole belief (x and y) + "
+                    "information-driven probing + chamfer centering")
 p.add_argument("--particles", type=int, default=30)
-p.add_argument("--follow-force", type=float, default=0.0,
-               help="[m/N per step] admittance along the measured lateral contact force (the round rim pushes the "
-                    "peg towards the hole axis); 0 = off")
-p.add_argument("--lateral-stiction-ff", type=float, default=2.0,
-               help="[N] feedforward along the measured lateral contact force when following it")
 p.add_argument("--stiction-ff", type=float, default=3.0,
-               help="[N] feedforward force along the descent that cancels the arm's static friction in z (estimate "
-                    "strategy; 3 N of spring alone did not move the arm in free space)")
+               help="[N] feedforward force along the descent that cancels the arm's static friction in z (3 N of "
+                    "spring alone did not move the arm in free space)")
 p.add_argument("--max-contact-force", type=float, default=4.0,
                help="[N] stop pressing further when the measured contact force exceeds this (the peg slid in the "
                     "fingers at 6-8 N)")
@@ -507,14 +498,7 @@ elif args.strategy == "probe":
         lik = mod.ProbeLikelihood(os.path.expanduser(args.belief_model), scale=args.belief_scale)
 
         def learned_update(x, force, b=belief):
-            tip, F = x[2] - b.g.tip_below_tcp, np.array(force, float)
-            if args.force_debias > 0:
-                hist = c.setdefault("lat_flat", [])
-                if hist:
-                    F[:2] -= np.median(np.array(hist[-args.force_debias:]), axis=0)
-                if tip > -3e-4:  # flat-face probe: its lateral reading is mostly estimate bias
-                    hist.append(np.array(force[:2], float))
-            b.logw += lik(b.h, x[:2], tip, F)
+            b.logw += lik(b.h, x[:2], x[2] - b.g.tip_below_tcp, np.array(force, float))
             b.logw -= b.logw.max()
 
         belief.update = learned_update
@@ -869,34 +853,7 @@ else:
         h, h_std = est.estimate()
         peg_model.hole_x = goal[0] = h
         t0w = time.perf_counter()
-        if args.strategy == "c3":
-            u, info = mpc.solve(xm, goal, u)
-        else:
-            u = u.copy()
-            following = args.follow_force > 0 and abs(wm[0]) > 0.3 and wm[1] > 1.0
-            if following:  # on the rim: follow its push towards the hole axis with a light normal force
-                c["follow_dir"] = np.sign(wm[0])
-            elif args.follow_force > 0 and c.get("follow_dir") and wm[1] > 1.0 and abs(wm[0]) <= 0.3:
-                following = True  # keep the direction while the lateral reading dips
-            if following:
-                u[0] += np.clip(args.follow_force * 3.0 * c["follow_dir"], -5e-4, 5e-4)
-                ff_x = args.lateral_stiction_ff * c["follow_dir"]
-            else:
-                if h_std < 0.001:  # steer by the estimator only once it is confident
-                    u[0] += np.clip(goal[0] - u[0], -5e-4, 5e-4)
-                ff_x = 0.0
-            # press at most 6 mm below the current TCP (3 N at k_z 500); limiting it relative to the goal at the hole
-            # bottom gave up to 15 N while the peg sat at the opening, and the peg slid up in the fingers (~6-8 N)
-            ff_z = -args.stiction_ff
-            if following:  # light normal force so the rim friction (mu * F_n) does not lock the sideways motion
-                u[1] = xm[1]
-                ff_z = -1.5
-            elif wm[1] < args.max_contact_force:
-                u[1] = max(u[1] - 5e-4, goal[1], xm[1] - 0.006)
-            else:  # pressing hard enough: hold the spring where the TCP is (peg must not slide in the fingers)
-                u[1] = max(u[1], xm[1] - 0.002)
-            u[2] = 0.0
-            c["ff"] = np.array([ff_x, 0.0, ff_z])
+        u, info = mpc.solve(xm, goal, u)
         solve_ms.append((time.perf_counter() - t0w) * 1000)
         c["u_cmd"] = to_world(u)
         x_prev = xm
