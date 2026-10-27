@@ -110,6 +110,11 @@ def on_js(msg):
     if all(n in msg.name for n in ARM):
         state["q"] = np.array([msg.position[msg.name.index(n)] for n in ARM])
         state["n"] += 1
+        # measured torques are never bit-identical on the real arm; after a reflex the state freezes (2026-10-27)
+        tau = tuple(msg.effort[msg.name.index(n)] for n in ARM) if len(msg.effort) == len(msg.name) else None
+        if tau is None or tau != state.get("tau"):
+            state["tau"], state["tau_t"] = tau, time.monotonic()
+        state["js_t"] = time.monotonic()
 
 
 def on_wrench(m):
@@ -134,6 +139,11 @@ def spin(seconds):
     while time.monotonic() < t_end:
         rclpy.spin_once(node, timeout_sec=0.002)
         # watchdog in every phase (hold, settle, ramp; goto has its own lag check): robot mode, TCP speed
+        if watch["on"] and not watch["aborting"] and state["mode"] is not None and (
+                time.monotonic() - state.get("tau_t", time.monotonic()) > 0.3
+                or time.monotonic() - state.get("js_t", time.monotonic()) > 0.3):
+            abort("robot state frozen / no /joint_states for 0.3 s: the robot stopped (reflex? see launch.log; "
+                  "communication_constraints_violation = the 1 kHz loop missed its deadline)")
         if watch["on"] and not watch["aborting"] and state["mode"] not in (None, 2):
             abort(f"robot left Move mode: {MODES.get(state['mode'], state['mode'])} (reflex: see launch.log; "
                   f"communication_constraints_violation = the 1 kHz loop missed its deadline)")

@@ -51,10 +51,20 @@ rclpy.init()
 node = Node("joint_id_runner")
 rows = []
 node.create_subscription(Float64MultiArray, f"/{args.controller}/log", lambda m: rows.append(list(m.data)), 1000)
-mode = {"m": None, "active": False}
+mode = {"m": None, "active": False, "tau": None, "tau_t": time.time()}
 if FrankaRobotState is not None:
     node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state",
                              lambda m: mode.__setitem__("m", m.robot_mode), 10)
+
+
+def on_js(msg):  # measured torques are never bit-identical on the real arm; after a reflex they freeze
+    tau = tuple(msg.effort)
+    if tau != mode["tau"]:
+        mode["tau"], mode["tau_t"] = tau, time.time()
+
+
+from sensor_msgs.msg import JointState  # noqa: E402
+node.create_subscription(JointState, "/joint_states", on_js, 100)
 
 cli = node.create_client(ListControllers, "/controller_manager/list_controllers")
 if not cli.wait_for_service(timeout_sec=300):
@@ -92,6 +102,10 @@ try:
         if rows:
             state = rows[-1][2]
             if state in (PHASE_DONE, PHASE_ABORT):
+                break
+            if mode["m"] is not None and time.time() - mode["tau_t"] > 0.3:  # real robot only (robot_state seen)
+                print("ABORT: robot state frozen for 0.3 s: the robot stopped (reflex? see launch.log)", flush=True)
+                state = PHASE_ABORT
                 break
             if mode["m"] == 2:
                 mode["active"] = True

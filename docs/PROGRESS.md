@@ -5,8 +5,20 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **2026-10-27 (real-robot C3 parameters):** `scripts/real/c3_breakaway_real.py` is ready and validated on Isaac;
-  run REAL_ROBOT.md 5b when the user connects the robot (after section 4 up to the hold test).
+- **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
+  Cartesian breakaway measured at the probe pose (cold): **C3 arm_friction 1.43, 0.80, 1.25 N, 1.56, 0.61 Nm**; offline
+  check recommends `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` (entries below). Open, in order:
+  1. **communication_constraints_violation reflexes** stopped both warm probe runs (also with SCHED_FIFO 98, while the
+     other sessions ran Isaac + MPC nodes: load 15, GPU 97 %). Before the next robot run: no sim jobs on the machine
+     (coordinate with the other sessions), user terminal `ulimit -r` = 99 (realtime group: log out/in once); if it
+     still happens: RT kernel (REAL_ROBOT.md 2).
+  2. Warm repeat: `scripts/real/c3_breakaway_session.sh probe`.
+  3. Joint identification: `scripts/real/joint_id_session.sh test`, then `home`, `probe`, `side` (validated in Isaac,
+     never run on the robot); then predict the Cartesian breakaway from the joint values (J^T) and compare with the
+     breakaway runs.
+  4. The frozen-state abort (measured torques bit-identical / no /joint_states for 0.3 s after a reflex) is untested on
+     the robot: check it does not fire falsely in the first run.
+  Controller commit e56a1c5 (real_robot_controllers.yaml) is not pushed (blocked by a permission check).
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
   not yet re-measured here.
@@ -224,6 +236,11 @@ Read this before starting work (and before re-investigating something "new").
   scheduling", realtime group needs a new login) on top of the non-RT kernel. Fixes: both scripts abort when
   /franka_robot_state_broadcaster/robot_state leaves Move mode; both sessions send
   /action_server/error_recovery at the start and print reflexes from launch.log at the end; louder ulimit -r warning.
+- **Warm probe, second try** (`breakaway/probe_1610`, controller_manager now SCHED_FIFO 98): reflex again after ~36 s
+  (+z of rep 0), the robot_mode check did not fire (the state apparently stays at its last value). Valid before:
+  x 1.45 N, y 0.71 N, +z 1.35 N (same as cold). Machine load at the time: other sessions' Isaac + MPC nodes (load 15,
+  GPU 97 % / 10 GB): likely latency source on the non-RT kernel. Added: abort when the measured joint torques are
+  bit-identical or /joint_states is silent for 0.3 s (both robot scripts; real robot only).
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
