@@ -30,7 +30,7 @@ otherwise you have to fix those paths first (`grep -rn /home/njohnson`).
 4. **Copy the data that is not in git** (≈ 1.2 GB) to a drive or straight to the new machine:
    ```bash
    rsync -a --info=progress2 ~/ci_mpc_assets ~/ci_mpc_runs ~/isaac_ros.sh NEWHOST:~/
-   rsync -a ~/.claude/CLAUDE.md NEWHOST:~/.claude/
+   rsync -a ~/.claude/CLAUDE.md ~/.claude/settings.json NEWHOST:~/.claude/   # settings: push rule for the controller branch
    rsync -a ~/.claude/projects/-home-njohnson-franka-ros2-ws-src/memory NEWHOST:~/.claude/projects/-home-njohnson-franka-ros2-ws-src/
    ```
 

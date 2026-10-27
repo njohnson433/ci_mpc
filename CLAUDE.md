@@ -11,7 +11,8 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
   bugs found) and update "Where to resume". Tick boxes in `docs/ROADMAP.md`.
 - Controller code lives in `../cartesian_impedance_control` (branch `isaac-sim-pinocchio`, pushed to
   `LucasG2001/cartesian_impedance_control`; never merge into its `main`). After changing it: commit there, push the
-  branch (the user runs the push: auto mode blocks it), regenerate `patches/` (command in PROGRESS.md).
+  branch (`git -C ../cartesian_impedance_control push origin isaac-sim-pinocchio`; allowed by a rule in
+  `~/.claude/settings.json`), regenerate `patches/` (command in PROGRESS.md).
 - Whenever writing or updating a README (incl. the nightly `scripts/nightly_update.sh` run), invoke the
   `create-readme` skill (`.claude/skills/create-readme`) and follow it.
 - Commit and push this repo when the user asks (they asked for regular backup commits on 2026-10-22).
