@@ -78,6 +78,10 @@ Validated against Isaac's ros2_control pipeline (home pose, PROGRESS 2026-10-27 
 
 ## 5. Identification and tests
 - [ ] `JointIdController`: one joint, small amplitude, warm robot; then all joints, 2–3 poses (SYSID.md).
+      Session script: `scripts/real/joint_id_session.sh test` (home, joint 7, ~2 min), then `home`, `probe`, `side`
+      (all 7 joints each, ~6–10 min) or `all`. Franka's move_to_start puts the arm at the joint configuration, then
+      JointIdController with `ci_mpc_sysid/config/real_sysid.yaml` (±0.2 rad, ≤ 0.4 rad/s, ramps ≤ 3 Nm, sines
+      ≤ 0.5 rad/s), fit per pose → `~/ci_mpc_runs/real/joint_id/<pose>_<HHMM>/fitted.yaml`. No questions; Ctrl-C stops.
 - [ ] Fitted values → sim scene (`prepare_scene.py --params`) and controller.
 - [ ] Stage-1 MPC: `ros2 launch ci_mpc_planner mpc.launch.py config:=real` (v 0.1 m/s, a 0.5 m/s², small box,
       singularity stop σ 0.1), then the stage-1 tests; compare with sim.

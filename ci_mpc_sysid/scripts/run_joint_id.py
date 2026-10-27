@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # Runs the joint identification on a running Controller Manager (sim or real robot) and records
 # /joint_id_controller/log into an .npz file (array `log`, columns as in joint_id_controller.hpp).
-#   run_joint_id.py --out id.npz [--sync-dir DIR] [--timeout 3600]
+#   run_joint_id.py --out id.npz [--sync-dir DIR] [--timeout 3600] [--param-file real.yaml]
+# --param-file: load the controller with the spawner (type ci_mpc_sysid/JointIdController, these parameters) instead of
+#   expecting it in the Controller Manager config (real robot: franka_bringup's controllers.yaml does not list it);
+#   the controller is unloaded at the end so the next run can load it again.
 # --sync-dir: wait for <dir>/home_done before starting, write <dir>/done at exit (Isaac test runner).
 import argparse
 import os
@@ -21,6 +24,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--out", required=True)
 p.add_argument("--controller", default="joint_id_controller")
 p.add_argument("--sync-dir", default="")
+p.add_argument("--param-file", default="", help="spawn with this parameter file (see above)")
 p.add_argument("--timeout", type=float, default=3600.0, help="wall-clock seconds")
 args = p.parse_args()
 
@@ -51,7 +55,12 @@ if args.sync_dir:
     t_end = time.time() + 300
     while not os.path.exists(os.path.join(args.sync_dir, "home_done")) and time.time() < t_end:
         time.sleep(0.1)
-if not run(["ros2", "control", "load_controller", "--set-state", "active", args.controller]):
+if args.param_file:
+    ok = run(["ros2", "run", "controller_manager", "spawner", args.controller, "-c", "/controller_manager",
+              "-t", "ci_mpc_sysid/JointIdController", "--param-file", args.param_file])
+else:
+    ok = run(["ros2", "control", "load_controller", "--set-state", "active", args.controller])
+if not ok:
     finish(2)
 
 def save():
@@ -84,6 +93,8 @@ except BaseException:
     raise
 
 run(["ros2", "control", "set_controller_state", args.controller, "inactive"])
+if args.param_file:
+    run(["ros2", "control", "unload_controller", args.controller])
 save()
 status = {PHASE_DONE: "DONE", PHASE_ABORT: "ABORTED"}.get(state, "TIMEOUT")
 print(f"RESULT {status}", flush=True)

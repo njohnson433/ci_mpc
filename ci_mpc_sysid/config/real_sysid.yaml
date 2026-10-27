@@ -1,0 +1,26 @@
+# Real FR3 (franka_hardware, 1 kHz, gravity compensated by the robot) joint identification, conservative.
+# Used by ci_mpc/scripts/real/joint_id_session.sh (which overrides `joints` per run); see docs/SYSID.md.
+joint_id_controller:
+  ros__parameters:
+    arm_id: fr3
+    joints: [7]
+    experiments: [sweep, breakaway, sine]
+    velocities: [0.05, 0.1, 0.2, 0.4]      # Isaac: up to 0.8
+    sweep_amplitude: 0.2                   # rad around the activation pose (Isaac 0.25)
+    accel: 1.0                             # rad/s^2 (Isaac 2.0)
+    hold_kp: [600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0]   # = Franka's joint impedance example gains
+    hold_kd: [50.0, 50.0, 50.0, 50.0, 20.0, 15.0, 8.0]
+    test_kp: [600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0]
+    test_kd: [50.0, 50.0, 50.0, 50.0, 20.0, 15.0, 8.0]
+    tau_limit: [20.0, 20.0, 20.0, 20.0, 8.0, 8.0, 8.0]
+    breakaway_rate: 0.5                    # Nm/s
+    breakaway_max: 3.0                     # Nm
+    breakaway_pos_threshold: 0.003
+    breakaway_vel_threshold: 0.02
+    sine_freqs: [0.5, 1.0]
+    sine_amplitude: 0.15
+    sine_max_velocity: 0.5
+    sine_cycles: 4.0
+    settle_time: 1.0
+    max_excursion: 0.3                     # other joints (held)
+    max_velocity: 1.0

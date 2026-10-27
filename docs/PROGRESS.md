@@ -208,6 +208,15 @@ Read this before starting work (and before re-investigating something "new").
     src-f1's Isaac D1 (ff 2.2/2.0 5/12 vs ff 1.5/1.3 2–3/13). One-sample differences (15 vs 16 of 16) are noise.
   - **Recommendation for the real arm:** `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25`; fallback
     without ff. The bias was measured only at the probe pose and the plant is the quasi-static model.
+- **Joint identification session prepared** (user: are two Cartesian poses enough / what does SotA do → per-joint
+  identification, then predict the Cartesian breakaway via J^T and compare with the breakaway runs):
+  `scripts/real/joint_id_session.sh test|home|probe|side|all` (bringup → move_to_start to the joint configuration →
+  JointIdController → fit_joint_id.py; probe = IK of fr3_hand_tcp 0.5, 0.1, 0.28; side = 0.6, −0.4, 0, −2.4, 0, 2.0, π/4;
+  limit margins ≥ 0.68 rad), `ci_mpc_sysid/config/real_sysid.yaml` (conservative vs Isaac: ±0.2 rad, ≤ 0.4 rad/s,
+  accel 1, sines ≤ 0.5 rad/s, Franka's example gains), `run_joint_id.py --param-file` (spawner with the type;
+  unloads at the end). Isaac test (`NO_LAUNCH=1 JOINTS=7 ... probe`): pose reached within 0.014 rad; joint 7 fit vs
+  scene truth: static 0.550 / 0.534, Coulomb 0.531 / 0.534, viscous 0.459 / 0.450, armature 0.208 / 0.206.
+  Not run on the robot yet. Note: the real hand + camera mount is 0.88 kg vs 0.71 kg in the URDF (RNEA residual).
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.
