@@ -97,6 +97,9 @@ p.add_argument("--push-follow", type=float, default=0.0,
                help="push to the bottom: move the xy command along the lateral contact force by this gain [m/N] per "
                     "planning step (max 0.1 mm), centring the part on its shaft / hole (0 = off)")
 p.add_argument("--push-follow-deadband", type=float, default=0.7, help="push follow: ignore lateral forces below [N]")
+p.add_argument("--push-dither", type=float, default=0.0,
+               help="push to the bottom: circle the xy command with this radius [m] around the push start (0 = off)")
+p.add_argument("--push-dither-hz", type=float, default=1.0, help="push dither frequency [Hz]")
 p.add_argument("--yaw-search", type=float, default=0.0,
                help="push to the bottom: when it stalls / presses > --max-contact-force for 1 s, sweep the hand yaw up to "
                     "+-this many degrees for a drop (gear tooth on tooth, H2; 0 = off)")
@@ -713,6 +716,7 @@ elif args.strategy == "probe":
                                                      > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
             depth_hist, retries, anchor, yaw_tries = [], 0, None, 0
+            xy_push0, t_push0 = measure5()[:2], state["t"]
             for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)):
                 x, F = measure5(), force3(0.1)
                 uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
@@ -727,7 +731,13 @@ elif args.strategy == "probe":
                     if c["follow_n"] % 20 == 0:
                         print(f"      push follow: lateral force {np.round(f_lat, 2)} N, tip {tip_z(x) * 1000:+.2f} mm, "
                               f"xy cmd {np.round((x[:2] if anchor is None else anchor) * 1000, 2)} mm", flush=True)
-                cmd(x[:2] if anchor is None else anchor, uz, (0.0, 0.0, -args.stiction_ff))
+                xy_c = x[:2] if anchor is None else anchor
+                if args.push_dither > 0:
+                    # circle of radius push_dither around where the push started (or the follow / jam anchor): lets a
+                    # bore leaning on its shaft find the axis, where the gear teeth mesh (H2 stalls at the clearance)
+                    ph = 2.0 * np.pi * args.push_dither_hz * (state["t"] - t_push0)
+                    xy_c = (xy_push0 if anchor is None else anchor) + args.push_dither * np.array([np.cos(ph), np.sin(ph)])
+                cmd(xy_c, uz, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
                     break
@@ -743,7 +753,8 @@ elif args.strategy == "probe":
                     tip0, found = tip_z(measure5()), None
                     n = int(round(args.yaw_search / args.yaw_step))
                     for a in [k * sgn * args.yaw_step for k in range(1, n + 1) for sgn in (1, -1)]:
-                        c["yaw"] = np.radians(a)
+                        c["yaw"], tip_a = np.radians(a), tip_z(measure5())  # drop counted per step: the slow creep
+                        # over a whole sweep added up to a false "drop" (H2 yaw 1 deg)
                         for _ in range(max(1, int(round(args.yaw_dwell / dt)))):
                             x = measure5()
                             cmd(x[:2] if anchor is None else anchor, x[2] - 0.003, (0.0, 0.0, -args.stiction_ff))
@@ -753,7 +764,7 @@ elif args.strategy == "probe":
                         print(f"      yaw cmd {a:+.1f}: hand {np.degrees(np.arctan2(Rr[1, 0], Rr[0, 0])):+.2f} deg, "
                               f"object {gy:+.2f} deg (truth), tip {tip_z(measure5()) * 1000:+.2f} mm, "
                               f"Fz {force3(0.2)[2]:.1f} N", flush=True)
-                        if tip_z(measure5()) < tip0 - args.yaw_drop:
+                        if tip_z(measure5()) < tip_a - args.yaw_drop:
                             found = a
                             break
                     Rr = fk(state["q"]).rotation @ R.T

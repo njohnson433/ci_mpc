@@ -55,6 +55,19 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-27: gear round 3 (push dither 0.25 mm + per-step yaw drop check, `dev/yaw/r3`): 1/5, negative
+- Round-2 settings (`--yaw-search 9 --push-follow 2e-5`, release fix) + `--push-dither 0.00025` (1 Hz xy circle) and the
+  yaw-drop check per sweep step instead of against the sweep start.
+- yaw 1° (dwell 1 s): **1/3** (0.86 mm depth err, 21 s); the misses stall 5.2 / 3.6 mm short at xy 0.26–0.27 mm, the
+  same clearance-limited off-axis wedge as round 2 (0/3). The sweep found no drop in all 3 (hand yaw −7°, back to 0).
+- Nominal 0.77,−3.87 (tooth on tooth): run 1 dropped at −2° cmd, then stuck 9.8 mm short (tip −12.3 mm) for the rest
+  of the push, push-follow moving the anchor at 0.6–0.8 N lateral; run 2 never found the shaft (search failed after 22
+  probes, belief converged 6.8 mm off): a search failure, not a push one.
+- Mechanism: the dither radius (0.25 mm) is the bore clearance, so the circle drags the bore along the shaft wall instead
+  of onto the axis; the stall is still ~0.25 mm off-axis in every miss. Dither does not fix the H2 stall; kept off.
+- Next candidates (not run): compliance in xy during the push (low lateral K so the shaft centres the bore) instead
+  of commanding xy; a dither with 0.05–0.1 mm radius.
+
 ### 2026-10-26 (19:00): FR3 in the vectorized Factory env runs: 64 sim s / wall s at 240 Hz + contact (~50×)
 - `scripts/isaac/factory_fr3.py` (fr3.urdf via the URDF importer, Panda body names in a generated `fr3_factory.urdf`,
   identified friction / armature, FR3 limits). Bugs on the way, each with its symptom:
