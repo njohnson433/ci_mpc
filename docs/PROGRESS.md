@@ -5,6 +5,22 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-27 (vectorized sim, before the workstation move):** steps 1–3 done; **step 4 (fidelity) failed**:
+  batched sim vs the ros2_control sweeps agree on only 46 % of probe classes (58 % on the first 10 probes per
+  episode). Mechanisms found (entry "vectorized step 4"): the pipeline's grasp slips (logged flat tip drifts
+  −0.03 → −0.28 mm over 40 probes, −1.15 mm right after an in-hole probe; batched peg stays at 0.00), and the
+  pipeline presses ~2.3 N harder at the same command (5.07 vs 2.75 N flat; not the PhysX backend: CPU gives 2.74 N).
+  So step 5 (training on batched data) is **not started**. Next, in order:
+  1. Find the 2.3 N: log the pipeline's commanded vs measured TCP z during a hold (one sweep episode), compare with
+     `fidelity_probe_replay.py --max-episodes 1`; candidates: joint stiction holding the press preload, the press-loop
+     overshoot, the gripper (40 N force grasp vs batched PD 7500 / friction 0.1). `--joint-friction-scale 0` run was
+     started and stopped by the pause (not measured).
+  2. Model in-hand slip in `factory_fr3` (softer / force-limited grip, peg-finger friction) and rerun the full
+     replay (`fidelity_probe_replay.py --out ...`, ~25 min at N 120): target ≥ 80 % class agreement, flat Fz within
+     0.5 N, the tip drift over k reproduced.
+  3. Then step 5: batched random-probe collection (as `peg_insert_demo.py --collect`: r U(0, 9) or U(2, 6) mm,
+     hold U(0.5, 2) mm, settle U(0.2, 0.6) s; reuse the `Replay` class with sampled targets) → `probe_dataset.py`
+     format → `train_probe_likelihood.py`, validated on held-out *pipeline* sweeps2.
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -67,6 +83,43 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: vectorized step 4: fidelity vs the ros2_control pipeline FAILS (grasp slip, press force) (`~/ci_mpc_runs/vec/step4`)
+- `scripts/isaac/fidelity_probe_replay.py`: the 120 logged sweep episodes (sweeps + sweeps2, 4800 probes), one env
+  per episode with its params.json (hole error, contact friction, tilt, grasp offset, sensor model), the demo's
+  calibration touch, then the logged TCP positions with the logged hold depths / settle times
+  (`BatchedProbe.hold_depth` / `settle_steps` now per env; `CiCtrlFactoryEnv.ep_override` fixes the episode
+  parameters). Hole yaw / hand yaw noise 0 (pipeline geometry). ~25 min wall for N 120.
+- Result (`f1.npz`):
+
+  | metric | pipeline (logged) | batched |
+  |---|---|---|
+  | class agreement (flat / engaged / in hole) | – | **46 %** (58 % on probes 1–9) |
+  | flat Fz (tared) | 4.98 N | 2.79 N |
+  | flat lateral \|F\| median, probes > 6.5 mm from the hole | 0.92 N | 0.39 N |
+  | "engaged" on probes 9–20 mm from the hole (flat face) | 43 % | 8 % |
+  | sunk at r 0–1 / 1–2 / 2–3 mm (probes 1–9) | 0.99 / 0.81 / 0.17 | 0.92 / 0.64 / 0.23 |
+  | in hole at r 0–1 mm (probes 1–9) | 0.52 | 0.24 |
+  | flat tip difference (both flat) | – | +0.04 ± 0.29 mm |
+  | grasp-height calibration | +0.49 mm | −0.05 mm (corr 0.96, constant offset) |
+  | engaged lateral direction cos (median) | – | 0.35 |
+  | TCP xy reached vs logged (median) | – | 0.74 mm |
+
+- Sim geometry is right: in the batched sim engagement falls off cleanly with distance to the true hole (85 % < 2 mm,
+  7 % > 5.5 mm); the hole-offset sign alternatives do not fit.
+- **Mechanism 1, in-hand slip in the pipeline:** logged flat tips far from the hole drift with the probe index
+  (median −0.03 / −0.16 / −0.20 / −0.28 mm for k 1–10 / 10–20 / 20–30 / 30–40; share below −0.3 mm 1 % → 47 %);
+  a flat probe right after an in-hole probe reads −1.15 mm (n 15): the peg is pushed up into the fingers. Batched:
+  0.00 mm in every block (stiff PD gripper). Half the "engaged" disagreements are slip-shifted flat probes.
+- **Mechanism 2, press force:** flat Fz regressed on hold / settle: pipeline 3.17 + 0.75 N/mm·hold + 2.5 N/s·settle,
+  batched 1.93 + 0.56·hold + 0.32·settle. The impedance law predicts 3 N feedforward + 500 N/m · hold ≈ 3.6 N;
+  the pipeline sits 1.4 N above, batched 0.85 N below. Not the integrator (the demo sends integral_enabled false;
+  the observer trace shows a flat −6.2 N plateau within ~0.2 s, no ramp), not the observer (both validated on known
+  forces), **not the PhysX backend** (batched on CPU, 8 episodes: flat Fz 2.74 vs 4.86 N logged). Open; joint
+  stiction holding preload or the gripper are the candidates. The larger pipeline lateral readings are likely the
+  same effect.
+- Verdict: batched probe data is not a substitute for pipeline data yet; the learned likelihood (trained on pipeline
+  data) would see cleaner tips and ~half the force. Step 5 waits for the two fixes (Where to resume).
 
 ### 2026-10-27: C3 friction: the Isaac failure is underestimated stiction; true stiction + compensation fixes it offline
 - **Handover estimate error** (14 handovers of the ungated D1 run, from the probe lines): errors 1.3–3.2 mm → all

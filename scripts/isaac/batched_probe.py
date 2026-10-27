@@ -107,6 +107,8 @@ class BatchedProbe:
         self.z_bias = torch.zeros(N, **f)
         self.hover_xy, self.settle_xy = torch.zeros(N, 2, **f), torch.zeros(N, 2, **f)
         self.uz, self.hold_z = torch.zeros(N, **f), torch.zeros(N, **f)
+        self.hold_depth = torch.full((N,), 0.001, **f)  # touch: hold this far below the contact, for settle_steps
+        self.settle_steps = torch.full((N,), 3, dtype=torch.long, device=d)
         self.tare = torch.zeros(N, 3, **f)
         self.n_probes = torch.zeros(N, dtype=torch.long, device=d)
         self.probes = torch.zeros(N, self.max_probes + 2, 2, **f)
@@ -279,7 +281,7 @@ class BatchedProbe:
             if m.any():
                 F = self.force(0.1)
                 done = m & (((self.k > 0) & ((F[:, 2] > 1.0) | (self.tip(x) < -self.engage))) | (self.k >= 40))
-                self.hold_z[done] = x[done, 2] - 0.001
+                self.hold_z[done] = x[done, 2] - self.hold_depth[done]
                 self._go(done, HOLD)
                 pr = m & ~done
                 self.uz[pr] = torch.maximum(self.uz[pr] - 5e-4, x[pr, 2] - 0.006)
@@ -289,7 +291,7 @@ class BatchedProbe:
             # hold, then measure
             m = self.pending & (self.phase == HOLD)
             if m.any():
-                done = m & (self.k >= 3)
+                done = m & (self.k >= self.settle_steps)
                 if done.any():
                     self._after_measure(done, x, self.force(0.3))
                 hd = m & ~done

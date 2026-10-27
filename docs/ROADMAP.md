@@ -127,6 +127,9 @@ with a batched task-space impedance controller in torch.
       recovery, paired p = 0.0013; ~30 min per 1024 episodes.)
 - [ ] 4. Fidelity check against the ros2_control pipeline: the same probe sequences in both, compare force and
       tip-height distributions (and the momentum observer output) before trusting any batched data.
+      (2026-10-27: **fails**, 46 % probe-class agreement on 120 replayed sweep episodes: pipeline grasp slips
+      (tip drift −0.28 mm over 40 probes) and presses ~2.3 N harder at the same command (not the PhysX backend).
+      `fidelity_probe_replay.py`; fixes listed in PROGRESS "Where to resume".)
 - [ ] 5. Use: probe datasets at scale → likelihood retraining; on-policy rounds (closed loop with the learned belief);
       benchmarks with hundreds of offsets per arm; later RL / learned search. Final validation stays in the
       ros2_control pipeline (the code that runs on the FR3).

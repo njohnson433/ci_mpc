@@ -173,7 +173,12 @@ class CiCtrlFactoryEnv(FactoryEnv):
     def _u(self, lo, hi, *shape):
         return lo + (hi - lo) * torch.rand((self.num_envs, *shape), device=self.device, generator=self.rand_gen)
 
+    ep_override = None  # dict of per-env tensors (the keys of self.ep): fixed episode parameters instead of RAND
+
     def sample_episode(self):
+        if self.ep_override is not None:
+            self.ep = {k: v.clone().to(self.device) for k, v in self.ep_override.items()}
+            return
         r, N = self.rand, self.num_envs
         m, a = self._u(*r["hole_err_mm"]), self._u(0.0, 2 * math.pi)
         tilt = self._u(*r["tilt_deg"]) * (self._u(0.0, 1.0) < r["tilt_frac"])
