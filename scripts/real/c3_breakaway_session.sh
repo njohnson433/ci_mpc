@@ -1,10 +1,10 @@
 #!/bin/bash
 # Real FR3: one session for the C3 stiction measurement (ci_mpc/docs/REAL_ROBOT.md 5b). Run it in your own
-# terminal with the enabling device in hand; asks once ('go') before the controller is activated, then runs
-# through (goto + ramps). NOCONFIRM=1 skips that question too.
+# terminal with the enabling device in hand; runs straight through, no questions (CONFIRM=1: ask once before
+# the controller is activated).
 #   1. franka_bringup franka.launch.py (franka_hardware, no controller: the arm does not move)
 #   2. read-only check: pose, /joint_states rate, frame (c3_breakaway_real.py --dry-run)
-#   3. [asks once] activate cartesian_impedance_controller (config/real_robot_controllers.yaml): the arm holds its pose
+#   3. activate cartesian_impedance_controller (config/real_robot_controllers.yaml): the arm holds its pose
 #   4. hold:    hold test (+ optional --goto), no force ramps
 #      measure: c3_breakaway_real.py
 #   5. on exit (also Ctrl-C): deactivate the controller, stop the launch
@@ -64,7 +64,7 @@ echo "--- 2. read-only check"
 $BRK --dry-run "$@" || exit 1
 
 echo "--- 3. activate cartesian_impedance_controller: the arm holds its current pose (K 2500/2500/1000)"
-if [ -z "$NOCONFIRM" ]; then
+if [ -n "$CONFIRM" ]; then
   read -r -p "enabling device in hand, activate and run (${MODE}${*:+ $*})? type 'go': " ans
   [ "$ans" = go ] || exit 1
 fi
