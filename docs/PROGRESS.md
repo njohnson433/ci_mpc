@@ -170,6 +170,21 @@ Read this before starting work (and before re-investigating something "new").
   session tees the output; each ramp now starts from the settled pose (spring force 0). Isaac with the changes
   (`real_prep/sim_v3`): +x 2.45 / −x 2.48 N, +rx 1.67 / −rx 1.67 Nm: the single-direction "bias" in Isaac was the
   spring preload, now gone.
+- **Second real runs (`breakaway/home_1544`, `probe_1539`, rot K 130/130/45, ramps from the settled pose):** no buzz,
+  no aborts. But zeroing the spring was wrong for the real arm: the model / gravity bias (~1 N) then drifts the arm
+  by itself and one side of a pair reads ~0 N (home −z 0.027, +x 0.045, +ry 0.012 N(m); probe −y 0.05 N). In Isaac
+  (no model bias) zeroing removed a spurious bias; on the robot the spring at x0 is what holds the bias inside the
+  friction cone. Pair average = stiction only if both sides are > 0 (f± = s ∓ b); a clipped pair gives s ≤ f_big/2.
+  Spring zeroing is now opt-in (`--zero-spring`), default back to the set-point at x0.
+  Valid probe-pose estimates agree across both methods: x 1.44 / 1.42, z 1.11 / 1.38, rx 1.52 / 1.60, ry 0.61 / 0.61,
+  y 0.79 (first run; second clipped, ≤ 0.90). Model bias at the probe pose (second run): ≈ −1.1 N x, ≤ −0.85 N y,
+  −0.9 N z (the arm drifts toward −x, −y, down when the spring is zeroed). Home: y 1.68, rx 0.97 N(m) valid; x, z, ry
+  clipped (≤ 1.66 N, ≤ 1.8 N, ≤ 0.53 Nm).
+- **Real-arm C3 values (probe pose, cold, friction compensation none): arm_friction ≈ 1.43, 0.80, 1.25, 1.56,
+  0.61** (x, y, z [N], rx, ry [Nm]) vs C33Config 2.0, 2.0, 3.5, 0.05, 0.05: translational below the guess, rotational
+  30× above. Feedforward by the offline ratios: ≈ 0.75 lateral, 0.75 down. Offline check running:
+  `~/ci_mpc_runs/c3_stall/real_probe` (set16s offsets, plant = real values; model default / matched / matched + ff
+  0.5, 0.75, 1.0).
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.

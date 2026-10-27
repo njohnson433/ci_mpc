@@ -65,6 +65,10 @@ p.add_argument("--goto", default="", help="x,y,z [m]: before measuring, move the
 p.add_argument("--goto-speed", type=float, default=0.015, help="--goto set-point speed [m/s]")
 p.add_argument("--goto-stiffness", default="1500,1500,1500,130,130,45", help="K during --goto")
 p.add_argument("--goto-abort-mm", type=float, default=15.0, help="--goto: abort if the TCP lags the set-point this much")
+p.add_argument("--zero-spring", action="store_true",
+               help="start each ramp from the settled pose (spring force 0). Right for a bias-free model (Isaac); on the "
+                    "real arm the model / gravity bias (~1 N) then drifts the arm by itself in one direction and that "
+                    "side reads ~0 N (clipped pair); default: set-point stays at x0, the spring holds the bias")
 p.add_argument("--dry-run", action="store_true", help="read only, publish nothing")
 p.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 args = p.parse_args()
@@ -280,7 +284,8 @@ for rep in range(args.repeats):
         if drift > args.abort_mm:
             abort(f"start pose drifted {drift:.2f} mm")
         # ramp from where the arm settled (friction keeps it ~0.5 mm off x0): spring force 0 at the start
-        cmd["p"], cmd["q"] = xs.translation.copy(), pin.Quaternion(xs.rotation)
+        if args.zero_spring:
+            cmd["p"], cmd["q"] = xs.translation.copy(), pin.Quaternion(xs.rotation)
         t0, x_prev, t_prev, trace, f_brk = time.monotonic(), xs.translation.copy(), time.monotonic(), [], None
         while True:
             spin(0.005)
