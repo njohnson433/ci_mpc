@@ -26,6 +26,9 @@ Read this before starting work (and before re-investigating something "new").
   3. Then step 5: batched random-probe collection (as `peg_insert_demo.py --collect`: r U(0, 9) or U(2, 6) mm,
      hold U(0.5, 2) mm, settle U(0.2, 0.6) s; reuse the `Replay` class with sampled targets) → `probe_dataset.py`
      format → `train_probe_likelihood.py`, validated on held-out *pipeline* sweeps2.
+- **2026-10-27 (C3 in Isaac, after the move):** steps 1–2 below done. Translational stiction ~2 N (model z 3.5 too
+  high); feedforward 1.5 / 1.3 N deepens C3 (median 2.8 → 8.5 mm) but 2 / 13 phases finish (entry "C3 in Isaac").
+  Next: MF2 / MF repeat results; then rotational arm friction in the model (0.05 vs ~0.55–1.2 Nm measured).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -90,6 +93,33 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-27: C3 in Isaac: arm stiction ~2 N is not above the model; stiction feedforward deepens C3 but does not fix it (`~/ci_mpc_runs/c3_isaac/{breakaway,d1_meas,d1_meas_ff}`)
+- **Breakaway at the probe pose** (`peg_insert_demo.py --breakaway=-x,+x,...`, peg in hand, 10 mm above the opening,
+  K 1500/1500/500, ramp 1 N/s to 0.1 mm; `breakaway/rep_a`, 2 repeats each, within 0.01 N): −x 2.05, +x 2.60, −y 2.01,
+  +y 1.70, −z 2.08 / 2.30 N → symmetric x 2.33, y 1.85, z ~2.2 N (matches the real-tool smoke test below). C33Config
+  2 / 2 / 3.5 N is right laterally and **1.3 N too high in z**: "the model underestimates the translational stiction"
+  (entry "C3 friction") is wrong; the rotational one (0.05 vs 0.55–1.2 Nm, entry below) is the open candidate.
+- **What stalls C3** (d1_trace): commanded lateral spring force median 0.4–2.8 N, mostly ~1 N, below the ~2 N
+  breakaway, while the model's chamfer contact predicts motion. MF 0,0 trace: spring + feedforward 1.95 N in +x
+  (breakaway 2.6), z total −1.9 / −2.4 N alternating (≈ breakaway + 0.2 N contact), TCP 0.6 mm off the axis (> 0.51 mm
+  clearance), tilt 5.3 mrad, contact force 0.2–0.6 N (not jammed), violation 0.40 / 0.53 (2-cycle); 3.84 → 3.89 mm
+  in 150 steps.
+- **D1 queues** (new `--c3-arm-friction`, `--c3-stiction-ff lateral,z` in `peg_insert_demo.py`; 1 repeat each):
+
+  | arm | inserted | contact mean / med | C3 phases ≥ 21.9 mm | C3 depth med | C3 peak med / p90 |
+  |---|---|---|---|---|---|
+  | d1_trace (model 2/2/3.5, no ff) | 9/10 | 66.7 / 55.5 s | 1 / 12 | 2.8 mm | 3.84 / 7.08 N |
+  | M: model 2.2/1.9/2.2 | 10/10 | 44.4 / 43.8 s | 0 / 11 | 6.3 mm | 4.88 / 12.64 N |
+  | MF: M + ff 1.5 / 1.3 N | 10/10 | 44.5 / 47.5 s | 2 / 13 | 8.5 mm | 4.86 / 10.96 N |
+
+  MF with estimate error ≤ 0.4 mm: 22.5 / 21.7 / 20.3 mm, but 0,0 (0.4 mm) stuck at 3.9 mm. The contact-time gain is
+  within the one-repeat spread (d1/c3 52.6 s). Reading: compensation at 60–70 % of the stiction leaves the total push
+  just under breakaway in the stickiest direction; C3 does not finish alone. Running: MF2 (ff 2.2 / 2.0) and an MF
+  repeat (`d1_meas_ff2`, `d1_meas_ff_r2`).
+- Fixed on the way: `segment()` waits for the planner's path/goal subscriptions (a path published before discovery
+  is lost and the arm stays home: seen with two Isaac instances starting together). `queue_c3_isaac.sh`:
+  `DOMAIN_BASE` env for parallel queues.
 
 ### 2026-10-27: real-robot breakaway tool for the C3 stiction / feedforward parameters (robot not connected yet)
 - `scripts/real/c3_breakaway_real.py`: standalone ROS node (no sim clock, no MPC node) for the real FR3 via
