@@ -123,6 +123,15 @@ p.add_argument("--c3-goal-below", type=float, default=0.011,
 p.add_argument("--c3-std-max", type=float, default=float("inf"),
                help="probe --entry c3: hand over only when the belief std is below this [m]; otherwise center")
 p.add_argument("--c3-steps", type=int, default=150, help="probe --entry c3: max C3 decisions per engagement")
+p.add_argument("--c3-arm-friction", default="2.0,2.0,3.5,0.05,0.05",
+               help="probe --entry c3: arm stiction in the C3 model x,y,z [N], rx,ry [Nm] (C33Config default; Isaac's "
+                    "measured value: --breakaway)")
+p.add_argument("--c3-stiction-ff", default="0,0",
+               help="probe --entry c3: friction compensation lateral,z [N]: feedforward along the commanded lateral "
+                    "motion and down; the C3 model sees the arm friction reduced by it (offline: c3_stall_diag.py "
+                    "--stiction-ff 2,3 with the true stiction in the model: 16/16)")
+p.add_argument("--c3-ff-lat-depth", type=float, default=float("inf"),
+               help="probe --entry c3: lateral compensation only while the tip is less than this deep [mm]")
 p.add_argument("--entry", default="follow", choices=["follow", "gpu", "c3"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
                     "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
@@ -153,6 +162,13 @@ p.add_argument("--gpu-no-dual-rescale", action="store_true", help="--gpu-refine-
 p.add_argument("--open-width", type=float, default=0.03, help="gripper opening before the grasp [m] (gear: 0.05)")
 p.add_argument("--geo", default="", help="contact model geometry R,c,depth,a,pc [m] (default: the Factory 8 mm peg; "
                "gear on its shaft: 0.005,0.0005,0.020,0.00475,0.0001)")
+p.add_argument("--breakaway", default="", help="instead of the contact phase: at the pose above the hole (free space, "
+               "peg in hand, contact stiffness, set-point fixed) ramp the feedforward force along each listed direction "
+               "(+x,-x,+y,-y,-z) and report the force where the TCP starts to move = the arm's Cartesian stiction "
+               "(C3 arm_friction); results in <log-dir>/breakaway.json")
+p.add_argument("--breakaway-rate", type=float, default=1.0, help="--breakaway: force ramp [N/s]")
+p.add_argument("--breakaway-max", type=float, default=10.0, help="--breakaway: give up at this force [N]")
+p.add_argument("--breakaway-move", type=float, default=0.1, help="--breakaway: motion threshold along the direction [mm]")
 args = p.parse_args()
 
 PLACE = np.array([0.45, 0.12])
@@ -286,6 +302,9 @@ def wait_at(xyz, tol, timeout):
 def segment(label, poses, tol=1.5e-3, timeout=12.0):
     """Blended: one path through all poses (stop at the last). Stops: one goal pose after the other."""
     t0 = state["t"]
+    # the planner's subscriptions must be matched first: a path published before discovery is lost (volatile QoS) and
+    # the arm stays home (seen with two Isaac instances starting at once, 2026-10-27)
+    spin_until(lambda: path_pub.get_subscription_count() > 0 and goal_pub.get_subscription_count() > 0, 30)
     if args.mode == "blended":
         msg = PoseArray()
         msg.header.frame_id = "base"
@@ -479,6 +498,57 @@ def command():
 
 active_pub.publish(Bool(data=False))
 spin_sim(0.05)
+if args.breakaway:
+    # Cartesian stiction of the arm: set-point held at the start pose, feedforward ramped along one direction until
+    # the TCP has moved --breakaway-move; the spring is ~0 at breakaway, so the feedforward is the static friction
+    dirs = {"+x": (1, 0, 0), "-x": (-1, 0, 0), "+y": (0, 1, 0), "-y": (0, -1, 0), "+z": (0, 0, 1), "-z": (0, 0, -1)}
+    x0 = fk(state["q"]).translation.copy()
+    bk = {"p": x0.copy(), "ff": np.zeros(3)}
+
+    def command_breakaway():
+        m = MpcCommand()
+        m.header.stamp = node.get_clock().now().to_msg()
+        m.pose.position.x, m.pose.position.y, m.pose.position.z = map(float, bk["p"])
+        m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat.x, quat.y, quat.z, quat.w
+        m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, bk["ff"])
+        m.stiffness = K_search
+        m.integral_enabled = False
+        cmd_pub.publish(m)
+
+    timer = node.create_timer(0.005, command_breakaway)
+    out = {"x0": x0.tolist(), "stiffness": K_search[:3], "rate": args.breakaway_rate, "move_mm": args.breakaway_move,
+           "dirs": {}}
+    for name in args.breakaway.split(","):
+        d = np.array(dirs[name], float)
+        bk["ff"] = np.zeros(3)
+        bk["p"] = x0.copy()
+        spin_sim(1.0)  # back to the start pose and settled
+        xs, t0, trace = fk(state["q"]).translation.copy(), state["t"], []
+        f_brk = None
+        while True:
+            spin_sim(0.01)
+            f = args.breakaway_rate * (state["t"] - t0)
+            bk["ff"] = f * d
+            x = fk(state["q"]).translation
+            s = float(d @ (x - xs))
+            trace.append((state["t"] - t0, f, s * 1000, *((x - xs) * 1000)))
+            if s > args.breakaway_move / 1000:
+                f_brk = f
+                break
+            if f > args.breakaway_max:
+                break
+        bk["ff"] = np.zeros(3)
+        side = float(np.linalg.norm((x - xs) - s * d) * 1000)
+        out["dirs"][name] = {"f_breakaway": f_brk, "start_drift_mm": float(np.linalg.norm(xs - x0) * 1000),
+                             "off_axis_mm": side, "trace": trace[::5]}
+        print(f"  breakaway {name}: " + (f"{f_brk:.2f} N" if f_brk is not None else f"none up to {args.breakaway_max} N")
+              + f" (moved {s * 1000:.2f} mm along, {side:.2f} mm off-axis; start {np.linalg.norm(xs - x0) * 1000:.2f} mm "
+              f"from x0)", flush=True)
+    bk["ff"] = np.zeros(3)
+    spin_sim(0.5)
+    json.dump(out, open(os.path.join(args.log_dir, "breakaway.json"), "w"))
+    print("RESULT breakaway " + " ".join(f"{k} {v['f_breakaway']}" for k, v in out["dirs"].items()), flush=True)
+    finish(0)
 if args.strategy == "spiral":
     timer = node.create_timer(0.005, command)
     spin_until(lambda: c["phase"] in ("done", "failed") or state["t"] - c["t0"] > args.timeout_contact, 600)
@@ -575,6 +645,14 @@ elif args.strategy == "probe":
 
         c3_comp = 1.0 / np.array([K_search[0], K_search[1], K_search[2], K_search[3] / 2.0, K_search[4] / 2.0])
         c["c3_viol"] = []
+        c3_cfg = C33Config()
+        c3_cfg.arm_friction = np.array([float(v) for v in args.c3_arm_friction.split(",")])
+        c3_sff = np.array([float(v) for v in args.c3_stiction_ff.split(",")])
+        if c3_sff.any():  # the controller cancels part of the stiction: the model sees the rest (as c3_stall_diag.py)
+            c3_cfg.arm_friction = np.maximum(c3_cfg.arm_friction - np.array([c3_sff[0], c3_sff[0], c3_sff[1], 0.0, 0.0]),
+                                             0.3 * c3_cfg.arm_friction)
+        print(f"  C3 model arm friction {np.round(c3_cfg.arm_friction, 2).tolist()}, compensation {c3_sff.tolist()} N",
+              flush=True)
     z_hover = tip_below_tcp + 0.001
     tip_z = lambda x: x[2] - tip_below_tcp  # noqa: E731  (rigid grasp; the press is force-limited)
     probes, target, c["phase"] = [], np.zeros(2), "probe"
@@ -693,7 +771,7 @@ elif args.strategy == "probe":
             # sunk into the chamfer: 3D C3+ on the belief's hole estimate, down to the bottom (only a sink hands over:
             # flat-face pushes started GPU phases far from the hole, B4)
             mdl = PegHole3D(geo, hole_xy=est, n_ring=8, n_rim=12)
-            mpc = PegHoleC3_3D(mdl, c3_comp, C33Config())
+            mpc = PegHoleC3_3D(mdl, c3_comp, c3_cfg)
             goal = np.array([est[0], est[1], tip_below_tcp - geo.depth - args.c3_goal_below, 0.0, 0.0])
             u, t_a = measure5(), state["t"]
             est_err = float(np.linalg.norm(est - (-offset[:2])))
@@ -709,13 +787,21 @@ elif args.strategy == "probe":
                 u, info = mpc.solve(x, goal, u)
                 c["mpc_ms"].append((time.perf_counter() - t_s) * 1000)
                 c["c3_viol"].append(info.get("viol", np.nan))
+                ff = np.zeros(3)
+                if c3_sff.any():
+                    dl = u[:2] - x[:2]
+                    if np.linalg.norm(dl) > 5e-5 and -tip_z(x) * 1000 < args.c3_ff_lat_depth:
+                        ff[:2] = c3_sff[0] * dl / np.linalg.norm(dl)
+                    ff[2] = -c3_sff[1]
+                # trace columns: t, x(5), u(5), F(3), viol, ms, ff(3)
                 tr_c3["steps"].append([float(state["t"]), *x.tolist(), *u.tolist(), *force3(0.1).tolist(),
-                                       float(info.get("viol", np.nan)), c["mpc_ms"][-1]])
+                                       float(info.get("viol", np.nan)), c["mpc_ms"][-1], *ff.tolist()])
                 c["u_cmd"] = (np.array([O[0] + u[0], O[1] + u[1], O[2] + u[2] + c["z_bias"]]), rotxy(u[3], u[4]) @ R)
-                c["ff"] = np.zeros(3)
+                c["ff"] = ff
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
                     break
+            c["ff"] = np.zeros(3)
             c.setdefault("phases", []).append(("c3", t_a, state["t"]))
             tr_c3["depth_end"] = float(-tip_z(measure5()))
             belief.update(measure5(), force3(0.3))  # once per engagement, like a probe
