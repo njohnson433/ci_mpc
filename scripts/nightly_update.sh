@@ -34,11 +34,11 @@ PROMPT="Nightly documentation update for the ci_mpc repo (today is $TODAY). Do n
    for $TODAY exists already: 3-8 bullets on what was done today, with the concrete numbers, based on
    'git log --since=\"$TODAY 00:00\" --stat' and 'git diff HEAD --stat' and the existing PROGRESS.md entries of today.
    Be honest about negative results. Keep the style of the existing entries.
-2. Invoke the create-readme skill (Skill tool) and follow ALL of its steps for README.md, including fetching the
-   example READMEs it lists: the README's structure, tone and formatting must follow the skill, so restructure the
-   existing README where it does not (do not just patch table rows). Reflect today's work. Facts must stay true and
-   current; long per-experiment numbers belong in docs/ (PROGRESS.md, ROADMAP.md, ...): link there instead of
-   cramming them into the README, but do not lose any fact that is not already recorded in docs/.
+2. Invoke the create-readme skill (Skill tool) and follow ALL of its rules for README.md, including its final pass:
+   every number with its context (metric, set, n, baseline), every internal name defined or left out, mechanisms and
+   reasons instead of adjectives. Restructure the existing README where it does not follow the skill (do not just
+   patch table rows). Reflect today's work. Facts must stay true and current; per-experiment numbers belong in docs/:
+   link there. Before dropping a fact from the README, make sure it is recorded in docs/.
 Only edit README.md and docs/PROGRESS.md."
 claude -p "$PROMPT" --allowedTools "Skill,Read,Edit,Write,Glob,Grep,WebFetch,Bash(git log:*),Bash(git diff:*),Bash(git status:*),Bash(ls:*)" \
   --permission-mode acceptEdits < /dev/null || echo "claude run failed (committing the work anyway)"
