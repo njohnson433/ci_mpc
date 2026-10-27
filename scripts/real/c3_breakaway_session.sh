@@ -1,11 +1,12 @@
 #!/bin/bash
 # Real FR3: one session for the C3 stiction measurement (ci_mpc/docs/REAL_ROBOT.md 5b). Run it in your own
-# terminal with the enabling device in hand; every step that can move the arm asks first.
+# terminal with the enabling device in hand; asks once ('go') before the controller is activated, then runs
+# through (goto + ramps). NOCONFIRM=1 skips that question too.
 #   1. franka_bringup franka.launch.py (franka_hardware, no controller: the arm does not move)
 #   2. read-only check: pose, /joint_states rate, frame (c3_breakaway_real.py --dry-run)
-#   3. [asks] activate cartesian_impedance_controller (config/real_robot_controllers.yaml): the arm holds its pose
+#   3. [asks once] activate cartesian_impedance_controller (config/real_robot_controllers.yaml): the arm holds its pose
 #   4. hold:    hold test (+ optional --goto), no force ramps
-#      measure: c3_breakaway_real.py (asks again before moving)
+#      measure: c3_breakaway_real.py
 #   5. on exit (also Ctrl-C): deactivate the controller, stop the launch
 #
 # Usage: c3_breakaway_session.sh hold|measure [args for c3_breakaway_real.py]
@@ -28,6 +29,7 @@ source ~/franka_ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 [ -d ~/.local/ros_numpy1 ] && export PYTHONPATH=~/.local/ros_numpy1:$PYTHONPATH
 BRK="python3 -u $HERE/c3_breakaway_real.py --ee-profile $EE_PROFILE"
+BRK_GO="$BRK --yes"  # the session already asked
 
 ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"; exit 1; }
 [ "$(ulimit -r)" = 0 ] && echo "warning: no realtime priority (ulimit -r 0): sudo usermod -aG realtime $USER, log in again"
@@ -62,17 +64,19 @@ echo "--- 2. read-only check"
 $BRK --dry-run "$@" || exit 1
 
 echo "--- 3. activate cartesian_impedance_controller: the arm holds its current pose (K 2500/2500/1000)"
-read -r -p "enabling device in hand, activate? type 'go': " ans
-[ "$ans" = go ] || exit 1
+if [ -z "$NOCONFIRM" ]; then
+  read -r -p "enabling device in hand, activate and run (${MODE}${*:+ $*})? type 'go': " ans
+  [ "$ans" = go ] || exit 1
+fi
 ros2 run controller_manager spawner cartesian_impedance_controller -c /controller_manager --param-file "$PARAMS" \
   > "$LOG/spawner.log" 2>&1 || { echo "spawner failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
 ros2 control list_controllers
 
 if [ "$MODE" = hold ]; then
   echo "--- 4. hold test (no force ramps)"
-  $BRK --repeats 0 --out "$LOG/hold" "$@" 2>&1 | tee "$LOG/breakaway.out"
+  $BRK_GO --repeats 0 --out "$LOG/hold" "$@" 2>&1 | tee "$LOG/breakaway.out"
   read -r -p "arm holding; nudge test now if wanted. Enter to stop: " _
 else
   echo "--- 4. measurement"
-  $BRK "$@" 2>&1 | tee "$LOG/breakaway.out"
+  $BRK_GO "$@" 2>&1 | tee "$LOG/breakaway.out"
 fi
