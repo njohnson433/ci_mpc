@@ -52,10 +52,12 @@ cleanup() {
     for _ in $(seq 20); do kill -0 "$LAUNCH_PID" 2>/dev/null || break; sleep 0.5; done
     kill -KILL -- "-$LAUNCH_PID" 2>/dev/null
   fi
+  grep -h "aborted by reflex" "$LOG/launch.log" 2>/dev/null | head -2 | sed 's/^/REFLEX: /'
   echo "logs: $LOG"
 }
 trap cleanup EXIT INT TERM
 
+[ "$(ulimit -r)" = 0 ] && [ -z "$NO_LAUNCH" ] && echo "WARNING: no realtime priority (ulimit -r 0): log out and in again (realtime group), check: ulimit -r -> 99"
 if [ -z "$NO_LAUNCH" ]; then
   ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"; exit 1; }
   echo "--- franka_hardware on $ROBOT_IP (ROS_DOMAIN_ID $ROS_DOMAIN_ID), log $LOG/launch.log"
@@ -69,6 +71,10 @@ for i in $(seq 120); do
   sleep 1
 done
 grep -q joint_state_broadcaster "$LOG/controllers.txt" || { echo "controller manager not up"; exit 1; }
+
+echo "--- error recovery (clears a reflex from an earlier run; harmless otherwise)"
+timeout 20 ros2 action send_goal /action_server/error_recovery franka_msgs/action/ErrorRecovery "{}" > "$LOG/recovery.txt" 2>&1 \
+  || echo "error recovery did not answer (see $LOG/recovery.txt)"
 
 move_to() {  # $1 pose name: joint-space move with Franka's move_to_start controller, then release it
   cat > "$LOG/mts_$1.yaml" <<EOF

@@ -40,6 +40,12 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 
+try:  # real robot only: the robot's mode (a reflex stops the arm while joint_states keep coming)
+    from franka_msgs.msg import FrankaRobotState
+except ImportError:
+    FrankaRobotState = None
+MODES = {0: "other", 1: "idle", 2: "move", 3: "guiding", 4: "reflex", 5: "user stopped", 6: "automatic error recovery"}
+
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 p.add_argument("--dirs", default="+x,-x,+y,-y,+z,-z", help="directions; rotations +rx,-rx,+ry,-ry also possible")
 p.add_argument("--repeats", type=int, default=3)
@@ -113,6 +119,10 @@ def on_wrench(m):
 
 node.create_subscription(JointState, args.joint_states, on_js, qos_profile_sensor_data)
 node.create_subscription(WrenchStamped, args.controller + "/external_wrench", on_wrench, 10)
+state["mode"] = None
+if FrankaRobotState is not None:
+    node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state",
+                             lambda m: state.__setitem__("mode", m.robot_mode), 10)
 cmd_pub = node.create_publisher(MpcCommand, args.controller + "/mpc_command", qos_profile_sensor_data)
 
 
@@ -123,7 +133,10 @@ def spin(seconds):
     t_end = time.monotonic() + seconds
     while time.monotonic() < t_end:
         rclpy.spin_once(node, timeout_sec=0.002)
-        # watchdog in every phase (hold, settle, ramp; goto has its own lag check): TCP speed
+        # watchdog in every phase (hold, settle, ramp; goto has its own lag check): robot mode, TCP speed
+        if watch["on"] and not watch["aborting"] and state["mode"] not in (None, 2):
+            abort(f"robot left Move mode: {MODES.get(state['mode'], state['mode'])} (reflex: see launch.log; "
+                  f"communication_constraints_violation = the 1 kHz loop missed its deadline)")
         if watch["on"] and not watch["aborting"] and state["q"] is not None:
             t, x = time.monotonic(), fk(state["q"]).translation
             if watch["prev"] is not None and t - watch["prev"][0] >= 0.01:

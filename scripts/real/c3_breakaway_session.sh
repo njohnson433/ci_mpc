@@ -40,7 +40,8 @@ BRK="python3 -u $HERE/c3_breakaway_real.py --ee-profile $EE_PROFILE"
 BRK_GO="$BRK --yes"  # the session already asked
 
 ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"; exit 1; }
-[ "$(ulimit -r)" = 0 ] && echo "warning: no realtime priority (ulimit -r 0): sudo usermod -aG realtime $USER, log in again"
+[ "$(ulimit -r)" = 0 ] && echo "WARNING: no realtime priority (ulimit -r 0): the control loop runs at normal priority and the robot
+  may stop with communication_constraints_violation. Log out and in again (realtime group), check: ulimit -r -> 99"
 
 LAUNCH_PID=
 cleanup() {
@@ -52,6 +53,7 @@ cleanup() {
     for _ in $(seq 20); do kill -0 "$LAUNCH_PID" 2>/dev/null || break; sleep 0.5; done
     kill -KILL -- "-$LAUNCH_PID" 2>/dev/null
   fi
+  grep -h "aborted by reflex" "$LOG/launch.log" 2>/dev/null | head -2 | sed 's/^/REFLEX: /'
   echo "logs: $LOG"
 }
 trap cleanup EXIT INT TERM
@@ -67,6 +69,10 @@ for i in $(seq 60); do
 done
 grep -q joint_state_broadcaster "$LOG/controllers.txt" || { echo "controller manager not up after 60 s"; exit 1; }
 cat "$LOG/controllers.txt"
+
+echo "--- error recovery (clears a reflex from an earlier run; harmless otherwise)"
+timeout 20 ros2 action send_goal /action_server/error_recovery franka_msgs/action/ErrorRecovery "{}" > "$LOG/recovery.txt" 2>&1 \
+  || echo "error recovery did not answer (see $LOG/recovery.txt)"
 
 echo "--- 2. read-only check"
 $BRK --dry-run "$@" || exit 1

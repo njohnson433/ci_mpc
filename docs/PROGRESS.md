@@ -217,6 +217,13 @@ Read this before starting work (and before re-investigating something "new").
   unloads at the end). Isaac test (`NO_LAUNCH=1 JOINTS=7 ... probe`): pose reached within 0.014 rad; joint 7 fit vs
   scene truth: static 0.550 / 0.534, Coulomb 0.531 / 0.534, viscous 0.459 / 0.450, armature 0.208 / 0.206.
   Not run on the robot yet. Note: the real hand + camera mount is 0.88 kg vs 0.71 kg in the URDF (RNEA residual).
+- **Warm probe repeat broke** (`breakaway/probe_1552`): robot reflex `communication_constraints_violation` at the
+  first +z ramp (rep 0); the arm stopped but /joint_states kept coming, so the script ramped on and logged "none up to
+  8 N" for the other 26 ramps. Valid before the stop: x 1.44 N (+1.93 / −0.96), y 0.82 N (+1.01 / −0.64), same as
+  cold. Cause: the user's terminal had no realtime priority (controller_manager "Could not enable FIFO RT
+  scheduling", realtime group needs a new login) on top of the non-RT kernel. Fixes: both scripts abort when
+  /franka_robot_state_broadcaster/robot_state leaves Move mode; both sessions send
+  /action_server/error_recovery at the start and print reflexes from launch.log at the end; louder ulimit -r warning.
 - Earlier Isaac run at the probe pose (`~/ci_mpc_runs/c3_isaac/breakaway/fric`, peg in hand): +x 3.10, −x 1.56,
   ±y 1.75 / 1.83, −z 2.04 N (x stiction 2.33, bias 0.77). `nofric` is invalid: the lift hit the planner's
   singularity stop (TCP 154 mm off), so the arm was not at the pose and drifted up to 570 mm.

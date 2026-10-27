@@ -18,6 +18,11 @@ from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
 
+try:  # real robot only: a reflex stops the arm while the controller keeps logging
+    from franka_msgs.msg import FrankaRobotState
+except ImportError:
+    FrankaRobotState = None
+
 PHASE_DONE, PHASE_ABORT = 9, -1
 
 p = argparse.ArgumentParser()
@@ -46,6 +51,10 @@ rclpy.init()
 node = Node("joint_id_runner")
 rows = []
 node.create_subscription(Float64MultiArray, f"/{args.controller}/log", lambda m: rows.append(list(m.data)), 1000)
+mode = {"m": None, "active": False}
+if FrankaRobotState is not None:
+    node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state",
+                             lambda m: mode.__setitem__("m", m.robot_mode), 10)
 
 cli = node.create_client(ListControllers, "/controller_manager/list_controllers")
 if not cli.wait_for_service(timeout_sec=300):
@@ -83,6 +92,12 @@ try:
         if rows:
             state = rows[-1][2]
             if state in (PHASE_DONE, PHASE_ABORT):
+                break
+            if mode["m"] == 2:
+                mode["active"] = True
+            elif mode["active"] and mode["m"] is not None:  # was moving, now reflex / stopped
+                print(f"ABORT: robot left Move mode (mode {mode['m']}; reflex, see launch.log)", flush=True)
+                state = PHASE_ABORT
                 break
         if time.time() - last_report > 30 and rows:
             r = rows[-1]
