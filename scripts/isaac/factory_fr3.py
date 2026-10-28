@@ -36,7 +36,8 @@ TASK_CI = "CiMpc-Factory-PegInsert-FR3-CiCtrl-Direct"
 URDF = os.path.expanduser("~/ci_mpc_assets/fr3.urdf")
 URDF_FACTORY = os.path.expanduser("~/ci_mpc_assets/fr3_factory.urdf")
 HERE = os.path.dirname(os.path.abspath(__file__))
-PARAMS = os.path.join(HERE, "..", "..", "ci_mpc_sysid", "config", "fr3_joint_params_sim.yaml")
+# FR3_PARAMS: opt-in joint parameter file (e.g. fr3_joint_params_sim_real20261028.yaml), default = the nominal scene
+PARAMS = os.environ.get("FR3_PARAMS") or os.path.join(HERE, "..", "..", "ci_mpc_sysid", "config", "fr3_joint_params_sim.yaml")
 Q0 = (0.00871, -0.10368, -0.00794, -1.49139, -0.00083, 1.38774, 0.0)  # the stock task's start pose
 
 

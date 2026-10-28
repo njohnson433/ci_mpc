@@ -15,12 +15,11 @@ Read this before starting work (and before re-investigating something "new").
   held-out sim set before any default; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
   Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
 
-- **2026-10-28 15:30 PAUSED for the robot session (src-54), vectorized fidelity → v5.** Nothing of src-35 running.
+- **2026-10-28 17:28 RESUMED (robot session over), vectorized fidelity → v5;** queue `~/ci_mpc_runs/vec/step6/queue.sh`
+  (breakaway on the real-joint-ID scene, then the 512-env collection). Was paused 15:30 for the robot session. Nothing of src-35 running.
   Resume, one Isaac instance at a time (GPU was 99 % with src-f1's H3-100; 8-env runs reached RTF ~0.07):
-  1. Batched replay of the true-force validation set: `fidelity_probe_replay.py --sweeps ~/ci_mpc_runs/vec/step4d
-     --out ~/ci_mpc_runs/vec/step5/replay_val.npz` (the 15:26 run timed out at 218/320 probes after 1 h; no partial
-     save in the replay): compare its batched observer (sim_F) with `~/ci_mpc_runs/vec/step4d/holds_all.npz` (pipeline
-     true wrist force per hold, `hold_forces.py`) as distributions.
+  1. DONE 18:03 (entry "vectorized step 5a"): batched force matches the pipeline's true force (-0.3 N), but batched
+     engages 2-3x less off the hole.
   2. `batched_collect.py --envs 512 --seed 0 --out ~/ci_mpc_runs/vec/step5/collect_s0.npz` (saves every 200 steps;
      never ran: the 16-env smoke timed out at 549/640 probes, so the script itself is untested past the loop).
   3. Train v5 on it (`train_probe_likelihood.py`, v4 recipe), validate on held-out pipeline sweeps2 with true force,
@@ -153,6 +152,31 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-28 (evening): vectorized step 5a: batched observer vs pipeline TRUE force on the validation set (peg only, `~/ci_mpc_runs/vec/step5`)
+- Batched replay of the 8 step4d episodes (pipeline with wrist F/T, 320 probes; `fidelity_probe_replay.py --sweeps
+  ~/ci_mpc_runs/vec/step4d`, `replay_val.npz`, 35 min with src-f1's instances on the GPU). Per-probe tared force,
+  median [IQR] (batched: CI_TAU_SOURCE=wrist observer incl. the episode's sensor model; pipeline true: wrist F/T per
+  hold, `holds_all.npz`):
+
+  | source | Fz [N] | lateral abs(F) [N] |
+  |---|---|---|
+  | batched observer | 2.20 [1.40 3.31], mean 2.45 | 0.51 [0.27 1.29] |
+  | **pipeline true (wrist F/T)** | **2.72 [1.53 4.06], mean 2.78** | **0.80 [0.44 1.38]** |
+  | pipeline observer (what v3/v4 trained on) | 4.75 [3.06 5.42], mean 4.16 | 1.19 [0.83 1.85] |
+
+- **Force: batched is within -0.3 N (mean) / -0.5 N (median) of the pipeline's true force, vs -1.7 / -2.6 N against
+  the pipeline observer.** Lateral 0.3 N lower. Passes as a distribution match for v5 (decision: true force, no
+  80 % class target).
+- **Geometry does not match as well:** tip-only classes (flat / sunk 0.3-3 mm / in hole > 3 mm) pipeline 126 / 139 /
+  55, batched 208 / 85 / 27; agreement 47 % (= the pipeline's agreement with itself, 47-50 %, step 4c). On flat both
+  agree (tip diff 0.04 mm median); where the pipeline sinks the batched peg sinks less (median +0.49 mm in class 1,
+  +3.4 mm in class 2). Engaged fraction by radius: r < 4 mm pipeline 85 % vs batched 54 %, 4-5.5 mm 60 vs 19 %,
+  5.5-9 mm 47 vs 19 %. **Batched under-predicts engagement off the hole by ~2-3x** (mechanism open: chamfer contact /
+  peg compliance / the pipeline's stiction-held press; pipeline repeat noise is large but not 3x). A likelihood trained
+  on batched data will read "flat" more often at 4-9 mm; check v5 on these 320 probes before any benchmark.
+- Calibration touch: z_bias log 0.63 mm vs batched 0.08 mm, corr 0.999, diff sd 0.03 mm: a constant 0.55 mm
+  definitional offset, not a fidelity gap (flat tips agree).
 
 ### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
 - **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the

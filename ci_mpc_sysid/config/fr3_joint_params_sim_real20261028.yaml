@@ -1,0 +1,49 @@
+# Isaac scene with the real FR3's identified joint friction (prepare_scene.py --params; factory_fr3 FR3_PARAMS).
+# Opt-in, not a default until the held-out H runs.
+source: 'real FR3 2026-10-28 joint ID (ci_mpc_sysid/results/real_fr3_20261028.yaml, mean of 3 poses): Coulomb, viscous (j5
+  negative = Stribeck drop -> 0), static = max(static, Coulomb) (PhysX needs static >= dynamic; the static fit is a lower
+  bound where below Coulomb); armature j7 0.046 measured, j1-j6 not identifiable -> the default (franka_description); offsets
+  not representable in PhysX (j2 -0.66 Nm gravity shortfall)'
+joints:
+  fr3_joint1:
+    static: 0.815
+    coulomb: 0.815
+    viscous: 0.41
+    offset: 0.0
+    armature: 0.60571
+  fr3_joint2:
+    static: 0.821
+    coulomb: 0.701
+    viscous: 0.618
+    offset: 0.0
+    armature: 0.60571
+  fr3_joint3:
+    static: 0.77
+    coulomb: 0.77
+    viscous: 0.393
+    offset: 0.0
+    armature: 0.46247
+  fr3_joint4:
+    static: 0.882
+    coulomb: 0.882
+    viscous: 0.994
+    offset: 0.0
+    armature: 0.46247
+  fr3_joint5:
+    static: 1.159
+    coulomb: 1.159
+    viscous: 0.0
+    offset: 0.0
+    armature: 0.20554
+  fr3_joint6:
+    static: 0.713
+    coulomb: 0.713
+    viscous: 0.279
+    offset: 0.0
+    armature: 0.20554
+  fr3_joint7:
+    static: 0.395
+    coulomb: 0.395
+    viscous: 0.075
+    offset: 0.0
+    armature: 0.046
