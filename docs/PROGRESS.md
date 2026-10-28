@@ -172,8 +172,16 @@ Read this before starting work (and before re-investigating something "new").
   2.9-11.5 mrad; circle r 4 cm at 6 cm/s: 1.92 mm RMS / 3.04 max vs the command, 1.37 mm radial (K_z 1000: 4.1 mm;
   Isaac 1.06 mm), back home 0.15 mm; no buzz.
 - Warm breakaway at the probe (15:50, before the cable dropped): x 1.37, y 0.86, z 1.15 N (cold 1.43 / 0.80 / 1.25).
-- Joint 7 at q2 -0.40 (not true home): static 0.37, Coulomb 0.40 (controller header 0.53), viscous 0.065, armature
-  0.045 (Isaac scene 0.206).
+- **Joint identification, all 7 joints at home / probe / side** (`~/ci_mpc_runs/real/joint_id/{home_1634,probe_1643,
+  side_1650}`, mean in `ci_mpc_sysid/results/real_fr3_20261028.yaml`). Coulomb [Nm], mean (spread over 3 poses) vs the
+  controller header (another FR3): j1 0.82 (0.13) vs 1.03; j2 0.70 (0.16) vs 1.26; j3 0.77 (0.07) vs 0.84; j4 0.88
+  (0.07) vs 0.96; j5 1.16 (0.07) vs 1.29; j6 0.71 (0.02) vs 0.42; j7 0.40 (0.01) vs 0.53. Offsets: **j2 -0.66
+  (-0.69/-0.65/-0.63; header -0.70) = the gravity shortfall that made joint 2 sink under zero torque**; j4 +0.23, j6
+  +0.23. Sweep fits 0.006-0.12 Nm RMS. Not usable yet: static on j2 / j6 (and j2 at home/probe: the joint was still
+  settling, |dq| > onset 1e-3, when the ramp started, so the controller stopped it at once; fix: settle wait in
+  JointIdController); armature j1-j6 (sine residual 0.2-1.1 Nm, j4 negative; ±0.15 rad at 0.5-1 Hz is too little
+  excitation next to the posture-dependent gravity error); j5 viscous negative = real Stribeck drop (1.21 Nm at 0.05
+  rad/s -> 0.97 at 0.4). Joint 7 armature 0.046 (Isaac scene 0.206).
 - Free-space O_F_ext_hat_K at home, at rest: Fx -1.2 N, ty -0.8 Nm (model bias). The controller observer topic
   published nothing in these runs.
 

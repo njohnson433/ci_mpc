@@ -1,0 +1,47 @@
+source: real FR3 2026-10-28, joint_id_session.sh home/probe/side; mean of 3 poses
+  (Coulomb, offset, viscous); static only where the breakaway was valid; armature
+  only joint 7
+joints:
+  fr3_joint1:
+    coulomb: 0.815
+    coulomb_spread: 0.131
+    offset: 0.089
+    viscous: 0.41
+    static: 0.586
+  fr3_joint2:
+    coulomb: 0.701
+    coulomb_spread: 0.162
+    offset: -0.658
+    viscous: 0.618
+    static: 0.585
+  fr3_joint3:
+    coulomb: 0.77
+    coulomb_spread: 0.065
+    offset: 0.033
+    viscous: 0.393
+    static: 0.55
+  fr3_joint4:
+    coulomb: 0.882
+    coulomb_spread: 0.065
+    offset: 0.232
+    viscous: 0.994
+    static: 0.876
+  fr3_joint5:
+    coulomb: 1.159
+    coulomb_spread: 0.065
+    offset: -0.056
+    viscous: -0.432
+    static: 0.995
+  fr3_joint6:
+    coulomb: 0.713
+    coulomb_spread: 0.018
+    offset: 0.23
+    viscous: 0.279
+    static: null
+  fr3_joint7:
+    coulomb: 0.395
+    coulomb_spread: 0.01
+    offset: -0.025
+    viscous: 0.075
+    static: 0.335
+    armature: 0.046
