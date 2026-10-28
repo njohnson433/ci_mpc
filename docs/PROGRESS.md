@@ -247,6 +247,15 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
+- `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
+  phase windows, so every wrist peak from 10-28 is taken from shifted windows: the D1 true-force recheck, the C3
+  cross-task table, the chamferless runs, and the H3-100 / held-out real-arm force columns. Success, time and slip are
+  unaffected. Aligned, the observer matches the true force in contact (src-35: −0.06 ± 0.20 N over 325 holds), so the
+  "+1.4 N observer over-read" is retracted.
+- When src-35's lag-corrected helper lands: recompute offline from the saved CSVs and add corrected rows below the old
+  ones (do not edit the old numbers).
+
 ### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
 - **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the
   probe-pose breakaway measured on the real FR3 today (x y z N, rx ry Nm). It is used directly, since the J^T mapping
