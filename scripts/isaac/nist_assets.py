@@ -4,7 +4,7 @@ AUTOMATE=nist_round_8mm) and the batched env can read the same files later.
 Source: NVIDIA's simulation-ready NIST USDs (SDF collision), Isaac/6.2/Isaac/IsaacLab/Factory/NIST/ on the Isaac asset
 server, cached in ~/ci_mpc_assets/nist/src (license: NVIDIA Isaac asset terms, unverified: internal use only until
 checked). Built per task <id> in ~/ci_mpc_assets/nist/<id>/:
-  plug.usda, socket.usda  thin wrappers: body prim a_<id>_{plug,socket} referencing the source body (this also drops
+  plug.usd, socket.usd    thin wrappers: body prim a_<id>_{plug,socket} referencing the source body (this also drops
                           the mis-declared stage metadata of round_hole_4mm / 8mm: metersPerUnit 0.01, upAxis Y, while
                           the points are in metres, Z-up), metersPerUnit 1, upAxis Z, SDF resolution (holes 512: the
                           8 mm hole has 0.054 mm radial clearance, ~0.1 mm voxels at 256)
@@ -83,7 +83,7 @@ for tid, (plug, sock, sym) in TASKS.items():
         src = os.path.join(ROOT, "src", f"{srcname}.usd")
         body, col_rel, pts, counts, idx = body_and_collision(src)
         write_obj(os.path.join(d, f"{kind}.obj"), pts, counts, idx)
-        wrapper(os.path.join(d, f"{kind}.usda"), f"a_{tid}_{kind}", src, body, col_rel, res)
+        wrapper(os.path.join(d, f"{kind}.usd"), f"a_{tid}_{kind}", src, body, col_rel, res)
         geo[kind], mesh[kind] = pts, (counts, idx)
     pv, sv = geo["plug"], geo["socket"]
     top = pv[:, 2].max()

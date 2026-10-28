@@ -31,7 +31,8 @@ Read this before starting work (and before re-investigating something "new").
   pipeline 45–51 %), so the ≥ 80 % class target is unreachable; flat Fz repeats (5.28 / 5.23 N). Decision pending (user /
   src-5e): validate the batched sim against the pipeline's *wrist F/T* (true force) and retrain the likelihood on
   true / batched forces, or emulate the pipeline observer's over-read (`CI_TAU_SOURCE=projected` does not: +0.13 N).
-  NIST task board #1 = H5 (entry "NIST H5"): assets built, pipeline smoke test running; batched NIST / AutoMate only
+  NIST task board #1 = H5 (entry "NIST task board"): assets built; pipeline smoke test round 8 mm: 0 mm offset
+  inserted, 2 mm failed (chamferless 0.07 mm hole: probes read flat everywhere, no information); batched NIST / AutoMate only
   after peg fidelity passes. Label batched results "batched, not validated for <task>".
 - **2026-10-27 evening (vectorized step 4b, fidelity levers):** step 4 still fails; the cause is narrowed to the
   arm, not the gripper (entry "vectorized step 4b"). Joint friction off (with its compensation) reproduces the
@@ -165,7 +166,7 @@ Read this before starting work (and before re-investigating something "new").
   checked**. No usable third-party contact sim (MuJoCo gym-taskboard: convex decomposition; RoCo: fixed-joint snaps).
   REASSEMBLE (CC BY 4.0, real FR3 + wrist F/T on ATB #1): no meshes, use only as a per-object insertion-force
   distribution check. NIST protocol: random board pose per trial, ≥ 30 trials, time + pass/fail with a binomial bound.
-- `scripts/isaac/nist_assets.py` builds round 4/8/12 mm and rectangular 8/12 mm as `<id>/{plug,socket}.usda` (wrappers
+- `scripts/isaac/nist_assets.py` builds round 4/8/12 mm and rectangular 8/12 mm as `<id>/{plug,socket}.usd` (wrappers
   around the source bodies: metersPerUnit 1, Z-up, body `a_<id>_*`, socket SDF resolution 512) + `.obj` (subdivided to
   2 mm edges for `info()`) + `plug_grasps.json` (TCP 10 mm below the peg top), `disassembly_dist.json`, `nist.json`.
   Plug and socket share the seated frame (peg bottom at z 0 = the table; 9 mm through-holes in a 25 mm block; pegs
@@ -180,6 +181,14 @@ Read this before starting work (and before re-investigating something "new").
   metre, Z-up points. Composition ignores a referenced layer's stage metadata, and every peg result inserts into the
   9 mm bore at the right height, so **no existing peg result is affected**; the wrappers author the correct metadata,
   the shared Factory file is left unchanged.
+- **Pipeline smoke test** (`~/ci_mpc_runs/h5/smoke`, nist_round_8mm, plain probe, `--geo`, wrist F/T logged, 1 run
+  each, H5 = held out, no tuning): offset 0: **inserted** (depth err 0.00, xy 0.06 mm, 12.6 s; a direct hit with
+  probe 0). Offset 2 mm (1.41, 1.41): **failed**, 24 probes / 155 s, belief std 5.16 → 5.19 mm (no information),
+  probes drifted to +y 3–4 mm (true hole −1.4, −1.4). Mechanism: chamferless hole, 0.07 mm radial clearance: an upright
+  peg partly over the hole is still carried by the face, so every probe > ~0.1 mm off reads flat (tip ±0.1 mm) and
+  excludes almost nothing; the `--geo` 0.5 mm chamfer guess is wrong for these holes. Probing as built (tip height +
+  chamfer contacts, tuned on the chamfered Factory hole) does not transfer; needs an edge cue (lateral force / tilt when
+  the peg's 0.5 mm chamfer catches the hole edge) or a spiral / tilt search. Recorded as a peg-overfit result.
 - Batched design (after peg fidelity passes): one task per run (Factory, `ci_hole_top`, `batched_probe` and the
   likelihood assume one geometry); `CI_TASK=nist:<id>` / `automate:<id>` filled from the same `info()`; the
   `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
