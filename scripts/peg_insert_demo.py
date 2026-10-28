@@ -159,6 +159,9 @@ p.add_argument("--tilt-engage", type=float, default=0.0,
 p.add_argument("--tilt-rect", default="",
                help="--tilt-probe: rectangular peg / hole, the peg's half widths 'ax,ay' [m] along the model x / y (hole: + "
                     "half the clearance per side); default round")
+p.add_argument("--tilt-first-upright", action="store_true",
+               help="--tilt-probe: one upright probe at the estimate first (after the tilted calibration); tilt only if it "
+                    "does not go in (H5: at <= 1 mm the tilted search cost 2-5x the time of a direct hit)")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -468,7 +471,17 @@ def peg_in_hand():
     return T.rotation.T @ (np.array(tr_["peg"]["origin"]) - T.translation)
 
 
-c_in_hand0 = peg_in_hand()
+def peg_tilt_hand():
+    """Angle [deg] between the peg axis and the hand axis (truth, diagnostic: rotation in the grasp)."""
+    tp = truth().get("peg", {})
+    if "quat_wxyz" not in tp:
+        return float("nan")
+    w_, x_, y_, z_ = tp["quat_wxyz"]
+    pz = np.array([2 * (x_ * z_ + w_ * y_), 2 * (y_ * z_ - w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)])
+    return float(np.degrees(np.arccos(np.clip(abs(pz @ fk(state["q"]).rotation[:, 2]), -1, 1))))
+
+
+c_in_hand0, c_tilt0 = peg_in_hand(), peg_tilt_hand()
 above = np.array([*hole_est[:2], hole_est[2] + tip_below_tcp + 0.010])
 segment("B lift -> above the hole", [(np.array([*peg_c[:2], Z_SAFE]), R), (np.array([*hole_est[:2], Z_SAFE]), R), (above, R)])
 spin_sim(0.3)
@@ -810,6 +823,8 @@ elif args.strategy == "probe":
         else:
             print(f"  tilted calibration touch failed (low point {lz * 1000:+.2f} mm, force {np.round(F, 2)} N)", flush=True)
         calib_touch = 0.0
+        if args.tilt_first_upright:  # first probe upright at the estimate; the tilted search starts after it
+            c["tilt_pending"], c["tilt"], tilting = c["tilt"], (0.0, 0.0), False
     if calib_touch > 0:
         # grasp height on a spot that is surely flat top face (2026-10-25: probe 0 skipped the calibration when its
         # lateral force read > 1.5 N, then the belief never moved; D1 plain probe 14/15 calibrated vs 7/12 not).
@@ -1069,6 +1084,9 @@ elif args.strategy == "probe":
             c["phase"], c["t_done"], c["tilt"] = "done", state["t"], (0.0, 0.0)
             c.setdefault("phases", []).append(("push", c["t_engage"], state["t"]))
             break
+        if "tilt_pending" in c:  # the upright first probe did not go in: tilted search from here
+            tilting, c["tilt"] = True, c.pop("tilt_pending")
+            print("    upright first probe: not in, tilted search", flush=True)
         if tilting:  # the low point on the belief's uncertain edge
             z_flat = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]  # low point at 0
             target, _ = belief.next_probe_info(lambda cxy: np.array([*(cxy - lo), z_flat, *c["tilt"]]), exclude=probes,
@@ -1190,6 +1208,9 @@ peg_o, hole_o = np.array(tr["peg"]["origin"]), np.array(tr["hole"]["origin"])  #
 depth_err = peg_o[2] - hole_o[2]
 xy_err = np.linalg.norm(peg_o[:2] - hole_o[:2])
 slip_end = peg_in_hand() - c_in_hand0  # truth diagnostic: peg moved in the hand frame since the grasp
+
+
+tilt_end = peg_tilt_hand()
 gripper(max(0.03, args.open_width), settle=0.5)  # 0.03 did not release the gear (grasped 30.1 mm) / AutoMate 00388
 node.destroy_timer(timer)
 active_pub.publish(Bool(data=True))
@@ -1206,7 +1227,8 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "depth_err_mm": float(depth_err * 1000), "xy_err_mm": float(xy_err * 1000),
        "search_s": float(t_search), "insert_s": float(t_insert),
        "contact_phase_s": float((c["t_done"] or state["t"]) - c["t0"]), "peak_force_est_N": c["peak_f"],
-       "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000]}
+       "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000],
+       "peg_tilt_hand_deg": tilt_end, "peg_tilt_hand_deg_grasp": c_tilt0}
 if c.get("phases"):  # engaged phases with the peak of the observer's force estimate (|F|, untared) in each
     W_ = np.array(wrench_log)
     res["phases"] = [(n, float(a), float(b), float(np.linalg.norm(W_[(W_[:, 0] >= a) & (W_[:, 0] <= b), 1:4], axis=1)
