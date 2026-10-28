@@ -177,6 +177,9 @@ Read this before starting work (and before re-investigating something "new").
   offsets, nudge tests in hold): velocity 0.5 fine (no nudge done), 0.75 fine (a 1 cm nudge against K 2500 = 25 N
   tripped a cartesian_reflex = Franka's collision threshold, not over-compensation; gentle nudges OK), **1.0
   over-compensated (the arm kept moving around when returning) -> velocity 0.75**.
+- **Static friction j2 / j6 fixed** (JointIdController ramp now starts from the holding torque, 9ead6bf; the old ramp
+  started at 0 Nm, so the gravity-model error moved the joint at once): `home_1721` j2 static 0.82 (Coulomb 0.61,
+  offset -0.72), j6 0.48 (Coulomb 0.69 - static below Coulomb: onset |dq| > 1e-3 catches creep; read as a lower bound).
 - **Coulomb 0.5 compensation (also at rest):** hold + gentle nudges settle. Breakaway at the probe (`probe_1714`, 3
   repeats) vs warm without compensation: x 0.84 vs 1.37, y 0.66 vs 0.86, z 0.61 vs 1.15 N; rx 0.67 vs 1.24, ry 0.39 vs
   0.68 Nm (40-50 % lower; biases +0.04..+0.27). But the user saw a slight oscillation on the move to the probe: in

@@ -1,6 +1,7 @@
 source: real FR3 2026-10-28, joint_id_session.sh home/probe/side; mean of 3 poses
   (Coulomb, offset, viscous); static only where the breakaway was valid; armature
-  only joint 7
+  only joint 7; static j2 / j6 from home_1721 (breakaway ramp from the holding torque,
+  9ead6bf)
 joints:
   fr3_joint1:
     coulomb: 0.815
@@ -13,7 +14,7 @@ joints:
     coulomb_spread: 0.162
     offset: -0.658
     viscous: 0.618
-    static: 0.585
+    static: 0.821
   fr3_joint3:
     coulomb: 0.77
     coulomb_spread: 0.065
@@ -37,7 +38,7 @@ joints:
     coulomb_spread: 0.018
     offset: 0.23
     viscous: 0.279
-    static: null
+    static: 0.481
   fr3_joint7:
     coulomb: 0.395
     coulomb_spread: 0.01
