@@ -153,6 +153,28 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (evening): Isaac scene with the real FR3's identified joint friction does NOT match the real Cartesian breakaway (`~/ci_mpc_runs/vec/step6/breakaway_real1028`)
+- `fr3_scene_real1028.usd` = `prepare_scene.py --params ci_mpc_sysid/config/fr3_joint_params_sim_real20261028.yaml`
+  (real joint ID 2026-10-28: Coulomb / viscous per joint, static = max(static, Coulomb), j5 viscous 0, armature j7
+  0.046, j1-j6 default; offsets dropped, not representable) + `isaac_pick_place_nofc.yaml` (no compensation, as on
+  the robot). Batched: `FR3_PARAMS=<that yaml>` (factory_fr3, opt-in). Pipeline breakaway at the probe pose,
+  symmetric / bias [N, Nm]:
+
+  | scene | x | y | z | rx | ry |
+  |---|---|---|---|---|---|
+  | real FR3 (warm / cold) | 1.37 / 1.43 | 0.86 / 0.80 | 1.15 / 1.25 | 1.24 / 1.56 | 0.68 / 0.61 |
+  | **real1028 (identified joints)** | **2.33 / -1.78** | **1.68 / +0.38** | **1.69 / -1.23** | +1.16, - none to 2 | 0.87 / +0.59 |
+  | realfric (j1-4 x0.5, 10-27) | 1.49 / -0.91 | 1.08 / +0.42 | 1.40 / -0.65 | >= 1.55 | 0.57 / +0.34 |
+  | nominal | 2.33 / +0.78 | 1.84 / +0.04 | 2.33 / +0.29 | | 0.54 / 0.00 |
+
+- **The identified joint friction gives 1.4-2x the real Cartesian breakaway** (x 2.33 vs 1.37, y 1.68 vs 0.86), no
+  better than the nominal scene in x / y. Same finding as src-54's J^T check (entry above): on the real arm the
+  Cartesian breakaway sits below what its joint friction implies (joints preloaded near slip after the last motion);
+  PhysX joint friction from rest has no such preload. **realfric (joints 1-4 at half the nominal, below the measured
+  joint values) stays the Cartesian match; real1028 is not handed out as a default.** j7 armature 0.046: ran without
+  wrist chatter in this run (breakaway only; no motion test).
+- Faithful version would be a joint friction model with preload state (stick-slip with memory), not static values.
+
 ### 2026-10-28 (evening): vectorized step 5a: batched observer vs pipeline TRUE force on the validation set (peg only, `~/ci_mpc_runs/vec/step5`)
 - Batched replay of the 8 step4d episodes (pipeline with wrist F/T, 320 probes; `fidelity_probe_replay.py --sweeps
   ~/ci_mpc_runs/vec/step4d`, `replay_val.npz`, 35 min with src-f1's instances on the GPU). Per-probe tared force,

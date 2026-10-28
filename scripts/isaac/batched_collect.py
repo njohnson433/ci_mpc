@@ -30,6 +30,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--envs", type=int, default=1024)
 p.add_argument("--probes", type=int, default=40)
 p.add_argument("--seed", type=int, default=0)
+p.add_argument("--sff", type=float, default=0.0, help="press / hold feedforward [N] (default: the probe's 3.0)")
 p.add_argument("--tag", default="", help="run-name prefix in the dataset (default: batched_s<seed>)")
 p.add_argument("--out", required=True)
 add_launcher_args(p)
@@ -58,6 +59,8 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     dev = u.device
     rp = TargetedProbe(u, os.path.join(HERE, "..", "..", "ci_mpc_planner", "models", "probe_likelihood_v3_both.npz"),
                        max_probes=P, timeout=1e9, track_height=0, centering_bound=0.0, stuck_dither=0.0)
+    if args.sff:
+        rp.sff = args.sff
     zero = torch.zeros(N, u.single_action_space.shape[0], device=dev)
     env.reset()
     rp.reset()

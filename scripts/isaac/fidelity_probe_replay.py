@@ -28,6 +28,8 @@ p = argparse.ArgumentParser()
 p.add_argument("--sweeps", default="~/ci_mpc_runs/likelihood/sweeps,~/ci_mpc_runs/likelihood/sweeps2")
 p.add_argument("--max-episodes", type=int, default=0)
 p.add_argument("--joint-friction-scale", type=float, default=1.0)
+p.add_argument("--sff", type=float, default=0.0, help="press / hold stiction feedforward [N] (default: the "
+               "probe's 3.0; step 5b raised it to match the pipeline's true press force)")
 p.add_argument("--out", default="")
 p.add_argument("--trace", default="", help="npz: env 0 per env step (phase, set-point, TCP, feedforward, integral, "
                "controller force; world frame), to compare with a bag of the pipeline episode")
@@ -98,6 +100,8 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         "joint_friction_scale": torch.full((N,), args.joint_friction_scale, device=dev)}
     rp = TargetedProbe(u, os.path.join(HERE, "..", "..", "ci_mpc_planner", "models", "probe_likelihood_v3_both.npz"),
                 max_probes=P, timeout=1e9, track_height=0, centering_bound=0.0, stuck_dither=0.0)
+    if args.sff:
+        rp.sff = args.sff
     tg = torch.zeros(N, P, 2, device=dev)
     hold, settle = torch.full((N, P), 0.001, device=dev), torch.full((N, P), 0.3, device=dev)
     n = torch.tensor([len(e["tip"]) for e in eps], device=dev)
