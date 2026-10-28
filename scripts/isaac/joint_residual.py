@@ -52,7 +52,11 @@ for d in args.dirs:
     wf = np.loadtxt(os.path.join(d, "wrist_ft.csv"), delimiter=",", skiprows=1)
     R = quat_R(*(wf[:, i] for i in (7, 8, 9, 10)))
     Ww = np.concatenate([np.einsum("nij,nj->ni", R, wf[:, 1:4]), np.einsum("nij,nj->ni", R, wf[:, 4:7])], 1)
-    W = np.stack([np.interp(T, wf[:, 0], Ww[:, i]) for i in range(6)], 1)
+    # wrist CSV stamps run ~0.23 s behind the joint-state stamps (hold_forces.py): align by the observer Fz correlation
+    lags = np.arange(-0.1, 0.5, 0.005)
+    lag = lags[int(np.argmax([np.corrcoef(tr["wrench"][:, 2], np.interp(t + lg, wf[:, 0], Ww[:, 2]))[0, 1]
+                              for lg in lags]))]
+    W = np.stack([np.interp(T + lag, wf[:, 0], Ww[:, i]) for i in range(6)], 1)
     G = np.array([pin.computeGeneralizedGravity(model, data, q) for q in Q])
     m = np.interp(T, t, ((np.abs(ff + 3.0) < 1e-6) & (K == 500.0)).astype(float)) > 0.5
     e = np.flatnonzero(np.diff(np.r_[0, m.astype(int), 0]))
@@ -69,7 +73,7 @@ for d in args.dirs:
         dE = (E[hold].mean(0) - G[hold].mean(0)) - (E[pre].mean(0) - G[pre].mean(0))
         rows.append(np.r_[dE, J.T @ dW, dW])
         n_seg += 1
-    print(f"{d}: {n_seg} holds, effort samples {len(T)}")
+    print(f"{d}: {n_seg} holds, effort samples {len(T)}, wrist lag {lag:.3f} s")
 R = np.array(rows)
 dE, tJ, dW = R[:, :7], R[:, 7:14], R[:, 14:20]
 print(f"holds {len(R)}; per joint median [Nm]: effort change | J^T true | effort - J^T true (sd) | corr")

@@ -156,6 +156,27 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (evening): RETRACTION: there is no pipeline observer over-read; the wrist F/T log is 0.23 s late (step 4c / 4d / 5a / item 3 force numbers were an alignment artifact)
+- `wrist_ft.csv` stamps (Kit timeline at render frames, ~60 Hz) run **0.23 s behind** the joint-state header stamps.
+  Two independent checks: (1) at each probe press the TCP stops (joint clock) and the observer rises at the same
+  instant (median 0.000 s, 33 presses), the wrist Fz 0.246 s later; (2) the observer-vs-wrist Fz cross-correlation
+  peaks at +0.230 s in every episode (0.95-0.97; nofric 0.235 s). All earlier comparisons interpolated the wrist at the
+  joint stamps without the lag, so the "true" hold window started before the press force was built up.
+- **Aligned (`hold_forces.py` / `joint_residual.py` now estimate the lag per episode): observer - true Fz -0.06 +-
+  0.20 N over 325 holds (median 4.73 vs 4.81 N), lateral 1.18 vs 1.19 N; Isaac's effort state = J_hand^T (true wrist
+  wrench) per joint to <= 0.03 Nm (corr 0.99-1.00); nofric_e001 -0.07 +- 0.29 N.** The pipeline observer is right in
+  contact, as it was for known wrenches (2026-10-23).
+- **Retracted:** "pipeline observer over-reads +1.42 N in contact" (step 4c / 4d), "v3 / v4 trained on an
+  over-reading force" (they were trained on a force that matches the true force), the item-3 "1.8x in the effort
+  state / mostly joint friction" result, and the step-5a reading "batched force within -0.3 N of the true force".
+- **Corrected picture: the press itself differs.** Pipeline true hold force 4.81 N median vs batched 2.20 N (sff 3.0)
+  / 2.91 N (sff 3.5); the command is ~3.5 N (ff 3 + 500 N/m x hold). Consistent with step 4b mechanism 2 (pipeline
+  1.4 N above the impedance law, batched 0.85 N below): joint stiction keeps the pipeline arm preloaded from the
+  deeper press command (up to K x 6 mm + 3 N), while the batched arm stalls short (step 4b: "stalls in the stiction
+  band"). This, plus the confirmed pipeline in-hand slip, is the remaining fidelity gap; the v5 collection
+  (batched, sff 3.0) was stopped at 19:38 before saving anything.
+- Real-arm O_F_ext_hat_K result (held friction read as force, slope ~0.75) is unaffected (no wrist log involved).
+
 ### 2026-10-28 (evening): Isaac scene with the real FR3's identified joint friction does NOT match the real Cartesian breakaway (`~/ci_mpc_runs/vec/step6/breakaway_real1028`)
 - `fr3_scene_real1028.usd` = `prepare_scene.py --params ci_mpc_sysid/config/fr3_joint_params_sim_real20261028.yaml`
   (real joint ID 2026-10-28: Coulomb / viscous per joint, static = max(static, Coulomb), j5 viscous 0, armature j7

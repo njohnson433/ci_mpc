@@ -12,6 +12,7 @@ import numpy as np
 p = argparse.ArgumentParser()
 p.add_argument("dirs", nargs="+")
 p.add_argument("--out", default="")
+p.add_argument("--lag", type=float, default=None, help="wrist CSV lag [s] (default: estimated per episode)")
 args = p.parse_args()
 
 rows = []
@@ -27,7 +28,12 @@ for d in args.dirs:
                   np.stack([2 * (x_ * y_ + w_ * z_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - w_ * x_)], -1),
                   np.stack([2 * (x_ * z_ - w_ * y_), 2 * (y_ * z_ + w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)], -1)], 1)
     fw = np.einsum("nij,nj->ni", R, wf[:, 1:4])
-    true = np.stack([np.interp(t, wf[:, 0], fw[:, i]) for i in range(3)], 1)
+    # the wrist CSV's time stamps run ~0.23 s behind the joint-state stamps (render-frame timeline time): align by the
+    # lag that best correlates the observer Fz with the wrist Fz (the observer's own lag, 1 / gain 33 ms, is in it)
+    lags = np.arange(-0.1, 0.5, 0.005)
+    cor = [np.corrcoef(w[:, 2], np.interp(t + lg, wf[:, 0], fw[:, 2]))[0, 1] for lg in lags]
+    lag = lags[int(np.argmax(cor))] if args.lag is None else args.lag
+    true = np.stack([np.interp(t + lag, wf[:, 0], fw[:, i]) for i in range(3)], 1)
     m = (np.abs(ff + 3.0) < 1e-6) & (K == 500.0)
     e = np.flatnonzero(np.diff(np.r_[0, m.astype(int), 0]))
     segs = [(a, b) for a, b in zip(e[::2], e[1::2]) if 0.15 < t[b - 1] - t[a] < 1.5]
@@ -36,7 +42,7 @@ for d in args.dirs:
         obs = -(w[hold].mean(0) - w[pre].mean(0))  # the demo's sign: force on the peg = -(Franka sign)
         tru = -(true[hold].mean(0) - true[pre].mean(0))
         rows.append((len(rows), k, *obs, *tru))
-    print(f"{d}: {len(segs)} holds")
+    print(f"{d}: {len(segs)} holds, wrist lag {lag:.3f} s")
 R = np.array(rows)
 obs, tru = R[:, 2:5], R[:, 5:8]
 print(f"holds {len(R)}: Fz observer median {np.median(obs[:, 2]):.2f}, true {np.median(tru[:, 2]):.2f}, "
