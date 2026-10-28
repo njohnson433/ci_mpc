@@ -18,7 +18,7 @@ try:
 except ImportError:  # info() only (demo_automate.sh, outside a running Isaac app): no PhysxSchema there
     pass
 
-ASSETS = "/home/njohnson/ci_mpc_assets/automate"
+ASSETS = os.environ.get("AUTOMATE_ASSETS", "/home/njohnson/ci_mpc_assets/automate")  # NIST (H5): ~/ci_mpc_assets/nist
 TABLE_CENTER, TABLE_SIZE = (0.5, 0.0, 0.1), (0.4, 0.6, 0.2)
 TOP = TABLE_CENTER[2] + TABLE_SIZE[2] / 2
 HAND_TO_TCP = 0.1034  # fr3_hand -> fr3_hand_tcp

@@ -14,7 +14,8 @@
 # CAMERA=1 adds the simulated Gemini 305 wrist camera (scripts/isaac/wrist_camera.py).
 # PEG=1 adds the Factory 8 mm peg-in-hole (scripts/isaac/peg_scene.py); PEG_HOLE_XY=x,y, PEG_DROP_TEST=1,
 #   PEG_FRICTION=mu, PEG_HOLE_TILT=deg (held-out variations).
-# AUTOMATE=ID adds an AutoMate plug/socket assembly (held-out H3, scripts/isaac/automate_scene.py).
+# AUTOMATE=ID adds an AutoMate plug/socket assembly (held-out H3, scripts/isaac/automate_scene.py);
+# AUTOMATE_ASSETS=~/ci_mpc_assets/nist AUTOMATE=nist_round_8mm: a NIST task board part in the same layout (H5).
 # GEAR=1 adds the Factory gear mesh (held-out H2, scripts/isaac/gear_scene.py); GEAR_BASE_XY=x,y, GEAR_DROP_TEST=1,
 #   GEAR_YAW_ERROR=deg (gear yaw off the meshing yaw; tolerance < 2 deg).
 # PUSH=1 adds the table, slider box and pusher rod (scripts/isaac/push_scene.py); PUSH_XY=x,y, PUSH_YAW=deg.
@@ -28,7 +29,7 @@ echo "sync dir $SYNC, Isaac log $LOG"
 
 # Isaac side in a clean environment (no /opt/ros sourced)
 env -i HOME="$HOME" USER="$USER" PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
-    ROS_DOMAIN_ID="$ROS_DOMAIN_ID" OMNI_KIT_ACCEPT_EULA=YES \
+    ROS_DOMAIN_ID="$ROS_DOMAIN_ID" OMNI_KIT_ACCEPT_EULA=YES ${AUTOMATE_ASSETS:+AUTOMATE_ASSETS="$AUTOMATE_ASSETS"} \
     ${GUI:+DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY"} \
     "$HERE/../isaac_ros.sh" --python "$HERE/headless_impedance_sim.py" --sync-dir "$SYNC" ${CONTROLLER_CONFIG:+--config "$CONTROLLER_CONFIG"} ${GUI:+--gui} ${SCENE:+--scene "$SCENE"} ${PICK_PLACE:+--pick-place} ${OBJECT_SIZE:+--object-size "$OBJECT_SIZE"} ${OBJECT_YAW:+--object-yaw "$OBJECT_YAW"} ${BOXES:+--boxes "$BOXES"} ${WRIST_FT:+--wrist-ft} ${CAMERA:+--camera} ${PEG:+--peg} ${AUTOMATE:+--automate "$AUTOMATE"} ${GEAR:+--gear} ${GEAR_BASE_XY:+--gear-base-xy "$GEAR_BASE_XY"} ${GEAR_DROP_TEST:+--gear-drop-test} ${GEAR_YAW_ERROR:+--gear-yaw-error "$GEAR_YAW_ERROR"} ${PEG_HOLE_XY:+--peg-hole-xy "$PEG_HOLE_XY"} ${PEG_DROP_TEST:+--peg-drop-test} ${PEG_FRICTION:+--peg-friction "$PEG_FRICTION"} ${PEG_HOLE_TILT:+--peg-hole-tilt "$PEG_HOLE_TILT"} ${PUSH:+--push} ${PUSH_XY:+--push-xy "$PUSH_XY"} ${PUSH_YAW:+--push-yaw "$PUSH_YAW"} > "$LOG" 2>&1 &
 ISAAC_PID=$!

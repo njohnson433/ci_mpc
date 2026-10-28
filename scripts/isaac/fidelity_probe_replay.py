@@ -29,6 +29,8 @@ p.add_argument("--sweeps", default="~/ci_mpc_runs/likelihood/sweeps,~/ci_mpc_run
 p.add_argument("--max-episodes", type=int, default=0)
 p.add_argument("--joint-friction-scale", type=float, default=1.0)
 p.add_argument("--out", default="")
+p.add_argument("--trace", default="", help="npz: env 0 per env step (phase, set-point, TCP, feedforward, integral, "
+               "controller force; world frame), to compare with a bag of the pipeline episode")
 add_launcher_args(p)
 p.set_defaults(device=None)
 args, rest = p.parse_known_args()
@@ -153,10 +155,17 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     rp.reset()
     rp.setup(tg, n, hold, settle)
     steps = 0
+    tr = []
     while not (rp.phase == DONE).all() and steps < 20000:
         rp.step()
         env.step(zero)
         steps += 1
+        if args.trace:
+            c = u.ctrl
+            tr.append(np.concatenate(([rp.t, rp.phase[0].item(), rp.rp_k[0].item()], c.pos_d[0].cpu().numpy(),
+                                      u.ci_state()[5][0].cpu().numpy(), c.F_ff[0, :3].cpu().numpy(),
+                                      c.I[0, :3].cpu().numpy(), c.F[0, :3].cpu().numpy(),
+                                      c.F_ext[0, :3].cpu().numpy())))
         if steps % 200 == 0:
             print(f"  t {rp.t:6.1f} s: probes done {int(rp.rp_k.sum())} / {int(n.sum())}", flush=True)
     sim_x, sim_F, sim_zb = rp.rec_x.cpu().numpy(), rp.rec_F.cpu().numpy(), rp.rec_zb.cpu().numpy()
@@ -214,6 +223,10 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
                         "diff_sd": float(np.nanstd(sim_zb - log_zb) * 1000),
                         "corr": float(np.corrcoef(*[v[~np.isnan(log_zb) & ~np.isnan(sim_zb)] for v in (log_zb, sim_zb)])[0, 1])}
     print("FIDELITY " + json.dumps(out), flush=True)
+    if args.trace:
+        np.savez(args.trace, trace=np.array(tr), cols=np.array(
+            "t phase k pos_d_x pos_d_y pos_d_z x y z ff_x ff_y ff_z I_x I_y I_z F_x F_y F_z Fext_x Fext_y Fext_z".split()),
+                 hole_top=u.ci_hole_top()[0].cpu().numpy(), tip_off=tip_off, dir=eps[0]["dir"])
     if args.out:
         np.savez(args.out, sim_x=sim_x, sim_F=sim_F, sim_zb=sim_zb, log_tip=log_tip, log_F=log_F, log_xy=log_xy,
                  hole=hole, tip_off=tip_off, summary=json.dumps(out), dirs=np.array([e["dir"] for e in eps]))
