@@ -5,6 +5,7 @@
 # Coulomb / viscous values and the joint torque offsets (joint 2: -0.66 Nm gravity shortfall).
 #
 # Usage: friction_session.sh <velocity|coulomb> <scale> hold|probe|home [args for c3_breakaway_real.py]
+#        friction_session.sh <velocity|coulomb> <scale> mpc test|all|steps|rotate|circle [args]  (mpc_free_space_session.sh)
 #   velocity  compensation only while a joint moves (tanh(dq / 0.02 rad/s)): nothing at rest; the safe first step
 #   coulomb   compensation in the direction of the impedance torque (tanh(tau / 0.3 Nm)): also at rest, so it lowers
 #             the breakaway force (what C3 sees); can drift if over-compensated
@@ -27,4 +28,7 @@ P=$(mktemp --suffix=.yaml /tmp/friction_XXXX)
   [ "${OFFSETS:-1}" = 1 ] && echo "    joint_torque_offset: [0.089, -0.658, 0.033, 0.232, -0.056, 0.230, -0.025]"
 } | sed '/^    friction_compensation: none/d' > "$P"
 echo "--- friction: $MODE x $SCALE (offsets ${OFFSETS:-1}); parameters $P"
+if [ "$WHAT" = mpc ]; then
+  PARAMS="$P" exec "$HERE/mpc_free_space_session.sh" "$@"
+fi
 PARAMS="$P" exec "$HERE/c3_breakaway_session.sh" "$WHAT" "$@"

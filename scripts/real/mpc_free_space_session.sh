@@ -26,7 +26,7 @@ esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROBOT_IP=${ROBOT_IP:-192.168.1.200}
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-61}
-PARAMS=~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml
+PARAMS=${PARAMS:-~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml}  # friction_session.sh sets it
 OUT=~/ci_mpc_runs/real/mpc_free; mkdir -p "$OUT"
 LOG=$OUT/session_$(date +%Y%m%d_%H%M%S); mkdir -p "$LOG"
 D=$OUT/${PRESET}_$(date +%H%M)

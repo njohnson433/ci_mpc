@@ -173,6 +173,10 @@ Read this before starting work (and before re-investigating something "new").
   Isaac 1.06 mm), back home 0.15 mm; no buzz.
 - Warm breakaway at the probe (15:50, before the cable dropped): x 1.37, y 0.86, z 1.15 N (cold 1.43 / 0.80 / 1.25);
   rotations (16:59, 3 repeats, `probe_1659`): rx 1.24 Nm (repeats 0.80-1.59 per side; cold 1.56), ry 0.68 Nm (cold 0.61).
+- **Friction compensation ramp** (`scripts/real/friction_session.sh`, identified Coulomb / viscous + joint torque
+  offsets, nudge tests in hold): velocity 0.5 fine (no nudge done), 0.75 fine (a 1 cm nudge against K 2500 = 25 N
+  tripped a cartesian_reflex = Franka's collision threshold, not over-compensation; gentle nudges OK), **1.0
+  over-compensated (the arm kept moving around when returning) -> velocity 0.75**.
 - **Joint identification, all 7 joints at home / probe / side** (`~/ci_mpc_runs/real/joint_id/{home_1634,probe_1643,
   side_1650}`, mean in `ci_mpc_sysid/results/real_fr3_20261028.yaml`). Coulomb [Nm], mean (spread over 3 poses) vs the
   controller header (another FR3): j1 0.82 (0.13) vs 1.03; j2 0.70 (0.16) vs 1.26; j3 0.77 (0.07) vs 0.84; j4 0.88
