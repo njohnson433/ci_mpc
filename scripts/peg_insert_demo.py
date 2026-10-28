@@ -39,6 +39,8 @@ from geometry_msgs.msg import WrenchStamped
 from std_msgs.msg import Bool, Float64
 from vision_msgs.msg import Detection3DArray
 
+import wrist_csv  # scripts/ (next to this file): the wrist F/T log reader with its clock lag
+
 p = argparse.ArgumentParser()
 p.add_argument("--urdf", default="/home/njohnson/ci_mpc_assets/fr3.urdf")
 p.add_argument("--sync-dir", required=True)
@@ -296,12 +298,9 @@ else:
             v = line.split(",")
             if len(v) != 11 or v[0] == "t":
                 continue
-            t, f, tq, (w_, x_, y_, z_) = float(v[0]), np.array(v[1:4], float), np.array(v[4:7], float), map(float, v[7:])
-            Rh = np.array([[1 - 2 * (y_ * y_ + z_ * z_), 2 * (x_ * y_ - w_ * z_), 2 * (x_ * z_ + w_ * y_)],
-                           [2 * (x_ * y_ + w_ * z_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - w_ * x_)],
-                           [2 * (x_ * z_ - w_ * y_), 2 * (y_ * z_ + w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)]])
-            # the CSV's stamps run 0.23 s behind the joint-state clock (PROGRESS "RETRACTION", 2026-10-28)
-            wrench_log.append((t - 0.23, *(Rh @ f), *(Rh @ tq)))
+            row = np.array(v, float)
+            Rh = wrist_csv.hand_rotation(row[None, 7:11])[0]
+            wrench_log.append((row[0] - wrist_csv.WRIST_LAG, *(Rh @ row[1:4]), *(Rh @ row[4:7])))
 
     node.create_timer(0.005, _poll_wrist)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
@@ -1206,14 +1205,13 @@ if c.get("phases"):  # engaged phases with the peak of the observer's force esti
     res["peak_force_engaged_N"] = max(ph[3] for ph in res["phases"])
     if os.path.exists(sync("wrist_ft.csv")) and c.get("t_hover0"):
         # true force (WRIST_FT=1): wrist F/T |F - tare| in the engaged phases, tared once at the first free-air hover;
-        # the observer peak above is stiction-biased by 5-8 N, arm-dependent (PROGRESS 2026-10-28)
-        ft = np.loadtxt(sync("wrist_ft.csv"), delimiter=",", skiprows=1, ndmin=2)
-        tw = (ft[:, 0] >= c["t_hover0"] - 0.25) & (ft[:, 0] <= c["t_hover0"])
-        if tw.any():
-            fm = np.linalg.norm(ft[:, 1:4] - np.median(ft[tw, 1:4], axis=0), axis=1)
-            res["phases_wrist_N"] = [float(fm[(ft[:, 0] >= a) & (ft[:, 0] <= b)].max())
-                                     if ((ft[:, 0] >= a) & (ft[:, 0] <= b)).any() else 0.0 for _, a, b in c["phases"]]
-            res["peak_force_wrist_engaged_N"] = max(res["phases_wrist_N"])
+        # (the "observer peak stiction-biased by 5-8 N" reading of 2026-10-28 used the unaligned windows: recheck)
+        # (wrist_csv: world frame, CSV stamps shifted by the measured 0.235 s lag; before 2026-10-28 evening the
+        # windows were 0.235 s off: scripts/recompute_wrist_peaks.py redoes saved runs)
+        pk = wrist_csv.phase_peaks(sync("wrist_ft.csv"), c["t_hover0"], c["phases"])
+        if pk is not None:
+            res["phases_wrist_N"], res["peak_force_wrist_engaged_N"] = pk, max(pk)
+            res["wrist_lag_s"] = wrist_csv.WRIST_LAG
 if c.get("c3_trace"):  # per C3 handover: estimate error, belief std [mm], depth reached [mm]
     res["c3_handovers"] = [(float(np.linalg.norm(np.array(t["est"]) - np.array(t["true"])) * 1000),
                             t["std"] * 1000, t.get("depth_end", float("nan")) * 1000) for t in c["c3_trace"]]
