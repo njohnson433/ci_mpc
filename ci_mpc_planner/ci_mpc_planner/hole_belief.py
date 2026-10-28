@@ -51,20 +51,30 @@ def profile_sdf(r, z, g):
 class HoleBelief:
     def __init__(self, geo=PegHoleGeometry(), spread=0.006, res=0.0005, n_ring=24, touch=4e-4, f_contact=0.8,
                  pen_tol=3e-4,
-                 f_lateral=1.0, capture=0.002, likelihood=None, face_rings=(), gap_sigma=None):  # f_lateral ~3 sigma of the wrench estimate
+                 f_lateral=1.0, capture=0.002, likelihood=None, face_rings=(), gap_sigma=None,
+                 rect=None):  # f_lateral ~3 sigma of the wrench estimate
         self.g = geo
+        # rect = (ax, ay): rectangular peg with these half widths in the model frame (axis aligned with the hole), and a
+        # rectangular hole with the round model's radial clearance R - a per side (dev square, H5 rect; 2026-10-28)
+        self.rect = None if rect is None else np.asarray(rect, float)
         self.likelihood = likelihood  # learned probe likelihood (probe_likelihood.py) instead of the hand model
         ax = np.arange(-spread, spread + 1e-9, res)
         gx, gy = np.meshgrid(ax, ax)
         self.h = np.column_stack([gx.ravel(), gy.ravel()])
         self.logw = np.zeros(len(self.h))
         ang = np.linspace(0, 2 * np.pi, n_ring, endpoint=False)
-        tip = np.column_stack([(geo.a - geo.pc) * np.cos(ang), (geo.a - geo.pc) * np.sin(ang), np.zeros(n_ring)])
-        edge = np.column_stack([geo.a * np.cos(ang), geo.a * np.sin(ang), np.full(n_ring, geo.pc)])
+        if self.rect is None:
+            ux, uy = np.cos(ang), np.sin(ang)
+            ra, rb = (geo.a - geo.pc, geo.a - geo.pc), (geo.a, geo.a)
+        else:  # rectangle outline: the ray at each angle to the unit square (n_ring divisible by 8 puts rays on corners)
+            m = np.maximum(np.abs(np.cos(ang)), np.abs(np.sin(ang)))
+            ux, uy = np.cos(ang) / m, np.sin(ang) / m
+            ra, rb = self.rect - geo.pc, self.rect
+        tip = np.column_stack([ra[0] * ux, ra[1] * uy, np.zeros(n_ring)])
+        edge = np.column_stack([rb[0] * ux, rb[1] * uy, np.full(n_ring, geo.pc)])
         # face_rings: extra rings on the flat bottom face (fractions of its radius): a tilted peg meets a sharp hole
         # edge with the face interior, which the tip / edge rings alone do not see (tilt probe, 2026-10-28)
-        face = [np.column_stack([f * (geo.a - geo.pc) * np.cos(ang), f * (geo.a - geo.pc) * np.sin(ang), np.zeros(n_ring)])
-                for f in face_rings]
+        face = [np.column_stack([f * ra[0] * ux, f * ra[1] * uy, np.zeros(n_ring)]) for f in face_rings]
         self.peg_points = np.vstack([tip, edge, *face, [[0, 0, 0]]])
         self.touch, self.f_contact, self.f_lateral, self.capture = touch, f_contact, f_lateral, capture
         # penetration tolerance: the measured tip height is only good to ~0.1-0.3 mm (grasp offset calibration,
@@ -85,6 +95,15 @@ class HoleBelief:
         p = self.points_world(x)  # P x 3
         dx = p[None, :, 0] - self.h[:, None, 0]
         dy = p[None, :, 1] - self.h[:, None, 1]
+        if self.rect is not None:
+            # rectangular hole, half widths rect + (R - a): the profile in the coordinate of the nearer wall pair
+            # (exact on the face / in the bore away from the corners)
+            ex, ey = np.abs(dx) - self.rect[0] + self.g.a, np.abs(dy) - self.rect[1] + self.g.a
+            r = np.maximum(ex, ey)
+            z = np.broadcast_to(p[None, :, 2], r.shape)
+            d, nr, nz = profile_sdf(np.maximum(r, 0.0), z, self.g)
+            xs = ex >= ey
+            return d, np.stack([np.where(xs, nr * np.sign(dx), 0.0), np.where(xs, 0.0, nr * np.sign(dy)), nz], axis=-1)
         r = np.hypot(dx, dy)
         z = np.broadcast_to(p[None, :, 2], r.shape)
         d, nr, nz = profile_sdf(r, z, self.g)

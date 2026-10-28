@@ -156,6 +156,9 @@ p.add_argument("--tilt-upright-at-est", action="store_true",
 p.add_argument("--tilt-engage", type=float, default=0.0,
                help="--tilt-probe: tip depth [m] that counts as in the hole (0 = --engage), e.g. 0.0005: a sharp-edged hole has no "
                     "chamfer to centre on, and lateral centering with the tip in the bore slid the peg 0.9 mm in the fingers")
+p.add_argument("--tilt-rect", default="",
+               help="--tilt-probe: rectangular peg / hole, the peg's half widths 'ax,ay' [m] along the model x / y (hole: + "
+                    "half the clearance per side); default round")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -659,12 +662,19 @@ elif args.strategy == "probe":
     if args.tilt_probe > 0:
         # sharp-edged hole model (no chamfer), hole radius = peg half width + half the clearance
         tgeo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **{**GEO, "R": geo.a + args.tilt_clearance / 2, "c": 1e-5})
+        rect = [float(v) for v in args.tilt_rect.split(",")] if args.tilt_rect else None
+        if rect:  # the round model's a (peg half width) = the smaller half width; clearance per side as round
+            tgeo = PegHoleGeometry(tip_below_tcp=tip_below_tcp,
+                                   **{**GEO, "a": min(rect), "R": min(rect) + args.tilt_clearance / 2, "c": 1e-5})
         belief = HoleBelief(tgeo, f_lateral=1e9, touch=1.5e-4, capture=geo.a, face_rings=(0.25, 0.5, 0.75),
-                            gap_sigma=1e-4)
-        print(f"  tilt probe {args.tilt_probe:.1f} deg: sharp-edged hole model R {tgeo.R * 1000:.3f} mm", flush=True)
+                            gap_sigma=1e-4, n_ring=48 if rect else 24, rect=rect)
+        print(f"  tilt probe {args.tilt_probe:.1f} deg: sharp-edged hole model R {tgeo.R * 1000:.3f} mm"
+              + (f", rectangular peg {np.round(np.array(rect) * 1000, 2)} mm half widths" if rect else ""), flush=True)
 
     def low_point(x):  # lowest peg point (model frame) at TCP pose x
         pw = belief.points_world(x)
+        if args.tilt_rect:  # a tilted rectangle's lowest feature is an edge: its midpoint
+            return pw[pw[:, 2] < pw[:, 2].min() + 1e-6].mean(axis=0)
         return pw[np.argmin(pw[:, 2])]
     c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
 
