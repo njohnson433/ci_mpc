@@ -87,28 +87,23 @@ move_to_start_example_controller:
     d_gains: [30.0, 30.0, 30.0, 30.0, 10.0, 10.0, 5.0]
     start_joint_configuration: [0.0, -0.7854, 0.0, -2.3562, 0.0, 1.5708, 0.7854]
 EOF
-# record q / tau_J / tau_J_d through the move and its release; stop if a joint did not arrive
-python3 -u "$HERE/move_monitor.py" --target 0.0,-0.7854,0.0,-2.3562,0.0,1.5708,0.7854 --out "$LOG/move_home.npz" &
+# the impedance controller is loaded inactive first; move_monitor.py switches to it the moment the move is done
+# (move_to_start then commands zero torque and joint 2 sinks under the robot's own gravity compensation, 2026-10-28)
+ros2 run controller_manager spawner cartesian_impedance_controller -c /controller_manager --param-file "$PARAMS" \
+  --inactive >> "$LOG/spawner.log" 2>&1 || { echo "spawner (inactive) failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
+python3 -u "$HERE/move_monitor.py" --target 0.0,-0.7854,0.0,-2.3562,0.0,1.5708,0.7854 --out "$LOG/move_home.npz" \
+  --switch-to cartesian_impedance_controller &
 MON=$!
 sleep 1
 ros2 run controller_manager spawner move_to_start_example_controller -c /controller_manager \
   -t franka_example_controllers/MoveToStartExampleController --param-file "$LOG/mts_home.yaml" \
   >> "$LOG/spawner.log" 2>&1 || { echo "move_to_start spawner failed:"; tail -5 "$LOG/spawner.log"; kill -INT $MON; exit 1; }
-for i in $(seq 120); do
-  ros2 param get /move_to_start_example_controller process_finished 2>/dev/null | grep -q True && break
-  sleep 0.5
-done
-ros2 param get /move_to_start_example_controller process_finished 2>/dev/null | grep -q True \
-  || { echo "move to home did not finish in 60 s"; kill -INT $MON; exit 1; }
-sleep 1
-ros2 control set_controller_state move_to_start_example_controller inactive > /dev/null
+wait $MON || { echo "move to home failed (move log $LOG/move_home.npz)"; exit 1; }
 ros2 control unload_controller move_to_start_example_controller > /dev/null
-sleep 1
-kill -INT $MON; wait $MON || { echo "not at home: stopping (move log $LOG/move_home.npz)"; exit 1; }
 
-echo "--- 3. activate cartesian_impedance_controller: the arm holds its pose"
-ros2 run controller_manager spawner cartesian_impedance_controller -c /controller_manager --param-file "$PARAMS" \
-  >> "$LOG/spawner.log" 2>&1 || { echo "spawner failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
+echo "--- 3. cartesian_impedance_controller active: the arm holds its pose"
+ros2 control list_controllers | grep -E "cartesian_impedance_controller.*active" > /dev/null \
+  || { echo "cartesian_impedance_controller is not active"; exit 1; }
 
 echo "--- 4. MPC tests ($TESTS) -> $D"
 python3 -u "$HERE/mpc_free_space_real.py" --tests "$TESTS" --out "$D" "$@" 2>&1 | tee "$LOG/mpc_free_space.out"

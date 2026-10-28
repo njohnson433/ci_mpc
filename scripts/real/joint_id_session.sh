@@ -13,11 +13,12 @@
 #   side   (0.6, -0.4, 0, -2.4, 0, 2.0, pi/4)                         TCP 0.35, 0.24, 0.36 (other gravity load)
 #   all    home, probe, side
 # Env: JOINTS=4,5,6 (instead of all 7), ROBOT_IP (192.168.1.200), ROS_DOMAIN_ID (61),
-#      NO_LAUNCH=1 (use a running Controller Manager, e.g. Isaac; no franka_bringup)
+#      NO_LAUNCH=1 (use a running Controller Manager; the move hand-over needs the real robot_state, not in Isaac)
 # Results: ~/ci_mpc_runs/real/joint_id/<pose>_<HHMM>/ (id.npz, fitted.yaml, fit.txt), session logs next to them.
 PRESET=$1
 HERE=$(cd "$(dirname "$0")" && pwd)
 SYSID=$HERE/../../ci_mpc_sysid
+PARAMS=~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml
 declare -A POSES=(
   [home]="0.0, -0.7854, 0.0, -2.3562, 0.0, 1.5708, 0.7854"
   [probe]="0.043, -0.057, 0.153, -2.266, 0.011, 2.21, 0.975"
@@ -46,7 +47,7 @@ ros2 daemon stop > /dev/null 2>&1
 LAUNCH_PID=
 cleanup() {
   trap - EXIT INT TERM
-  for c in joint_id_controller move_to_start_example_controller; do
+  for c in joint_id_controller cartesian_impedance_controller move_to_start_example_controller; do
     timeout 10 ros2 control set_controller_state $c inactive > /dev/null 2>&1
   done
   if [ -n "$LAUNCH_PID" ] && kill -0 "$LAUNCH_PID" 2>/dev/null; then
@@ -89,30 +90,19 @@ move_to_start_example_controller:
     start_joint_configuration: [${POSES[$1]}]
 EOF
   echo "--- move to $1: [${POSES[$1]}]"
-  # record q / tau_J / tau_J_d through the move and its release; stop if a joint did not arrive (real robot only)
-  MON=
-  if [ -z "$NO_LAUNCH" ]; then
-    python3 -u "$HERE/move_monitor.py" --target "$(echo ${POSES[$1]} | tr -d ' ')" \
-      --out "$LOG/move_$1.npz" &
-    MON=$!
-    sleep 1
-  fi
+  # hand over to the impedance controller the moment the move is done (move_to_start then commands zero torque and
+  # joint 2 sinks under the robot's own gravity compensation, 2026-10-28); run_joint_id.py switches from it
+  ros2 run controller_manager spawner cartesian_impedance_controller -c /controller_manager --param-file "$PARAMS" \
+    --inactive >> "$LOG/spawner.log" 2>&1 || { echo "spawner (inactive) failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
+  python3 -u "$HERE/move_monitor.py" --target "$(echo ${POSES[$1]} | tr -d ' ')" --out "$LOG/move_$1.npz" \
+    --switch-to cartesian_impedance_controller &
+  MON=$!
+  sleep 1
   ros2 run controller_manager spawner move_to_start_example_controller -c /controller_manager \
     -t franka_example_controllers/MoveToStartExampleController --param-file "$LOG/mts_$1.yaml" \
-    >> "$LOG/spawner.log" 2>&1 || { echo "move_to_start spawner failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
-  for i in $(seq 120); do
-    ros2 param get /move_to_start_example_controller process_finished 2>/dev/null | grep -q True && break
-    sleep 0.5
-  done
-  ros2 param get /move_to_start_example_controller process_finished 2>/dev/null | grep -q True \
-    || { echo "move to $1 did not finish in 60 s"; exit 1; }
-  sleep 1
-  ros2 control set_controller_state move_to_start_example_controller inactive > /dev/null
+    >> "$LOG/spawner.log" 2>&1 || { echo "move_to_start spawner failed:"; tail -5 "$LOG/spawner.log"; kill -INT $MON; exit 1; }
+  wait $MON || { echo "move to $1 failed (move log $LOG/move_$1.npz)"; exit 1; }
   ros2 control unload_controller move_to_start_example_controller > /dev/null
-  if [ -n "$MON" ]; then
-    sleep 1
-    kill -INT $MON; wait $MON || { echo "not at $1: stopping (move log $LOG/move_$1.npz)"; exit 1; }
-  fi
 }
 
 for pose in $LIST; do
@@ -120,7 +110,9 @@ for pose in $LIST; do
   D=$OUT/${pose}$([ "$PRESET" = test ] && echo _test)_$(date +%H%M); mkdir -p "$D"
   sed "s/^    joints: .*/    joints: [$JOINTS]/" "$SYSID/config/real_sysid.yaml" > "$D/params.yaml"
   echo "--- identification at $pose, joints $JOINTS -> $D"
-  python3 -u "$SYSID/scripts/run_joint_id.py" --out "$D/id.npz" --param-file "$D/params.yaml" 2>&1 | tee "$D/run.txt"
+  python3 -u "$SYSID/scripts/run_joint_id.py" --out "$D/id.npz" --param-file "$D/params.yaml" \
+    --switch-from cartesian_impedance_controller 2>&1 | tee "$D/run.txt"
   grep -q "RESULT DONE" "$D/run.txt" || { echo "identification at $pose did not finish (see $D/run.txt)"; exit 1; }
+  ros2 control unload_controller cartesian_impedance_controller > /dev/null 2>&1  # inactive after the switch
   python3 "$SYSID/scripts/fit_joint_id.py" "$D/id.npz" --out "$D/fitted.yaml" 2>&1 | tee "$D/fit.txt"
 done

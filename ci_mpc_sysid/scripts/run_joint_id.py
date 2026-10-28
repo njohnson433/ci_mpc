@@ -5,6 +5,8 @@
 # --param-file: load the controller with the spawner (type ci_mpc_sysid/JointIdController, these parameters) instead of
 #   expecting it in the Controller Manager config (real robot: franka_bringup's controllers.yaml does not list it);
 #   the controller is unloaded at the end so the next run can load it again.
+# --switch-from NAME (with --param-file): spawn inactive, then switch NAME -> this controller in one call (real robot:
+#   the cartesian_impedance_controller holds the arm after the move, there is no unpowered gap).
 # --sync-dir: wait for <dir>/home_done before starting, write <dir>/done at exit (Isaac test runner).
 import argparse
 import os
@@ -30,6 +32,7 @@ p.add_argument("--out", required=True)
 p.add_argument("--controller", default="joint_id_controller")
 p.add_argument("--sync-dir", default="")
 p.add_argument("--param-file", default="", help="spawn with this parameter file (see above)")
+p.add_argument("--switch-from", default="", help="active controller to replace in one switch (needs --param-file)")
 p.add_argument("--timeout", type=float, default=3600.0, help="wall-clock seconds")
 args = p.parse_args()
 
@@ -76,7 +79,11 @@ if args.sync_dir:
         time.sleep(0.1)
 if args.param_file:
     ok = run(["ros2", "run", "controller_manager", "spawner", args.controller, "-c", "/controller_manager",
-              "-t", "ci_mpc_sysid/JointIdController", "--param-file", args.param_file])
+              "-t", "ci_mpc_sysid/JointIdController", "--param-file", args.param_file]
+             + (["--inactive"] if args.switch_from else []))
+    if ok and args.switch_from:
+        ok = run(["ros2", "control", "switch_controllers", "--deactivate", args.switch_from,
+                  "--activate", args.controller, "--strict", "--activate-asap"])
 else:
     ok = run(["ros2", "control", "load_controller", "--set-state", "active", args.controller])
 if not ok:
