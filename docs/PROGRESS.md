@@ -177,6 +177,13 @@ Read this before starting work (and before re-investigating something "new").
   offsets, nudge tests in hold): velocity 0.5 fine (no nudge done), 0.75 fine (a 1 cm nudge against K 2500 = 25 N
   tripped a cartesian_reflex = Franka's collision threshold, not over-compensation; gentle nudges OK), **1.0
   over-compensated (the arm kept moving around when returning) -> velocity 0.75**.
+- **Coulomb 0.5 compensation (also at rest):** hold + gentle nudges settle. Breakaway at the probe (`probe_1714`, 3
+  repeats) vs warm without compensation: x 0.84 vs 1.37, y 0.66 vs 0.86, z 0.61 vs 1.15 N; rx 0.67 vs 1.24, ry 0.39 vs
+  0.68 Nm (40-50 % lower; biases +0.04..+0.27). But the user saw a slight oscillation on the move to the probe: in
+  the log z wobbles 0.40 mm at 0.6 Hz (no compensation 0.21 mm) and rx varies 22.7 mrad p2p during the move (3.7);
+  settled after the move (< 0.01 mm). Reading (inferred): the sign of the impedance torque flips on lightly loaded
+  joints during the move, so the 0.3 Nm tanh switches the compensation back and forth. Use velocity 0.75 for motion;
+  coulomb only for holds / contact, not yet validated in sim (held-out rule before any default).
 - **MPC full set with velocity 0.75 compensation (`all_1709`) vs none (`all_1627`):** circle 0.62 vs 1.92 mm RMS (radial
   0.67 vs 1.37; Isaac 1.06); steps to 1 mm 1.12-1.61 vs 1.39-1.94 s, line deviation 0.33-1.12 vs 0.47-2.03 mm, final
   0.06-0.73 vs 0.02-0.34 mm, overshoot <= 0.8 vs 0.32 mm (z); rotations to 10 mrad 1.03-2.45 vs 1.33-3.89 s, final
