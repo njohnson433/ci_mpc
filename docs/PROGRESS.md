@@ -154,6 +154,28 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (evening): J^T check: the Cartesian breakaway is NOT the joint friction mapped through J^T in any simple model
+- Probe pose (joint_id 'probe' q, the IK of the C3 probe pose; the breakaway goto may sit slightly elsewhere in the
+  null space), joint static friction from probe_1643 (j2 / j6 from home_1721), EE = Desk-profile TCP:
+
+  | dir | first joint to slip (s_i / abs(J^T d)_i) | 1 / norm(J^T d / s) | pure-motion dissipation LP | measured (warm) |
+  |---|---|---|---|---|
+  | x [N] | 2.24 (j6) | 1.50 | 6.19 | 1.37 |
+  | y [N] | 1.11 (j3) | 0.86 | 2.81 | 0.86 |
+  | z [N] | 1.63 (j2) | 1.22 | 3.71 | 1.15 |
+  | rx [Nm] | 1.26 (j5) | 1.08 | 2.07 | 1.24 |
+  | ry [Nm] | 0.49 (j6) | 0.38 | 1.97 | 0.68 |
+
+- The measured breakaway is BELOW the first-joint-to-slip force in x / y / z (1.37 vs 2.24 N in x), so the joints are
+  not unloaded when the ramp starts: after the goto they stick with residual torques near their friction limits
+  (preload from the last motion, plus the gravity-model offsets j2 -0.66 / j4 +0.23 / j6 +0.23 Nm), and a small extra
+  force tips one over. The pure-motion LP (motion only along d) is 2-4x too high: the 0.1 mm threshold is reached by a
+  mixed motion the spring allows. The 1 / norm(J^T d / s) heuristic lands within 0-15 % for x, y, z, rx (ry 0.38 vs
+  0.68) - probably a coincidence of scale, not a model.
+- Consequence for C3: the Cartesian "box" friction is history-dependent (joint preload after the last motion), so a
+  single per-axis value is an average at best; the measured values stay the right input. A joint-space friction model
+  (with preload state) would be the faithful version - candidate for the sim side (src-35), not done here.
+
 ### 2026-10-28 (afternoon): first MPC runs on the real FR3, free space (`~/ci_mpc_runs/real/mpc_free/`)
 - **Works:** stage-1 mpc_node -> cartesian_impedance_controller on the real arm; frame check 0.01 mm; 10 s hold drift
   0.02 mm; solves ~1.1 ms; command gaps <= 35 ms (timeout 50).
