@@ -155,6 +155,12 @@ Read this before starting work (and before re-investigating something "new").
   repeats (5.28 / 5.23 N), the tip height not (flat tips +0.25 vs +0.08 mm). Batched vs pipeline class agreement
   (0.45–0.51) is at this floor: the ≥ 80 % target of step 4 is not reachable, use distributions (flat Fz, tip, engaged
   fraction by radius) and true force instead.
+- **Decision (user, via src-5e, 2026-10-28): validate on true force (option a).** The per-probe ≥ 80 % class-agreement
+  target of step 4 is **dropped** (the pipeline agrees with itself 47–50 %). Batched vs pipeline is now compared on
+  the wrist F/T force and on distributions (probe class rates by radius, Fz / xy distributions, success / time).
+  **v3 / v4 likelihoods were trained on the over-reading Isaac observer force** (pipeline `external_wrench`); kept for
+  reference. Next likelihood v5: trained on true force (or the batched observer where it matches the wrist F/T),
+  benchmarked against v3 on D1 / R, then the H sets, one lever at a time.
 - The step-4b hypothesis (the pipeline arm gets past stiction via the integrator and presses harder) is refuted for the
   holds: the pipeline arm is equally stuck and its true force is the batched one's.
 

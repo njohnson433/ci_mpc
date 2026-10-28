@@ -398,3 +398,52 @@ class BatchedProbe:
         rel = tu.quat_apply_inverse(env.fixed_quat, env.held_pos - env.fixed_pos)
         depth_err, xy_err = rel[:, 2], rel[:, :2].norm(dim=1)
         return (depth_err < 0.001) & (xy_err < 0.0015), depth_err, xy_err
+
+
+class TargetedProbe(BatchedProbe):
+    """Calibration touch as the demo, then given probe positions (model frame) with per-probe hold depth / settle time;
+    no belief, no insertion: the logged positions (fidelity_probe_replay.py) or sampled ones (batched_collect.py)."""
+
+    def setup(self, targets, n, hold, settle):
+        self.rp_t, self.rp_n, self.rp_hold, self.rp_settle = targets, n, hold, settle
+        self.rp_k = torch.zeros(self.N, dtype=torch.long, device=self.dev)
+        self.rec_x = torch.full((self.N, targets.shape[1], 3), float("nan"), device=self.dev)
+        self.rec_F = torch.full((self.N, targets.shape[1], 3), float("nan"), device=self.dev)
+        self.rec_zb = torch.full((self.N,), float("nan"), device=self.dev)
+        self.calib_ok = torch.zeros(self.N, dtype=torch.bool, device=self.dev)
+
+    def _next(self, m):
+        i = torch.nonzero(m)[:, 0]
+        k = self.rp_k[i]
+        fin = k >= self.rp_n[i]
+        self._go(m & torch.zeros_like(m).index_fill_(0, i[fin], True), DONE)
+        go = i[~fin]
+        if len(go):
+            kk = self.rp_k[go]
+            self.target[go] = self.rp_t[go, kk]
+            self.hold_depth[go] = self.rp_hold[go, kk]
+            self.settle_steps[go] = torch.clamp(torch.round(self.rp_settle[go, kk] / self.dt), min=1).long()
+            mm = torch.zeros_like(m)
+            mm[go] = True
+            self._go(mm, HOVER)
+
+    def _after_measure(self, m, x, F):
+        tip = self.tip(x)
+        cal = m & self.calib
+        ok = cal & (F[:, 2] > 1.0) & (tip.abs() < 0.0025)
+        self.z_bias[ok] = tip[ok]
+        self.calib_ok |= ok
+        self.calib[cal] = False
+        self.rec_zb[cal] = self.z_bias[cal]
+        pm = m & ~cal
+        if pm.any():
+            # the demo's probe-0 rule (calibration touch failed) ...
+            first = pm & (self.rp_k == 0) & (self.z_bias == 0.0) & (F[:, 2] > 1.0) & (F[:, :2].norm(dim=1) < 1.5) & \
+                (tip.abs() < 0.0015)
+            self.z_bias[first] = tip[first]
+            x = self.measure()
+            i = torch.nonzero(pm)[:, 0]
+            self.rec_x[i, self.rp_k[i]] = x[i]
+            self.rec_F[i, self.rp_k[i]] = F[i]
+            self.rp_k[i] += 1
+        self._next(m)
