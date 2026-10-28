@@ -43,6 +43,8 @@ p = argparse.ArgumentParser()
 p.add_argument("--urdf", default="/home/njohnson/ci_mpc_assets/fr3.urdf")
 p.add_argument("--sync-dir", required=True)
 p.add_argument("--log-dir", default="/tmp")
+p.add_argument("--force-source", default="observer", choices=["observer", "wrist"],
+               help="force for the probes / contact logic: the controller observer (~/external_wrench) or the true force\n               through the hand (simulated wrist F/T, needs WRIST_FT=1; vectorized step 5: the Isaac effort state over-reads\n               in contact, the batched likelihood v5 is trained on true force)")
 p.add_argument("--mode", default="blended", choices=["blended", "stops"])
 p.add_argument("--grasp-offset", default="0,0", help="grasp off the nominal point dx (hand x, across the finger axis), "
                "dz (deeper +) [mm]; the controller keeps assuming the nominal grasp (held-out variation)")
@@ -273,9 +275,34 @@ def on_det(msg):
 node.create_subscription(JointState, "/joint_states", on_js, 100)
 node.create_subscription(Detection3DArray, "/perception/detections", on_det, 10)
 wrench_log = []  # (joint_states time, Franka-sign external wrench estimate: force xyz, torque xyz)
-node.create_subscription(WrenchStamped, "/cartesian_impedance_controller/external_wrench",
-                         lambda m: wrench_log.append((state["t"], m.wrench.force.x, m.wrench.force.y, m.wrench.force.z,
-                                                      m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z)), 100)
+if args.force_source == "observer":
+    node.create_subscription(WrenchStamped, "/cartesian_impedance_controller/external_wrench",
+                             lambda m: wrench_log.append((state["t"], m.wrench.force.x, m.wrench.force.y,
+                                                          m.wrench.force.z, m.wrench.torque.x, m.wrench.torque.y,
+                                                          m.wrench.torque.z)), 100)
+else:
+    _wrist = {"fh": None, "buf": ""}
+
+    def _poll_wrist():
+        """Tail <sync>/wrist_ft.csv (sim time, raw hand-frame wrench, hand quaternion wxyz) into wrench_log, rotated to
+        the world: R_hand raw = Franka sign, as the observer (PROGRESS "Ground truth for contact")."""
+        if _wrist["fh"] is None:
+            if not os.path.exists(sync("wrist_ft.csv")):
+                return
+            _wrist["fh"] = open(sync("wrist_ft.csv"))
+        _wrist["buf"] += _wrist["fh"].read()
+        *lines, _wrist["buf"] = _wrist["buf"].split("\n")
+        for line in lines:
+            v = line.split(",")
+            if len(v) != 11 or v[0] == "t":
+                continue
+            t, f, tq, (w_, x_, y_, z_) = float(v[0]), np.array(v[1:4], float), np.array(v[4:7], float), map(float, v[7:])
+            Rh = np.array([[1 - 2 * (y_ * y_ + z_ * z_), 2 * (x_ * y_ - w_ * z_), 2 * (x_ * z_ + w_ * y_)],
+                           [2 * (x_ * y_ + w_ * z_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - w_ * x_)],
+                           [2 * (x_ * z_ - w_ * y_), 2 * (y_ * z_ + w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)]])
+            wrench_log.append((t, *(Rh @ f), *(Rh @ tq)))
+
+    node.create_timer(0.005, _poll_wrist)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
 path_pub = node.create_publisher(PoseArray, "/ci_mpc_planner/path", 10)
 width_pub = node.create_publisher(Float64, "/gripper/width", 10)
