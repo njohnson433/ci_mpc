@@ -195,6 +195,9 @@ void JointIdController::startSegment() {
   t_seg_ = 0.0;
   seg_start_q_ = q_[joint_];
   breakaway_tau_ = 0.0;
+  // the breakaway ramp starts from the torque that held the joint (gravity-model error, e.g. FR3 joint 2 -0.66 Nm):
+  // from 0 the joint started moving at once and the ramp ended after a few samples (real FR3, 2026-10-28)
+  breakaway_base_ = tau_prev_[joint_];
 }
 
 controller_interface::return_type JointIdController::update(const rclcpp::Time& /*time*/,
@@ -270,13 +273,13 @@ controller_interface::return_type JointIdController::update(const rclcpp::Time& 
       }
       case Phase::kBreakaway: {
         // open-loop torque ramp on the tested joint, others held
-        breakaway_tau_ = seg.target * breakaway_rate_ * t_seg_;
+        breakaway_tau_ = breakaway_base_ + seg.target * breakaway_rate_ * t_seg_;
         code = seg.code;
         q_ref_ = q_[j];
         dq_ref_ = 0.0;
         finished = std::abs(q_[j] - seg_start_q_) > breakaway_pos_threshold_ ||
                    std::abs(dq_[j]) > breakaway_vel_threshold_ ||
-                   std::abs(breakaway_tau_) > breakaway_max_ || t_seg_ >= seg.duration;
+                   breakaway_rate_ * t_seg_ > breakaway_max_ || t_seg_ >= seg.duration;
         break;
       }
       case Phase::kSine: {

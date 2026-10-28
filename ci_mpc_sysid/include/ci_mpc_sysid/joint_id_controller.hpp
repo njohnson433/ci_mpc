@@ -99,6 +99,7 @@ class JointIdController : public controller_interface::ControllerInterface {
   double q_ref_{0.0}, dq_ref_{0.0};  // reference for the joint under test
   double seg_start_q_{0.0};
   double breakaway_tau_{0.0};
+  double breakaway_base_{0.0};  // tested joint's torque when the ramp starts
   bool done_{false};
   bool aborted_{false};
 
