@@ -157,7 +157,8 @@ Read this before starting work (and before re-investigating something "new").
 ## Log
 
 ### 2026-10-28 (evening): RETRACTION: there is no pipeline observer over-read; the wrist F/T log is 0.23 s late (step 4c / 4d / 5a / item 3 force numbers were an alignment artifact)
-- `wrist_ft.csv` stamps (Kit timeline at render frames, ~60 Hz) run **0.23 s behind** the joint-state header stamps.
+- `wrist_ft.csv` stamps (Kit timeline at render frames, ~60 Hz) are **0.23 s ahead of** the joint-state header stamps
+  (Isaac stamps /joint_states ~0.24 s behind /clock: already in compare_wrench.py since 2026-10-23, dropped later).
   Two independent checks: (1) at each probe press the TCP stops (joint clock) and the observer rises at the same
   instant (median 0.000 s, 33 presses), the wrist Fz 0.246 s later; (2) the observer-vs-wrist Fz cross-correlation
   peaks at +0.230 s in every episode (0.95-0.97; nofric 0.235 s). All earlier comparisons interpolated the wrist at the

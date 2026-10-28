@@ -28,7 +28,7 @@ for d in args.dirs:
                   np.stack([2 * (x_ * y_ + w_ * z_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - w_ * x_)], -1),
                   np.stack([2 * (x_ * z_ - w_ * y_), 2 * (y_ * z_ + w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)], -1)], 1)
     fw = np.einsum("nij,nj->ni", R, wf[:, 1:4])
-    # the wrist CSV's time stamps run ~0.23 s behind the joint-state stamps (render-frame timeline time): align by the
+    # the wrist CSV's time stamps are ~0.23 s ahead of the joint-state stamps (wrist_csv.py): align by the
     # lag that best correlates the observer Fz with the wrist Fz (the observer's own lag, 1 / gain 33 ms, is in it)
     lags = np.arange(-0.1, 0.5, 0.005)
     cor = [np.corrcoef(w[:, 2], np.interp(t + lg, wf[:, 0], fw[:, 2]))[0, 1] for lg in lags]

@@ -1,6 +1,6 @@
 """Reader for the simulated wrist F/T log (<sync>/wrist_ft.csv, scripts/isaac/wrist_ft.py; WRIST_FT=1).
 
-The CSV's time stamps (Kit timeline time, written at render frames) run WRIST_LAG behind the joint-state header
+The CSV's time stamps (Kit timeline time, written at render frames) are WRIST_LAG ahead of the joint-state header
 stamps that every other log uses (state["t"], bags, external_wrench.npy): at each probe press the TCP stops and the
 observer rises at the same joint-state instant, the wrist force 0.246 s later; the observer-vs-wrist Fz
 cross-correlation peaks at 0.230-0.245 s (median 0.235) in all 52 checked runs (peg, H1-H3, H3-100, H5, nochamfer,

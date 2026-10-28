@@ -52,7 +52,7 @@ for d in args.dirs:
     wf = np.loadtxt(os.path.join(d, "wrist_ft.csv"), delimiter=",", skiprows=1)
     R = quat_R(*(wf[:, i] for i in (7, 8, 9, 10)))
     Ww = np.concatenate([np.einsum("nij,nj->ni", R, wf[:, 1:4]), np.einsum("nij,nj->ni", R, wf[:, 4:7])], 1)
-    # wrist CSV stamps run ~0.23 s behind the joint-state stamps (hold_forces.py): align by the observer Fz correlation
+    # wrist CSV stamps are ~0.23 s ahead of the joint-state stamps (wrist_csv.py): align by the observer Fz correlation
     lags = np.arange(-0.1, 0.5, 0.005)
     lag = lags[int(np.argmax([np.corrcoef(tr["wrench"][:, 2], np.interp(t + lg, wf[:, 0], Ww[:, 2]))[0, 1]
                               for lg in lags]))]
