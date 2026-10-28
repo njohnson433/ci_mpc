@@ -206,9 +206,22 @@ Read this before starting work (and before re-investigating something "new").
 - **Likely mechanism: the pipeline's "sinking" is cumulative peg slip in the grasp, not hole geometry.** Probes far
   from the hole (r > 6 mm, flat face only) drift down monotonically over the episode in the pipeline (ep 6: -0.09 ->
   -0.91 mm over 10 far probes; ep 0 0.02 -> -0.44; ep 4 -0.15 -> -0.60), batched stays within -0.16 mm. The tip is
-  TCP - fixed offset, so a peg pushed up into the fingers reads as a sunk tip. Check running: nofric_e001 with a bag
-  of /perception/detections (true peg pose) next to /joint_states. If confirmed, the pipeline engaged classes (and
-  the v3/v4 training labels from the pipeline) carry grasp slip; the batched geometry would be the cleaner one.
+  TCP - fixed offset, so a peg pushed up into the fingers reads as a sunk tip. (Already found 2026-10-27, entry
+  "vectorized step 4" mechanism 1 / step 4b; re-found here before reading it.)
+- **Ground truth (nofric_e001 = w0_e001 on the frictionless arm + no compensation, `peg_slip_hand_mm` from src-f1's
+  66aa91b):** after 40 probes the peg moved **z -2.11 mm (up into the fingers), x +3.44 mm (along the pads)** in the
+  hand frame; far-probe tips -0.08 -> -1.22 mm. So the slip is the pipeline grasp, not arm friction, and it also
+  shifts the probe xy by up to ~3 mm (the likelihood's TCP-relative positions). (The detections bag did not help:
+  /perception/detections carries only the hole "box".) Decision: **v5 trains on batched data** (no slip, labels =
+  true tip), collection released 19:35 at 256 envs (VRAM: src-f1 runs 6 instances); v3/v4 labels carry slip.
+  Open for the real arm: does the real Franka Hand (70 N, rubber pads) slip? If so the real tips drift as in the
+  pipeline and need a re-touch / slip estimate (src-f1's suggestion: tip = TCP - (offset + slip)).
+- **Item 3, observer contact over-read vs arm joint friction (same episode, one lever):** observer - true Fz
+  +1.54 +- 1.49 N with friction (w0_e001) vs **+0.87 +- 1.14 N without** (true press 2.75 -> 3.48 N; ratio observer /
+  true 1.75 -> 1.11). Per joint (`scripts/isaac/joint_residual.py`, all step4d holds): the effort state changes by
+  ~1.8x J_hand^T (true wrist wrench) on j2 / j4 / j6 (+2.49 vs +1.36, -2.18 vs -1.28, -0.43 vs -0.25 Nm), i.e. the
+  over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
+  differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
 ### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
 - **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the
