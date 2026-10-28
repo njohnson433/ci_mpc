@@ -43,7 +43,7 @@ Read this before starting work (and before re-investigating something "new").
   5. Free-space MPC (new, entry "2026-10-28"): `scripts/real/mpc_free_space_session.sh test`, then `all`. Breakaway
      moves faster: `c3_breakaway_session.sh probe --goto-speed 0.04` (default 0.015 m/s).
   6. Later (needs a surface / fixture): press ~3 N for >= 0.3 s static, log observer vs O_F_ext_hat_K vs K(x_d - x) +
-     F_ff. In Isaac the observer over-reads only in contact (+1.4-2.5 N), not in the free-space stiction-held ramp
+     F_ff. In Isaac the observer does NOT over-read (the earlier +1.4-2.5 N in contact was a 0.23 s wrist-log offset, retracted), nor in the free-space stiction-held ramp
      (0.01-0.13 N, src-35); tomorrow's free-space breakaway logs answer only the free-space half. Send src-35 the
      breakaway raw.npz paths after the session.
   Controller commits e56a1c5, d09356a pushed 2026-10-28 (by the user, over SSH: the clone's origin is HTTPS without
