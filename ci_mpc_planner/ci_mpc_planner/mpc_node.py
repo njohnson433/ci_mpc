@@ -83,6 +83,7 @@ class MpcNode(Node):
         dp("path_a_max", 0.35)   # [m/s^2] tangential and centripetal; below the force-aware MPC limit (~0.5)
         dp("path_blend", 0.03)   # [m] corner radius at via points  # 6 values: commanded diagonal K (else the controller keeps its own)
         dp("torque_limit", [6.0, 6.0, 1.5])
+        dp("damping", [0.0])  # 6 values: commanded diagonal D (else the controller derives D from K and Lambda)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         for name in ("dt", "q_pos", "q_vel", "r_acc", "r_dacc", "terminal", "v_max", "a_max", "horizon"):
             setattr(cfg, name, gp(name))
@@ -98,6 +99,7 @@ class MpcNode(Node):
         self.sigma_min_stop = gp("sigma_min_stop")
         self.force_limit = gp("force_limit")
         self.stiffness = [float(k) for k in gp("stiffness")] if len(gp("stiffness")) == 6 else None
+        self.damping = [float(d) for d in gp("damping")] if len(gp("damping")) == 6 else None
         self.torque_limit = np.array(gp("torque_limit"), dtype=float)
         self.a_lims = []
         self.singular_stop = False
@@ -330,6 +332,8 @@ class MpcNode(Node):
         m.integral_enabled = bool(self.integral)
         if self.stiffness is not None:
             m.stiffness = self.stiffness
+        if self.damping is not None:
+            m.damping = self.damping
         self.pub.publish(m)
 
     def report(self):
