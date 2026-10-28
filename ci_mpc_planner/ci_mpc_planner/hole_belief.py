@@ -149,6 +149,34 @@ class HoleBelief:
         i = np.flatnonzero(near)[np.argmin(np.linalg.norm(cands[near] - cur, axis=1))]
         return cands[i], sc[i]
 
+    def next_probe_info(self, pose_at, exclude=(), current=None, min_spacing=0.0015, cap=0.0015, n_hyp=400):
+        """Tilt probe: the candidate (low-point position) whose predicted measurement varies most over the belief.
+        pose_at(c) = the TCP pose that puts the low point at c on the flat face; the prediction per hypothesis is the
+        smallest peg-hole gap there (~ how far the peg would drop), capped; score = its weighted variance (a sure drop
+        or a sure miss, and a 0.1 mm drop at the very edge, all teach little). Near-ties (10 %): closest to `current`."""
+        w = self.weights()
+        idx = np.argsort(w)[::-1][:n_hyp]  # the bulk of the belief
+        wi = w[idx] / w[idx].sum()
+        h_all = self.h
+        self.h = h_all[idx]
+        cands, sc = [], []
+        try:
+            for c in h_all[::2]:
+                if any(np.linalg.norm(c - e) < min_spacing for e in exclude):
+                    continue
+                d, _ = self.gaps(pose_at(c))
+                y = np.clip(d.min(axis=1), 0.0, cap)
+                m = wi @ y
+                cands.append(c)
+                sc.append(wi @ (y - m) ** 2)
+        finally:
+            self.h = h_all
+        cands, sc = np.array(cands), np.array(sc)
+        near = sc >= 0.9 * sc.max()
+        cur = np.zeros(2) if current is None else np.asarray(current)
+        i = np.flatnonzero(near)[np.argmin(np.linalg.norm(cands[near] - cur, axis=1))]
+        return cands[i], sc[i]
+
     def next_probe(self, exclude=(), current=None, min_spacing=None):
         """Probe position maximizing P(hole within the capture radius); positions already probed are skipped; among
         near-ties (within 10 %) the one closest to `current` (a flat belief otherwise always picked a grid corner)."""

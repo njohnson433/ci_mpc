@@ -139,6 +139,7 @@ p.add_argument("--tilt-probe", type=float, default=0.0,
                     "sharp-edged hole (--tilt-clearance) and the probes place the lowest point; upright at the estimate once "
                     "the belief std < --tilt-std, then the usual insertion")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
+p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
                help="--tilt-probe: diametral clearance of the sharp-edged hole model [m]")
 p.add_argument("--c3-integral", action="store_true",
@@ -803,11 +804,20 @@ elif args.strategy == "probe":
             if k + 1 >= args.collect:
                 break
             continue
-        if tilting and std < args.tilt_std:
-            # localized: upright at the estimate, then the usual probe / centering / push
+        if tilting and (std < args.tilt_std or k + 1 >= args.tilt_max_probes):
+            # localized (or out of tilted probes): upright at the estimate, then the usual probe / centering / push
             tilting, c["tilt"], probes, belief.capture = False, (0.0, 0.0), [], 0.001
-            print(f"    tilt search: localized (std {std * 1000:.2f} mm) after {k + 1} probes, upright at "
-                  f"{np.round(est * 1000, 2)} mm", flush=True)
+            tp = truth().get("peg", {})
+            if "quat_wxyz" in tp:  # diagnostic (truth): peg axis vs the hand axis, did the tilted presses rotate it?
+                w_, x_, y_, z_ = tp["quat_wxyz"]
+                pz = np.array([2 * (x_ * z_ + w_ * y_), 2 * (y_ * z_ - w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)])
+                hz = fk(state["q"]).rotation[:, 2]
+                ang = np.degrees(np.arccos(np.clip(abs(pz @ hz), -1, 1)))
+            else:
+                ang = float("nan")
+            print(f"    tilt search: {'localized' if std < args.tilt_std else 'out of tilted probes'} (std "
+                  f"{std * 1000:.2f} mm) after {k + 1} probes, upright at {np.round(est * 1000, 2)} mm; peg axis vs hand "
+                  f"axis {ang:.2f} deg (truth)", flush=True)
         sunk = tip_z(x) < -3e-4
         if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering) and std < args.gpu_std_max:
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
@@ -976,7 +986,9 @@ elif args.strategy == "probe":
             c.setdefault("phases", []).append(("push", c["t_engage"], state["t"]))
             break
         if tilting:  # the low point on the belief's uncertain edge
-            target, _ = belief.next_probe_edge(lo, belief.g.R, exclude=probes, current=low_point(x)[:2])
+            z_flat = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]  # low point at 0
+            target, _ = belief.next_probe_info(lambda cxy: np.array([*(cxy - lo), z_flat, *c["tilt"]]), exclude=probes,
+                                               current=low_point(x)[:2])
         else:
             target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
         if args.stuck_dither > 0:

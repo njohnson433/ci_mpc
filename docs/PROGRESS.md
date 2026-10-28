@@ -237,6 +237,30 @@ Read this before starting work (and before re-investigating something "new").
   `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
   (seed 1000 + id) for a paired comparison with src-f1's pipeline runs.
 
+### 2026-10-28 (15:40): held-out cross-task check of C3 (MF3 + gate 3 mm): no gain anywhere, slower everywhere (`~/ci_mpc_runs/cross_c3`)
+- `scripts/queue_cross_task_c3.sh`, D1 parameters unchanged, nominal scene, wrist F/T logged. Stopped at 15:36 for
+  the robot session (src-54) with H3 22/24 done (01041 both arms and 00700 c3 missing); compared on paired runs only.
+
+  | Task | Arm | Inserted | Contact median (successes) | **Wrist F/T peak median** | Observer peak median |
+  |---|---|---|---|---|---|
+  | H1 peg conditions (15) | plain | **15/15** | **12.7 s** | 7.3 N | 10.0 N |
+  | | C3 | 14/15 | 17.9 s | 7.8 N | 7.9 N |
+  | H2 gear (5) | plain | 2/5 | **18.3 s** | 14.0 N | 7.3 N |
+  | | C3 | 2/5 | 36.0 s | 9.7 N | 8.4 N |
+  | H3 AutoMate (10 paired) | plain | 5/10 | **23.9 s** | 13.3 N | 7.8 N |
+  | | C3 | 5/10 | 41.5 s | 11.4 N | 7.6 N |
+
+- Success: equal on H2 and H3 (H3 4 flips of 10, both directions, inside the 7/36 same-code noise), C3 one worse on H1
+  (friction 1.0). Time: C3 slower on every task (+5 s, +18 s, +18 s median). Force (wrist F/T): equal on H1; lower on
+  H2 / H3 (−4.3 / −1.9 N median) but on 2 + 5 successes, not significant. C3 handed over on all three tasks (6 / 7 / 14
+  phases), so the gate does fire outside the peg (on H3 the hand belief often collapses below 3 mm).
+- Verdict: the C3 candidate does not beat plain held out. It is a safe-but-slower controller, consistent with D1
+  (equal success and true force). Not adopted; plain stays the default. The H2 / H3 force hint is worth a check
+  only with more runs (H3-100).
+- Resume: rerun the 3 missing H3 runs if needed (the queue script does not skip finished runs: run them by hand with
+  the H3 offsets); H3-100 (`queue_h3_100.sh`, resumable, nothing ran yet) needs its WAIT_FOR set to "" (the cross-task
+  log never got "queue done").
+
 ### 2026-10-28 (afternoon): chamferless hole search, dev set + tilted probe (in progress; H5 stays held out)
 - Task (user, via src-5e): a hole search that works without a hole chamfer or tip-height cue (H5 NIST: ≥ 2 mm offsets
   0/7, all probes flat). Rules: design and tune on a dev set, H5 only at the end, wrist F/T as the force metric, one
@@ -261,7 +285,20 @@ Read this before starting work (and before re-investigating something "new").
      model (offline, true hole) predicts every measured height within ~0.1 mm (drops 0.2–1.5 mm, direction-dependent),
      so the physics is right; the belief rules are too loose: pen_tol 0.3 mm swallows the 0.2–0.4 mm drops.
   4. + contact likelihood (`HoleBelief(gap_sigma=1e-4)`: the smallest peg-hole gap at the measured pose ~ N(0, 0.1 mm)):
-     offline replay of the logged probes converges to 0.1–0.5 mm (the in-hand offset), Isaac rerun running.
+     offline replay of the logged probes converges to 0.1–0.5 mm (the in-hand offset), Isaac: 0/3, estimates 0.5–1.4 mm off but slow:
+     edge-seeking probes put the low point barely inside, where drops are 0.1–0.3 mm.
+  5. + information-based probe choice (`next_probe_info`: candidate with the largest weighted variance of the predicted
+     drop over the belief): **localizes in 5–9 tilted probes**. 1/3 inserted ((1.41, 1.41): 32 s, 5 tilted probes,
+     0.6 mm at handover). (0, −3): localized 0.06 mm off, but upright read flat several times, then stalled at 9.5 of 15 mm
+     (suspect: tilted presses rotate the peg in the fingers, then it jams in the 0.1 mm hole). (−2.5, 1.5): estimate
+     right, but std stayed 0.5–0.8 mm, never went upright.
+  6. (ready, not run: stopped for the robot session) `--tilt-max-probes 12` (upright after 12 tilted probes) and a
+     truth diagnostic at the handover: peg axis vs hand axis (tests the rotation-in-grasp suspicion).
+- **Resume here:** rerun the (0, −3) and (−2.5, 1.5) offsets (`~/ci_mpc_runs/nochamfer/tilt6`, killed at start), read
+  the peg-vs-hand angle. If the peg rotates in the grasp: lower the tilted press force (or re-square the peg on the face
+  before going upright). Then a dev sweep (round 8 / 10, square 10; ~8 offsets each), D1 no-regression check (flag off =
+  unchanged code path), and H5 only at the end.
+
 
 ### 2026-10-28 (12:20): integrator in the C3 phase: it partly replaces the stiction feedforward but adds nothing on top of MF3 (`night/run_integ.sh`)
 - One lever: `--c3-integral` turns the controller integrator on during the C3 phase only (the probe commands keep it
