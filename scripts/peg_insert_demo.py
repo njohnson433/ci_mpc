@@ -132,6 +132,9 @@ p.add_argument("--c3-stiction-ff", default="0,0",
                     "--stiction-ff 2,3 with the true stiction in the model: 16/16)")
 p.add_argument("--c3-ff-lat-depth", type=float, default=float("inf"),
                help="probe --entry c3: lateral compensation only while the tip is less than this deep [mm]")
+p.add_argument("--c3-integral", action="store_true",
+               help="probe --entry c3: controller integrator on during the C3 phase (else off: the arm stalls where the "
+                    "spring force equals the stiction, vectorized step 4c)")
 p.add_argument("--entry", default="follow", choices=["follow", "gpu", "c3"],
                help="probe strategy, engaged phase: follow = force-following centering; gpu = GPU sampling MPC "
                     "(scripts/gpu_mpc_server.py in the Isaac venv, started by this script)")
@@ -626,7 +629,7 @@ elif args.strategy == "probe":
         m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = qc.x, qc.y, qc.z, qc.w
         m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = map(float, c["ff"])
         m.stiffness = K_search
-        m.integral_enabled = False
+        m.integral_enabled = c.get("integral", False)
         cmd_pub.publish(m)
 
     timer = node.create_timer(0.005, command_probe)
@@ -793,6 +796,7 @@ elif args.strategy == "probe":
             tr_c3 = {"est": est.tolist(), "std": float(std), "true": (-offset[:2]).tolist(), "goal": goal.tolist(),
                      "comp": c3_comp.tolist(), "tip_below_tcp": float(tip_below_tcp), "steps": []}
             c.setdefault("c3_trace", []).append(tr_c3)
+            c["integral"] = args.c3_integral
             for _ in range(args.c3_steps):
                 x = measure5()
                 t_s = time.perf_counter()
@@ -813,7 +817,7 @@ elif args.strategy == "probe":
                 spin_sim(dt)
                 if geo.depth - (-tip_z(measure5())) < 0.001:
                     break
-            c["ff"] = np.zeros(3)
+            c["ff"], c["integral"] = np.zeros(3), False
             c.setdefault("phases", []).append(("c3", t_a, state["t"]))
             tr_c3["depth_end"] = float(-tip_z(measure5()))
             belief.update(measure5(), force3(0.3))  # once per engagement, like a probe
