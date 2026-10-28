@@ -46,10 +46,11 @@ Read this before starting work (and before re-investigating something "new").
   rotational friction in the model: negative (entry "C3 in Isaac"). Overnight result (entry "C3 overnight result"):
   MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
   (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). MF4 = MF3, so keep MF3. **MF3 + std gate 3 mm: 40/40, 20/20 phases deep, time = plain (25.1 vs 25.0 s), engaged
-  peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. Of the 2.7 N force gain, ~1.6 N is C3 and ~1.1 N the c3-arm path
-  (never-hand-over control). Real-arm match: gated C3 30/30 but 9 s slower than plain, peak −0.6 N, so no gain.
-  Next (after the robot session): explain why the never-hand-over path pushes softer (centering on a sink?) and adopt
-  it in plain if it is free; real-arm C3 needs a speed fix (its phases are long) before it is worth trying on the robot.
+  peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. The force gain is C3's (mean −1.46 N vs plain, bootstrap CI
+  0.57–2.33, Mann-Whitney p = 0.001); the "c3-arm path" share was noise (`--c3-std-max 0` runs plain's exact code,
+  2026-10-28 correction). Real-arm match: gated C3 30/30 but 9 s slower than plain, peak −0.6 N, so no gain.
+  Next (after the robot session): real-arm C3 needs a speed fix (its phases are long) before it is worth trying on the
+  robot; check whether the C3 phase runs the controller integrator (src-35: without it the arm stalls in the stiction band).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -196,9 +197,12 @@ Read this before starting work (and before re-investigating something "new").
 
   - **Gate: 3 mm is the best of the three** on time (25 vs 30–31 s) at the same force, so it is not on a slope. The
     time differences between gates (~5 s median) are close to repeat noise (MF2 repeats differed by more).
-  - **Force attribution (nominal):** the never-hand-over control takes 1.1 N off plain's 10.2 N, with no C3 phase. That
-    part is the c3-arm path. A probable cause is the different centering on a sink: the gate falls through to centering
-    instead of pushing. The C3 phase takes off ~1.6 N more (9.1 → 7.5 N). Across all gated runs, the push after a C3 phase
+  - **Force attribution (nominal), corrected 2026-10-28:** the never-hand-over control's 1.1 N lower median is noise,
+    not a code-path effect. With `--c3-std-max 0` the C3 branch never fires and the run takes plain's exact code (the
+    model is only built; centering and push are shared). The peaks are bimodal (~5–7 N or ~10–11 N, a locked-in ramp
+    force per src-35 step 4c), so the medians jump: mean difference plain − never 0.58 N, bootstrap 95 % CI −0.33 to
+    1.47, Mann-Whitney p = 0.19. C3 phase vs never: mean −0.88 N (CI 0.12–1.69, p = 0.045). Gated C3 vs plain: mean
+    −1.46 N (CI 0.57–2.33, p = 0.001); peaks above 9.5 N in 22 % of runs vs 63 % for plain. Across all gated runs, the push after a C3 phase
     peaks at 6.9–7.5 N vs 7.4–9.3 N without one. **So C3 does reduce force, by ~1.5 N (~15 %), at plain's time and success.**
   - **Real-arm match: no gain.** C3 + gate is 30/30 but 9 s slower than plain (median 24.9 vs 16.0 s), and the peak
     is only 0.6 N lower (p90 equal). With the real arm's lower friction, plain's push is already gentle (6.4 N).
