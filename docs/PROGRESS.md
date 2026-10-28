@@ -18,15 +18,17 @@ Read this before starting work (and before re-investigating something "new").
   artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
   Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
 
-- **2026-10-28 17:28 RESUMED (robot session over), vectorized fidelity → v5;** queue `~/ci_mpc_runs/vec/step6/queue.sh`
-  (breakaway on the real-joint-ID scene, then the 512-env collection). Was paused 15:30 for the robot session. Nothing of src-35 running.
-  Resume, one Isaac instance at a time (GPU was 99 % with src-f1's H3-100; 8-env runs reached RTF ~0.07):
-  1. DONE 18:03 (entry "vectorized step 5a"): batched force matches the pipeline's true force (-0.3 N), but batched
-     engages 2-3x less off the hole.
-  2. `batched_collect.py --envs 512 --seed 0 --out ~/ci_mpc_runs/vec/step5/collect_s0.npz` (saves every 200 steps;
-     never ran: the 16-env smoke timed out at 549/640 probes, so the script itself is untested past the loop).
-  3. Train v5 on it (`train_probe_likelihood.py`, v4 recipe), validate on held-out pipeline sweeps2 with true force,
-     benchmark v5 vs v3 on D1 / R, then H sets, one lever at a time.
+- **2026-10-28 20:00, src-35 (vectorized fidelity -> v5, peg only):** state after the evening (entries "RETRACTION",
+  "Isaac scene with the real FR3's identified joint friction", "vectorized step 5a / 5b"):
+  - No observer over-read (wrist log was 0.235 s off; `scripts/wrist_csv.py` now, benchmark peaks redone by
+    `scripts/recompute_wrist_peaks.py`, dry run sent to src-f1). v3 / v4 force is fine; their tip labels carry the
+    pipeline's in-hand slip (truth: 2.1 mm up / 3.4 mm along the pads over 40 probes).
+  - Remaining batched-vs-pipeline gap: press force (true hold Fz pipeline 4.81 N vs batched 2.20 at sff 3.0, 2.91 at
+    3.5). Running: batched replay at `--sff 5.0` (`~/ci_mpc_runs/vec/step6/replay_sff50.*`).
+  - Next: pick the press calibration (sff) from that, then `batched_collect.py --envs 256 --sff <x>` (go-file queue
+    removed; launch by hand, >= 4 GB VRAM free), train v5, check v5 on the 320 step4d probes, D1 / R vs v3.
+  - Pipeline test of v5 needs `--force-source wrist` (c270baf, lag-corrected 4694b78; untested in a run).
+  - Real-joint-ID scene (`fr3_scene_real1028.usd`, FR3_PARAMS) is opt-in only: 1.4-2x the real Cartesian breakaway.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
   Cartesian breakaway measured at the probe pose (cold): **C3 arm_friction 1.43, 0.80, 1.25 N, 1.56, 0.61 Nm**; offline
   check recommends `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` (entries below). Open, in order:
