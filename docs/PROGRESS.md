@@ -24,6 +24,15 @@ Read this before starting work (and before re-investigating something "new").
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
   not yet re-measured here.
+- **2026-10-28 (vectorized step 4c, peg only):** the press-force gap is in the **pipeline's observer**, not the
+  batched arm (entry "vectorized step 4c"). Same command in the probe holds (spring + 3 N ff ≈ 3.5–3.8 N) on both sides;
+  true force through the hand (wrist F/T): pipeline 2.51 N, batched 2.1 N; the pipeline observer reads 5.35 N
+  (+2.5 ± 1.7 N). The pipeline is also not repeatable: same seed, 47–50 % class agreement with itself (batched vs
+  pipeline 45–51 %), so the ≥ 80 % class target is unreachable; flat Fz repeats (5.28 / 5.23 N). Decision pending (user /
+  src-5e): validate the batched sim against the pipeline's *wrist F/T* (true force) and retrain the likelihood on
+  true / batched forces, or emulate the pipeline observer's over-read (`CI_TAU_SOURCE=projected` does not: +0.13 N).
+  NIST task board #1 = H5 (entry "NIST H5"): assets built, pipeline smoke test running; batched NIST / AutoMate only
+  after peg fidelity passes. Label batched results "batched, not validated for <task>".
 - **2026-10-27 evening (vectorized step 4b, fidelity levers):** step 4 still fails; the cause is narrowed to the
   arm, not the gripper (entry "vectorized step 4b"). Joint friction off (with its compensation) reproduces the
   pipeline's tip drift over k (−0.03 → −0.22 vs −0.03 → −0.20 mm) and closes a third of the press gap (Fz 3.57 vs
@@ -117,6 +126,64 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-28: vectorized step 4c: the press-force gap is the pipeline observer's over-read; the pipeline is not repeatable (peg only, `~/ci_mpc_runs/vec/step4c`)
+- Pipeline episode sweeps2 w0_e000 (seed 5000) rerun twice with a bag of /joint_states, mpc_command, external_wrench
+  (`scripts/isaac/bag_trace.py`: TCP by FK, sim time from the joint-state stamps; the bag's record times are wall
+  clock, RTF 0.3–0.6), the second with `WRIST_FT=1`; batched replay of the same episode with
+  `fidelity_probe_replay.py --trace` (env 0 per env step: phase, set-point, TCP, ff, integral, controller F, F_ext).
+- No command timeouts (0 "holding the current pose"), integral off in all probe commands, 1 publisher in the probe
+  phase (~340 Hz sim): the command side is identical to the batched one.
+- **Probe holds (39 per side), median, tared before the press:**
+
+  | | commanded push (K e + ff) | true force through the hand (wrist F/T) | observer |
+  |---|---|---|---|
+  | pipeline | 3.84 N | **2.51 N** | **5.35 N** |
+  | batched (`CI_TAU_SOURCE=wrist`) | 3.5–3.8 N | 2.1 N (its observer input is the hand wrench) | 2.11 N |
+  | batched `CI_TAU_SOURCE=projected` | same | – | +0.13 N (proximal-joint error, class agree 0.375) |
+
+  The arm does not move in the hold (z travel ≤ 0.01 mm). Pipeline observer − true = +2.50 ± 1.68 N per hold
+  (corr 0.33); "observer = 2·commanded − true" fits the mean (−0.09 N) but not per hold (sd 2.5 N). Mechanism open: the
+  observer runs on Isaac's ros2_control effort state, which was exact for known wrenches at rest (entry 2026-10-22),
+  but in a stiction-held press it reads ~2.5 N high. The PhysX contact report on the hole (3.56 N) is not truth either
+  (normal impulses only, 2× a resting weight; entry "Ground truth for contact").
+- So the batched arm presses like the pipeline arm (2.1 vs 2.5 N true); the 2.8 vs 4.9 N "flat Fz" gap of step 4 is
+  the pipeline observer's over-read. The learned likelihood (v3/v4) was trained on that over-read force.
+- **The pipeline does not repeat itself:** same seed and probe targets, achieved probe xy differs (median 0.23 mm,
+  up to 2 mm); probe-class agreement with itself 0.47 (0.50 where the two runs are within 0.5 mm, n 32); flat Fz
+  repeats (5.28 / 5.23 N), the tip height not (flat tips +0.25 vs +0.08 mm). Batched vs pipeline class agreement
+  (0.45–0.51) is at this floor: the ≥ 80 % target of step 4 is not reachable, use distributions (flat Fz, tip, engaged
+  fraction by radius) and true force instead.
+- The step-4b hypothesis (the pipeline arm gets past stiction via the integrator and presses harder) is refuted for the
+  holds: the pipeline arm is equally stuck and its true force is the batched one's.
+
+### 2026-10-28: NIST task board #1 = held-out H5: assets in the AutoMate layout (`~/ci_mpc_assets/nist`)
+- Scoping (web, full report with sources in the session scratchpad, summary here): NVIDIA hosts simulation-ready
+  USDs with SDF collision for all ATB #1 parts (Isaac/6.2/Isaac/IsaacLab/Factory/NIST/; Isaac Lab
+  `contrib/nist`, gym id IsaacContrib-Factory-Franka); no CAD conversion needed. NIST originals: SolidWorks + an STL zip,
+  "public information" (attribution), no license file; NVIDIA asset license unverified: **internal use only until
+  checked**. No usable third-party contact sim (MuJoCo gym-taskboard: convex decomposition; RoCo: fixed-joint snaps).
+  REASSEMBLE (CC BY 4.0, real FR3 + wrist F/T on ATB #1): no meshes, use only as a per-object insertion-force
+  distribution check. NIST protocol: random board pose per trial, ≥ 30 trials, time + pass/fail with a binomial bound.
+- `scripts/isaac/nist_assets.py` builds round 4/8/12 mm and rectangular 8/12 mm as `<id>/{plug,socket}.usda` (wrappers
+  around the source bodies: metersPerUnit 1, Z-up, body `a_<id>_*`, socket SDF resolution 512) + `.obj` (subdivided to
+  2 mm edges for `info()`) + `plug_grasps.json` (TCP 10 mm below the peg top), `disassembly_dist.json`, `nist.json`.
+  Plug and socket share the seated frame (peg bottom at z 0 = the table; 9 mm through-holes in a 25 mm block; pegs
+  50 mm long, 0.5 mm end chamfers, **holes without chamfer**).
+- Clearance (diametral, mid-depth cross-section, area-equivalent diameter for round): round 4 / 8 / 12 mm
+  0.095 / 0.144 / 0.261 mm; rect 8 0.185 × 0.153, rect 12 0.155 × 0.225 mm (our Factory 8 mm hole: 1.01 mm).
+- The pipeline loads them as AutoMate assemblies: `automate_scene.py` reads `AUTOMATE_ASSETS` (default unchanged),
+  `run_impedance_test.sh` passes it through `env -i`:
+  `AUTOMATE_ASSETS=~/ci_mpc_assets/nist AUTOMATE=nist_round_8mm scripts/demo_automate.sh --headless ...` (hand-written
+  likelihood via `--geo`; its chamfer guess 0.5 mm does not match the chamferless NIST holes).
+- Unit metadata: `round_hole_4mm/8mm` (and our `factory_hole_8mm.usd`) declare metersPerUnit 0.01 / upAxis Y with
+  metre, Z-up points. Composition ignores a referenced layer's stage metadata, and every peg result inserts into the
+  9 mm bore at the right height, so **no existing peg result is affected**; the wrappers author the correct metadata,
+  the shared Factory file is left unchanged.
+- Batched design (after peg fidelity passes): one task per run (Factory, `ci_hole_top`, `batched_probe` and the
+  likelihood assume one geometry); `CI_TASK=nist:<id>` / `automate:<id>` filled from the same `info()`; the
+  `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
+  (seed 1000 + id) for a paired comparison with src-f1's pipeline runs.
 
 ### 2026-10-28: true contact force: C3's engaged-peak gain was an observer artifact; the true peak is the same in every arm (`scripts/c3_night_cmp.py`)
 - Prompted by src-35: with the wrist F/T in pipeline holds, the observer over-reads by ~2.5 N (stiction: the spring
