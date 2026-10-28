@@ -14,7 +14,7 @@ export WRIST_FT=1  # true contact force (wrist_ft.csv): the observer peak is sti
 OUT=$1; mkdir -p "$OUT"
 DEADLINE=${DEADLINE:-$(date -d 'tomorrow 05:45' +%s)}
 PAR=${PAR:-3}
-WAIT_FOR=${WAIT_FOR:-"$HOME/ci_mpc_runs/cross_c3.log|cross-task queue done"}
+WAIT_FOR=${WAIT_FOR-"$HOME/ci_mpc_runs/cross_c3.log|cross-task queue done"}  # WAIT_FOR="" = no wait
 COMMON=(--timeout-contact 150 --max-probes 25 --track-height 5 --centering-bound 0.008 --stuck-dither 0.0008)
 C3=(--entry c3 --c3-arm-friction 2.2,1.9,2.2,0.05,0.05 --c3-stiction-ff 2.9,2.7 --c3-std-max 0.003)
 H3="00016 00021 00028 00211 00301 00319 00388 00499 00638 00652 00700 01041"
