@@ -23,10 +23,9 @@ Read this before starting work (and before re-investigating something "new").
   - No observer over-read (wrist log was 0.235 s off; `scripts/wrist_csv.py` now, benchmark peaks redone by
     `scripts/recompute_wrist_peaks.py`, dry run sent to src-f1). v3 / v4 force is fine; their tip labels carry the
     pipeline's in-hand slip (truth: 2.1 mm up / 3.4 mm along the pads over 40 probes).
-  - Remaining batched-vs-pipeline gap: press force (true hold Fz pipeline 4.81 N vs batched 2.20 at sff 3.0, 2.91 at
-    3.5). Running: batched replay at `--sff 5.0` (`~/ci_mpc_runs/vec/step6/replay_sff50.*`).
-  - Next: pick the press calibration (sff) from that, then `batched_collect.py --envs 256 --sff <x>` (go-file queue
-    removed; launch by hand, >= 4 GB VRAM free), train v5, check v5 on the 320 step4d probes, D1 / R vs v3.
+  - Press calibration done (entry "step 5c"): batched `--sff 5.0` matches the pipeline (force and engagement).
+  - Running since 00:01: `batched_collect.py --envs 256 --seed 0 --sff 5.0` -> `~/ci_mpc_runs/vec/step5/collect_s0_sff50.npz`
+    (saves every 200 steps). Next: train v5 (v4 recipe), check v5 on the 320 step4d probes, D1 / R vs v3.
   - Pipeline test of v5 needs `--force-source wrist` (c270baf, lag-corrected 4694b78; untested in a run).
   - Real-joint-ID scene (`fr3_scene_real1028.usd`, FR3_PARAMS) is opt-in only: 1.4-2x the real Cartesian breakaway.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
@@ -157,6 +156,26 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
+- Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
+  (aligned true force, `holds_all_lag.npz`); tip classes (flat / > 0.3 mm / > 3 mm), engaged = tip < -0.3 mm:
+
+  | | pipeline | sff 3.0 | sff 3.5 | **sff 5.0** |
+  |---|---|---|---|---|
+  | hold Fz median [N] | 4.81 (true) | 2.20 | 2.91 | **4.32** |
+  | lateral abs(F) median [N] | 1.19 | 0.51 | 0.57 | **1.06** |
+  | engaged r 0-4 / 4-5.5 / 5.5-9 mm | 74 / 43 / 35 % | 49 / 14 / 11 | 37 / 0 / 4 | **66 / 44 / 35** |
+  | same, probes k < 12 | 45 / 0 / 0 % | 45 / 20 / 5 | 34 / 0 / 0 | 50 / 35 / 5 |
+  | tip-class agreement (all / k < 12) | self 0.47-0.50 | 0.47 / 0.73 | 0.51 / 0.83 | **0.66** / 0.73 |
+
+- **sff 5.0 matches force and the engagement distribution.** The far-from-hole "engagement" of late probes (in-hand
+  slip, tip = TCP - offset) appears in the batched sim too once it presses as hard: slip is a press-force effect in
+  both, not a pipeline-only artefact. Agreement 0.66 is above the pipeline's agreement with itself.
+- Early probes (k < 12, little slip): pipeline never engages beyond 4 mm; batched sff 5.0 does at 4-5.5 mm in 35 %
+  (n 20): small sample, chamfer-edge contact under the harder press; watch in v5.
+- Replay script now writes partial results every 400 steps (two runs lost to the 90 min timeout on the shared GPU).
+- **v5 collection started 00:01** at `--envs 256 --sff 5.0 --seed 0` (`~/ci_mpc_runs/vec/step5/collect_s0_sff50.*`).
 
 ### 2026-10-28 (evening): RETRACTION: there is no pipeline observer over-read; the wrist F/T log is 0.23 s late (step 4c / 4d / 5a / item 3 force numbers were an alignment artifact)
 - `wrist_ft.csv` stamps (Kit timeline at render frames, ~60 Hz) are **0.23 s ahead of** the joint-state header stamps
