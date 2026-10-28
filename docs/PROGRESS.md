@@ -214,7 +214,13 @@ Read this before starting work (and before re-investigating something "new").
   excitation next to the posture-dependent gravity error); j5 viscous negative = real Stribeck drop (1.21 Nm at 0.05
   rad/s -> 0.97 at 0.4). Joint 7 armature 0.046 (Isaac scene 0.206).
 - Free-space O_F_ext_hat_K at home, at rest: Fx -1.2 N, ty -0.8 Nm (model bias). The controller observer topic
-  published nothing in these runs.
+  published nothing: updateExternalWrench() only runs `if (usePinocchio())` (needs pinocchio's coriolis_transpose_dq),
+  and the real config uses model_source franka. Fix: a Pinocchio side model for the observer on the real arm.
+- **src-35 (from the breakaway logs probe_1550 / probe_1714): O_F_ext_hat_K reads ~75 % of the stiction-held
+  commanded force as external force in free space** (true external 0; slope 0.7-0.8, rough tare; unchanged with
+  coulomb 0.5). Isaac's observer moved only 0.01-0.13 N in the same test. So a real probe press held by stiction
+  reads friction as contact force; the learned likelihoods (trained in sim) need a friction term or a re-tare at the
+  hold. Next robot test: a known load / a press against a scale to fix O's sign and offset.
 
 ### 2026-10-28: vectorized step 4c: the press-force gap is the pipeline observer's over-read; the pipeline is not repeatable (peg only, `~/ci_mpc_runs/vec/step4c`)
 - Pipeline episode sweeps2 w0_e000 (seed 5000) rerun twice with a bag of /joint_states, mpc_command, external_wrench
