@@ -1211,7 +1211,7 @@ if c.get("phases"):  # engaged phases with the peak of the observer's force esti
         pk = wrist_csv.phase_peaks(sync("wrist_ft.csv"), c["t_hover0"], c["phases"])
         if pk is not None:
             res["phases_wrist_N"], res["peak_force_wrist_engaged_N"] = pk, max(pk)
-            res["wrist_lag_s"] = wrist_csv.WRIST_LAG
+            res["wrist_lag_s"], res["wrist_t_hover0"] = wrist_csv.WRIST_LAG, float(c["t_hover0"])  # tare time: offline stats
 if c.get("c3_trace"):  # per C3 handover: estimate error, belief std [mm], depth reached [mm]
     res["c3_handovers"] = [(float(np.linalg.norm(np.array(t["est"]) - np.array(t["true"])) * 1000),
                             t["std"] * 1000, t.get("depth_end", float("nan")) * 1000) for t in c["c3_trace"]]

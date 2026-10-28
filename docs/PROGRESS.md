@@ -258,6 +258,26 @@ Read this before starting work (and before re-investigating something "new").
   "+1.4 N observer over-read" is retracted.
 - When src-35's lag-corrected helper lands: recompute offline from the saved CSVs and add corrected rows below the old
   ones (do not edit the old numbers).
+- **Recomputed (20:40):** `recompute_wrist_peaks.py --write` over cross_c3, h3_100, heldout_realarm, nochamfer and
+  c3_isaac/night (179 runs, all recovered). The new peaks jump mostly in the final phase. That max is often one or two
+  16.7 ms samples when the peg seats: D1 plain (3, 0) Fz −24.4 N for one sample, then ~8 N. So
+  `scripts/wrist_force_stats.py` reports three statistics: the max, the max of the 50 ms moving mean, and the max
+  before seating (without the last 0.15 s of the final phase). `heldout_summary.py` now shows all three; the demo saves
+  the tare time (`wrist_t_hover0`).
+- **Corrected force verdict, paired (same starts; runs where both arms inserted; Wilcoxon signed-rank):**
+
+  | comparison | pairs | max plain → C3 | 50 ms mean | pre-seat | p (max / 50 ms / pre-seat) |
+  |---|---|---|---|---|---|
+  | D1 true-force recheck (plain vs gated MF3) | 20 | 17.5 → 11.7 N | 10.4 → 9.3 | 9.3 → 9.0 | 0.22 / 0.20 / 0.57 |
+  | cross-task H1 | 14 | 18.5 → 12.3 N | 10.9 → 9.1 | 7.0 → 7.8 | 0.43 / 0.27 / 0.76 |
+  | cross-task H2 | 1 | 17.9 → 9.0 | 8.1 → 8.7 | 17.9 → 9.0 | too few |
+  | cross-task H3 | 3 | 10.5 → 10.7 | 9.3 → 8.4 | 10.5 → 9.6 | too few |
+
+  The verdict is unchanged: no significant force difference between plain and C3 anywhere. The lower C3 median of
+  the lag-corrected max comes from the seating spike (unpaired medians); paired it is not significant, and before
+  seating the two arms are equal (D1 +0.2 N, H1 +0.1 N median paired difference). The earlier wrist numbers (D1 9.3
+  vs 9.0 N, cross-task 7.3 / 7.8 N etc.) were taken 0.235 s early and missed the seating spike, but their
+  conclusion holds.
 
 ### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
 - **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the
