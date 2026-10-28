@@ -39,6 +39,9 @@ source /opt/ros/humble/setup.bash
 source ~/franka_ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 [ -d ~/.local/ros_numpy1 ] && export PYTHONPATH=~/.local/ros_numpy1:$PYTHONPATH
+# a stale ros2 CLI daemon on this domain (started with another environment) breaks `ros2 control` / `ros2 param`
+# ("xmlrpc Fault: !rclpy.ok()", 2026-10-28): restart it with this environment
+ros2 daemon stop > /dev/null 2>&1
 
 LAUNCH_PID=
 cleanup() {
