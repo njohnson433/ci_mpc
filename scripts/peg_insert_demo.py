@@ -162,6 +162,10 @@ p.add_argument("--tilt-rect", default="",
 p.add_argument("--tilt-first-upright", action="store_true",
                help="--tilt-probe: one upright probe at the estimate first (after the tilted calibration); tilt only if it "
                     "does not go in (H5: at <= 1 mm the tilted search cost 2-5x the time of a direct hit)")
+p.add_argument("--tilt-upright-spiral", type=float, default=0.0,
+               help="--tilt-probe: after the tilted search, upright probes on a sunflower spiral around the estimate, "
+                    "r = PITCH sqrt(k) (spacing ~1.8 PITCH; e.g. 0.00017 = 0.3 mm), instead of next_probe (1.5 mm "
+                    "spacing: a thin peg's capture is its ~0.5 mm end chamfer; dev round 4, 2026-10-29)")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -896,6 +900,8 @@ elif args.strategy == "probe":
             # localized (or out of tilted probes): upright at the estimate, then the usual probe / centering / push
             tilting, c["tilt"], probes, belief.capture = False, (0.0, 0.0), [], 0.001
             c["upright_first"] = args.tilt_upright_at_est
+            if args.tilt_upright_spiral > 0:
+                c["spiral"] = [est.copy(), 0]
             tp = truth().get("peg", {})
             if "quat_wxyz" in tp:  # diagnostic (truth): peg axis vs the hand axis, did the tilted presses rotate it?
                 w_, x_, y_, z_ = tp["quat_wxyz"]
@@ -1091,11 +1097,16 @@ elif args.strategy == "probe":
             z_flat = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]  # low point at 0
             target, _ = belief.next_probe_info(lambda cxy: np.array([*(cxy - lo), z_flat, *c["tilt"]]), exclude=probes,
                                                current=low_point(x)[:2])
+        elif "spiral" in c:  # sunflower spiral around the tilted search's estimate (k = 0: the estimate itself)
+            centre, k_s = c["spiral"]
+            c["spiral"][1] += 1
+            target = centre + args.tilt_upright_spiral * np.sqrt(k_s) * np.array(
+                [np.cos(k_s * 2.39996323), np.sin(k_s * 2.39996323)])
         elif c.pop("upright_first", False):
             target = belief.estimate()[0]
         else:
             target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
-        if args.stuck_dither > 0:
+        if args.stuck_dither > 0 and "spiral" not in c:  # the spiral is dense on purpose
             c.setdefault("recent", []).append(x[:2].copy())
             last = c["recent"][-3:]
             if len(last) == 3 and max(np.linalg.norm(a - last[-1]) for a in last) < 4e-4:
