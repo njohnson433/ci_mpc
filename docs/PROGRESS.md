@@ -50,7 +50,8 @@ Read this before starting work (and before re-investigating something "new").
   0.57–2.33, Mann-Whitney p = 0.001); the "c3-arm path" share was noise (`--c3-std-max 0` runs plain's exact code,
   2026-10-28 correction). Real-arm match: gated C3 30/30 but 9 s slower than plain, peak −0.6 N, so no gain.
   Next (after the robot session): real-arm C3 needs a speed fix (its phases are long) before it is worth trying on the
-  robot; check whether the C3 phase runs the controller integrator (src-35: without it the arm stalls in the stiction band).
+  robot; the C3 phase runs with the integrator off (`peg_insert_demo.py:629`, every probe command), so test the integrator
+  in the C3 phase as one lever against MF3's feedforward (src-35: without it the arm stalls in the stiction band).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
