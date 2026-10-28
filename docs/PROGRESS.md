@@ -9,7 +9,7 @@ Read this before starting work (and before re-investigating something "new").
   (mpc_real.yaml: K 2500 x3 / 130/130/45, half rotational damping, integral on; steps <= 0.4 mm, circle 1.9 mm;
   with velocity 0.75 friction compensation circle 0.52-0.62 mm). Joint friction identified at 3 poses
   (`ci_mpc_sysid/results/real_fr3_20261028.yaml`); controller takes per-joint friction / offsets / rotational damping
-  as parameters (d09356a, not pushed). Next: (1) send src-35 the breakaway raw.npz paths (observer vs O_F_ext_hat_K;
+  as parameters (d09356a, pushed). Next: (1) send src-35 the breakaway raw.npz paths (observer vs O_F_ext_hat_K;
   the observer topic published nothing on the robot: check why); (2) phase-dependent compensation (velocity for
   motion, coulomb 0.5 halves the breakaway at rest but wobbles in motion) and the C3 values with it, both through the
   held-out sim set before any default; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
@@ -44,7 +44,8 @@ Read this before starting work (and before re-investigating something "new").
      F_ff. In Isaac the observer over-reads only in contact (+1.4-2.5 N), not in the free-space stiction-held ramp
      (0.01-0.13 N, src-35); tomorrow's free-space breakaway logs answer only the free-space half. Send src-35 the
      breakaway raw.npz paths after the session.
-  Controller commit e56a1c5 (real_robot_controllers.yaml) is not pushed (blocked by a permission check).
+  Controller commits e56a1c5, d09356a pushed 2026-10-28 (by the user, over SSH: the clone's origin is HTTPS without
+  stored credentials; push with git@github.com:LucasG2001/cartesian_impedance_control.git).
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
   not yet re-measured here.
