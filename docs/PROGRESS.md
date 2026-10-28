@@ -5,6 +5,16 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-28 evening (real FR3 session done, entry "2026-10-28 (afternoon)"):** free-space MPC works on the robot
+  (mpc_real.yaml: K 2500 x3 / 130/130/45, half rotational damping, integral on; steps <= 0.4 mm, circle 1.9 mm;
+  with velocity 0.75 friction compensation circle 0.52-0.62 mm). Joint friction identified at 3 poses
+  (`ci_mpc_sysid/results/real_fr3_20261028.yaml`); controller takes per-joint friction / offsets / rotational damping
+  as parameters (d09356a, not pushed). Next: (1) send src-35 the breakaway raw.npz paths (observer vs O_F_ext_hat_K;
+  the observer topic published nothing on the robot: check why); (2) phase-dependent compensation (velocity for
+  motion, coulomb 0.5 halves the breakaway at rest but wobbles in motion) and the C3 values with it, both through the
+  held-out sim set before any default; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
+  Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
+
 - **2026-10-28 15:30 PAUSED for the robot session (src-54), vectorized fidelity → v5.** Nothing of src-35 running.
   Resume, one Isaac instance at a time (GPU was 99 % with src-f1's H3-100; 8-env runs reached RTF ~0.07):
   1. Batched replay of the true-force validation set: `fidelity_probe_replay.py --sweeps ~/ci_mpc_runs/vec/step4d
@@ -191,6 +201,8 @@ Read this before starting work (and before re-investigating something "new").
   0.67 vs 1.37; Isaac 1.06); steps to 1 mm 1.12-1.61 vs 1.39-1.94 s, line deviation 0.33-1.12 vs 0.47-2.03 mm, final
   0.06-0.73 vs 0.02-0.34 mm, overshoot <= 0.8 vs 0.32 mm (z); rotations to 10 mrad 1.03-2.45 vs 1.33-3.89 s, final
   3.1-8.3 vs 2.9-11.5 mrad; no buzz (joint 2 <= 0.84 mrad > 25 Hz, during x steps only).
+  **Repeat (`all_1724`):** circle 0.52 mm RMS (radial 0.62), steps to 1 mm 1.10-1.66 s, final 0.05-0.81 mm, z overshoot
+  0.75 mm again (+z, -z back: systematic with compensation), rotations final 1.9-8.8 mrad. Reproduces.
 - **Joint identification, all 7 joints at home / probe / side** (`~/ci_mpc_runs/real/joint_id/{home_1634,probe_1643,
   side_1650}`, mean in `ci_mpc_sysid/results/real_fr3_20261028.yaml`). Coulomb [Nm], mean (spread over 3 poses) vs the
   controller header (another FR3): j1 0.82 (0.13) vs 1.03; j2 0.70 (0.16) vs 1.26; j3 0.77 (0.07) vs 0.84; j4 0.88
