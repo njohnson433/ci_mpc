@@ -107,6 +107,11 @@ p.add_argument("--jam-recovery", type=int, default=0,
                help="probe: retries when the push to the bottom stalls (lift 1 mm, re-press shifted along the lateral "
                     "contact force; 0 = off; H1 friction 1.0 0.63,1.57 wedged 13 mm short twice, H3 7 of 12)")
 p.add_argument("--jam-shift", type=float, default=0.0003, help="lateral shift per jam retry [m]")
+p.add_argument("--push-wiggle", type=float, default=0.0,
+               help="push to the bottom: once it stalls, cone the commanded peg axis at this angle [deg] (--push-wiggle-hz) "
+                    "until the bottom; a tight chamferless hole wedges a peg 0.2-0.4 deg off the hole axis (dev set: 2.2 N "
+                    "lateral, 0.27 Nm at the wrist, 3 mm short; the observer reads no torque under the rotational stiction)")
+p.add_argument("--push-wiggle-hz", type=float, default=1.0, help="--push-wiggle: cone frequency [Hz]")
 p.add_argument("--jam-lift", type=float, default=0.001, help="jam: lift before pressing again [m]")
 p.add_argument("--jam-force", type=float, default=3.0, help="jam: lateral force (1 s mean) that counts as wedged [N]")
 p.add_argument("--gpu-std-max", type=float, default=float("inf"),
@@ -138,6 +143,15 @@ p.add_argument("--tilt-probe", type=float, default=0.0,
                     "the peg's lowest rim point drops into the hole wherever it is over it. The belief then models a "
                     "sharp-edged hole (--tilt-clearance) and the probes place the lowest point; upright at the estimate once "
                     "the belief std < --tilt-std, then the usual insertion")
+p.add_argument("--tilt-axis", default="y", choices=["x", "y"],
+               help="--tilt-probe: world axis of the tilt. The fingers close along y: tilted about y the press loads the peg "
+                    "along the pads (friction only), about x across them")
+p.add_argument("--tilt-upright-at-est", action="store_true",
+               help="--tilt-probe: the first upright probe at the belief estimate (else next_probe's uncertain edge, "
+                    "~1.2 mm off: a flat read there carries no information the tilted probes did not have)")
+p.add_argument("--tilt-engage", type=float, default=0.0,
+               help="--tilt-probe: tip depth [m] that counts as in the hole (0 = --engage), e.g. 0.0005: a sharp-edged hole has no "
+                    "chamfer to centre on, and lateral centering with the tip in the bore slid the peg 0.9 mm in the fingers")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -413,6 +427,18 @@ tr = truth()
 in_hand = np.array(tr["peg"]["origin"])[:2] - fk(state["q"]).translation[:2]
 print(f"  grasped: fingers {closed * 1000:.1f} mm; peg bottom {np.round(in_hand * 1000, 2)} mm from the TCP in xy "
       f"(truth, unknown to the controller)", flush=True)
+
+
+def peg_in_hand():
+    """Peg bottom in the hand (TCP) frame [m] (truth, diagnostic only): did the peg slide along the finger pads?"""
+    tr_ = truth()
+    if "peg" not in tr_:
+        return np.full(3, np.nan)
+    T = fk(state["q"])
+    return T.rotation.T @ (np.array(tr_["peg"]["origin"]) - T.translation)
+
+
+c_in_hand0 = peg_in_hand()
 above = np.array([*hole_est[:2], hole_est[2] + tip_below_tcp + 0.010])
 segment("B lift -> above the hole", [(np.array([*peg_c[:2], Z_SAFE]), R), (np.array([*hole_est[:2], Z_SAFE]), R), (above, R)])
 spin_sim(0.3)
@@ -601,7 +627,8 @@ elif args.strategy == "probe":
         belief.update = learned_update
         print(f"  belief: learned probe likelihood {args.belief_model} (scale {args.belief_scale})", flush=True)
     from ci_mpc_planner.peg_hole_3d import rotxy as _rotxy
-    c["tilt"] = (0.0, np.radians(args.tilt_probe))  # (rx, ry) of the probing peg; (0, 0) = upright
+    c["tilt"] = ((0.0, np.radians(args.tilt_probe)) if args.tilt_axis == "y"  # (rx, ry) of the probing peg; (0, 0) = upright
+                 else (np.radians(args.tilt_probe), 0.0))
     if args.tilt_probe > 0:
         # sharp-edged hole model (no chamfer), hole radius = peg half width + half the clearance
         tgeo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **{**GEO, "R": geo.a + args.tilt_clearance / 2, "c": 1e-5})
@@ -785,10 +812,14 @@ elif args.strategy == "probe":
         if tilting:  # tilted probes only inform the belief (a drop is the hole edge under the low point)
             engaged = False
             lp = low_point(x)
-            print(f"  tilted probe {k}: low point {np.round(lp[:2] * 1000, 2)} mm, height {lp[2] * 1000:+.2f} mm", flush=True)
+            print(f"  tilted probe {k}: low point {np.round(lp[:2] * 1000, 2)} mm (target {np.round(target * 1000, 2)}), "
+                  f"height {lp[2] * 1000:+.2f} mm", flush=True)
         on_top = not engaged
         if on_top:
             probes.append(lp[:2].copy() if tilting else x[:2].copy())
+            if tilting:  # and the target: the press's lateral force deflects the hand 0.7-1.3 mm back towards the last
+                # probe (1-2 N at 1500 N/m), so excluding only the measured points re-picked the same spot (dev 1.41, 1.41)
+                probes.append(np.asarray(target, float).copy())
             if args.track_height > 0 and not tilting:  # raw tip heights (bias added back), seeded with the calibration
                 c.setdefault("flat_raw", [c["z_bias"]]).append(tip_z(x) + c["z_bias"])
                 c["z_bias"] = float(np.median(c["flat_raw"][-args.track_height:]))
@@ -807,6 +838,7 @@ elif args.strategy == "probe":
         if tilting and (std < args.tilt_std or k + 1 >= args.tilt_max_probes):
             # localized (or out of tilted probes): upright at the estimate, then the usual probe / centering / push
             tilting, c["tilt"], probes, belief.capture = False, (0.0, 0.0), [], 0.001
+            c["upright_first"] = args.tilt_upright_at_est
             tp = truth().get("peg", {})
             if "quat_wxyz" in tp:  # diagnostic (truth): peg axis vs the hand axis, did the tilted presses rotate it?
                 w_, x_, y_, z_ = tp["quat_wxyz"]
@@ -815,9 +847,11 @@ elif args.strategy == "probe":
                 ang = np.degrees(np.arccos(np.clip(abs(pz @ hz), -1, 1)))
             else:
                 ang = float("nan")
+            slip = peg_in_hand() - c_in_hand0
             print(f"    tilt search: {'localized' if std < args.tilt_std else 'out of tilted probes'} (std "
                   f"{std * 1000:.2f} mm) after {k + 1} probes, upright at {np.round(est * 1000, 2)} mm; peg axis vs hand "
-                  f"axis {ang:.2f} deg (truth)", flush=True)
+                  f"axis {ang:.2f} deg, peg moved {np.round(slip * 1000, 2)} mm in the hand frame since the grasp (truth)",
+                  flush=True)
         sunk = tip_z(x) < -3e-4
         if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering) and std < args.gpu_std_max:
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
@@ -886,7 +920,7 @@ elif args.strategy == "probe":
             belief.update(measure5(), force3(0.3))  # once per engagement, like a probe
             print(f"    C3: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm, "
                   f"{np.mean(c['mpc_ms']):.0f} ms per decision, violation {np.nanmean(c['c3_viol']):.3f}", flush=True)
-        elif engaged:
+        elif engaged and not (args.tilt_engage > 0 and tip_z(measure5()) < -args.tilt_engage):
             # engaged on the chamfer: follow its push towards the axis with a light normal force
             t_a = state["t"]
             for _ in range(60):
@@ -898,19 +932,20 @@ elif args.strategy == "probe":
                 else:
                     cmd(x[:2], x[2] - 0.004, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
-                if tip_z(measure5()) < -args.engage:
+                if tip_z(measure5()) < -(args.tilt_engage or args.engage):
                     break
                 if args.centering_bound > 0 and np.linalg.norm(measure5()[:2]) > args.centering_bound:
                     break
             c.setdefault("phases", []).append(("center", t_a, state["t"]))
             print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
                   flush=True)
-        if not any(c["tilt"]) and tip_z(measure5()) < -args.engage and not (
+        if not any(c["tilt"]) and tip_z(measure5()) < -(args.tilt_engage or args.engage) and not (
                 args.centering_bound > 0 and np.linalg.norm(measure5()[:2]) > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
             depth_hist, retries, anchor, yaw_tries = [], 0, None, 0
             xy_push0, t_push0 = measure5()[:2], state["t"]
-            for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)):
+            for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)
+                           + (60 if args.push_wiggle > 0 else 0)):
                 x, F = measure5(), force3(0.1)
                 uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
                 if args.push_follow > 0:
@@ -925,6 +960,9 @@ elif args.strategy == "probe":
                         print(f"      push follow: lateral force {np.round(f_lat, 2)} N, tip {tip_z(x) * 1000:+.2f} mm, "
                               f"xy cmd {np.round((x[:2] if anchor is None else anchor) * 1000, 2)} mm", flush=True)
                 xy_c = x[:2] if anchor is None else anchor
+                if args.push_wiggle > 0 and "t_wiggle" in c:
+                    ph = 2.0 * np.pi * args.push_wiggle_hz * (state["t"] - c["t_wiggle"])
+                    c["tilt"] = tuple(np.radians(args.push_wiggle) * np.array([np.cos(ph), np.sin(ph)]))
                 if args.push_dither > 0:
                     # circle of radius push_dither around where the push started (or the follow / jam anchor): lets a
                     # bore leaning on its shaft find the axis, where the gear teeth mesh (H2 stalls at the clearance)
@@ -939,6 +977,10 @@ elif args.strategy == "probe":
                 stalled = len(depth_hist) > 10 and depth_hist[-11] - depth_hist[-1] < 0.0002
                 wedged = len(depth_hist) > 10 and np.linalg.norm(F_lat) > args.jam_force
                 pressing = len(depth_hist) > 10 and force3(1.0)[2] > args.max_contact_force
+                if args.push_wiggle > 0 and stalled and "t_wiggle" not in c:
+                    c["t_wiggle"] = state["t"]
+                    print(f"    push stalled at tip {tip_z(measure5()) * 1000:+.2f} mm: wiggle {args.push_wiggle:.2f} deg "
+                          f"at {args.push_wiggle_hz:.1f} Hz", flush=True)
                 if args.yaw_search > 0 and yaw_tries < 1 and (stalled or pressing):
                     # tooth on tooth (gear: 40 teeth, 9 deg pitch, meshes within ~2 deg): sweep the hand yaw
                     # 0, +s, -s, +2s, ... up to +-yaw_search while pressing lightly; keep the first yaw where it drops by --yaw-drop
@@ -982,13 +1024,15 @@ elif args.strategy == "probe":
                     print(f"    jam {retries} ({'lateral force' if wedged else 'stall'}): tip {tip_z(x) * 1000:+.2f} mm, "
                           f"lateral force {np.round(F_lat, 2)} N -> press at {np.round(anchor * 1000, 2)} mm",
                           flush=True)
-            c["phase"], c["t_done"] = "done", state["t"]
+            c["phase"], c["t_done"], c["tilt"] = "done", state["t"], (0.0, 0.0)
             c.setdefault("phases", []).append(("push", c["t_engage"], state["t"]))
             break
         if tilting:  # the low point on the belief's uncertain edge
             z_flat = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]  # low point at 0
             target, _ = belief.next_probe_info(lambda cxy: np.array([*(cxy - lo), z_flat, *c["tilt"]]), exclude=probes,
                                                current=low_point(x)[:2])
+        elif c.pop("upright_first", False):
+            target = belief.estimate()[0]
         else:
             target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
         if args.stuck_dither > 0:
@@ -1103,6 +1147,7 @@ tr = truth()
 peg_o, hole_o = np.array(tr["peg"]["origin"]), np.array(tr["hole"]["origin"])  # peg bottom, hole bottom
 depth_err = peg_o[2] - hole_o[2]
 xy_err = np.linalg.norm(peg_o[:2] - hole_o[:2])
+slip_end = peg_in_hand() - c_in_hand0  # truth diagnostic: peg moved in the hand frame since the grasp
 gripper(max(0.03, args.open_width), settle=0.5)  # 0.03 did not release the gear (grasped 30.1 mm) / AutoMate 00388
 node.destroy_timer(timer)
 active_pub.publish(Bool(data=True))
@@ -1119,7 +1164,7 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "depth_err_mm": float(depth_err * 1000), "xy_err_mm": float(xy_err * 1000),
        "search_s": float(t_search), "insert_s": float(t_insert),
        "contact_phase_s": float((c["t_done"] or state["t"]) - c["t0"]), "peak_force_est_N": c["peak_f"],
-       "total_s": float(state["t"] - t_start)}
+       "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000]}
 if c.get("phases"):  # engaged phases with the peak of the observer's force estimate (|F|, untared) in each
     W_ = np.array(wrench_log)
     res["phases"] = [(n, float(a), float(b), float(np.linalg.norm(W_[(W_[:, 0] >= a) & (W_[:, 0] <= b), 1:4], axis=1)
