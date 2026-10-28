@@ -89,6 +89,14 @@ move_to_start_example_controller:
     start_joint_configuration: [${POSES[$1]}]
 EOF
   echo "--- move to $1: [${POSES[$1]}]"
+  # record q / tau_J / tau_J_d through the move and its release; stop if a joint did not arrive (real robot only)
+  MON=
+  if [ -z "$NO_LAUNCH" ]; then
+    python3 -u "$HERE/move_monitor.py" --target "$(echo ${POSES[$1]} | tr -d ' ')" \
+      --out "$LOG/move_$1.npz" &
+    MON=$!
+    sleep 1
+  fi
   ros2 run controller_manager spawner move_to_start_example_controller -c /controller_manager \
     -t franka_example_controllers/MoveToStartExampleController --param-file "$LOG/mts_$1.yaml" \
     >> "$LOG/spawner.log" 2>&1 || { echo "move_to_start spawner failed:"; tail -5 "$LOG/spawner.log"; exit 1; }
@@ -98,8 +106,13 @@ EOF
   done
   ros2 param get /move_to_start_example_controller process_finished 2>/dev/null | grep -q True \
     || { echo "move to $1 did not finish in 60 s"; exit 1; }
+  sleep 1
   ros2 control set_controller_state move_to_start_example_controller inactive > /dev/null
   ros2 control unload_controller move_to_start_example_controller > /dev/null
+  if [ -n "$MON" ]; then
+    sleep 1
+    kill -INT $MON; wait $MON || { echo "not at $1: stopping (move log $LOG/move_$1.npz)"; exit 1; }
+  fi
 }
 
 for pose in $LIST; do
