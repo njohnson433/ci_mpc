@@ -154,6 +154,19 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (evening): offline robot items: observer side model, hybrid friction compensation (controller 5c5749e + next)
+- **Observer on the real arm:** `observer_side_model: true` (real config) builds a Pinocchio side model (URDF) for the
+  momentum observer's C^T dq; mass matrix and gravity come from franka's model (gravity with the Desk load), torques =
+  measured tau_J - g. The observer is also reset on every activation now (it kept the first activation's momentum).
+  Isaac regression (run_impedance_test): hold / reach PASS. **Untested on the robot**: first check in the next session
+  = a hold with a known load / a press against a scale, ~/external_wrench vs O_F_ext_hat_K (for src-35).
+- **Hybrid friction compensation** (`friction_compensation: hybrid`): per joint, s = tanh(dq / friction_vel_eps);
+  tau = C (friction_scale s + (1 - abs(s)) friction_scale_rest tanh(tau_imp / friction_tau_eps)) + friction_scale beta dq.
+  Velocity direction while moving (no sign switching on the torque), torque direction at rest (lower breakaway).
+  Isaac (hybrid 0.75 / rest 0.5, run_impedance_test): hold / reach PASS. Next robot session: `friction_session.sh
+  hybrid 0.75 hold` (nudge), `... mpc all` (expect the 0.5 mm circle, no wobble), `... probe` (expect ~coulomb-0.5
+  breakaway). `REST=` sets the rest scale.
+
 ### 2026-10-28 (evening): J^T check: the Cartesian breakaway is NOT the joint friction mapped through J^T in any simple model
 - Probe pose (joint_id 'probe' q, the IK of the C3 probe pose; the breakaway goto may sit slightly elsewhere in the
   null space), joint static friction from probe_1643 (j2 / j6 from home_1721), EE = Desk-profile TCP:

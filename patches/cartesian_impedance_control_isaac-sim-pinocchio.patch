@@ -1,7 +1,7 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH 1/9] Pinocchio model source so the controller runs in Isaac
+Subject: [PATCH 01/11] Pinocchio model source so the controller runs in Isaac
  Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
@@ -686,8 +686,8 @@ index 0000000..54b211a
 From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 12:34:36 +0200
-Subject: [PATCH 2/9] Optional nullspace damping; Isaac config documents it as
- off
+Subject: [PATCH 02/11] Optional nullspace damping; Isaac config documents it
+ as off
 
 - New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
   tau += (I - J^T J^T+) (-d * dq)
@@ -770,7 +770,7 @@ index 2b2ee40..a97308b 100644
 From 0fe0271f4e82d4e5ebedbf35a5be34478d56a83a Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 14:37:06 +0200
-Subject: [PATCH 3/9] Friction compensation and integrator as parameters
+Subject: [PATCH 03/11] Friction compensation and integrator as parameters
  (defaults unchanged)
 
 - integrator_weights / integrator_limits replace the hard-coded integral
@@ -956,7 +956,7 @@ index a97308b..1c6d626 100644
 From acc11b205e5d2750350b03179055f5ea90e1a846 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:04:02 +0200
-Subject: [PATCH 4/9] Conditional integration (anti-windup) as parameters;
+Subject: [PATCH 04/11] Conditional integration (anti-windup) as parameters;
  Isaac config uses it
 
 - integrator_windows, integrator_velocity_window, integrator_freeze_on_saturation,
@@ -1100,7 +1100,7 @@ index 1c6d626..639f311 100644
 From e6d5f8de57c0f76457c60dd36a908dd26270758d Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:23:21 +0200
-Subject: [PATCH 5/9] MPC tracking interface (ci_mpc_msgs/MpcCommand)
+Subject: [PATCH 05/11] MPC tracking interface (ci_mpc_msgs/MpcCommand)
 
 - Subscribes /cartesian_impedance_controller/mpc_command through a realtime
   buffer. The newest command sets the pose directly (no reference filter),
@@ -1343,7 +1343,7 @@ index 639f311..5768c51 100644
 From 916e4dba2e1e5e7afff8853cd9c5c0be8011d3b5 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:46:37 +0200
-Subject: [PATCH 6/9] Optional joint armature in the Pinocchio model
+Subject: [PATCH 06/11] Optional joint armature in the Pinocchio model
 
 Parameter `armature` (7 values, default none): rotor inertia added to the
 mass matrix (Lambda, critical damping). Tested with the stage-1 MPC in sim:
@@ -1443,7 +1443,7 @@ index 8839acf..aa79ffd 100644
 From 153c12b96b8765e2c432e72beb2353e5765f234e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Fri, 23 Oct 2026 13:42:28 +0200
-Subject: [PATCH 7/9] External wrench estimate: momentum observer on measured
+Subject: [PATCH 07/11] External wrench estimate: momentum observer on measured
  link torques (or commanded), ~/external_wrench
 
 Franka sign convention, fed into F_ext. Optional gravity (real FR3), observer-only armature, sim torque sensor
@@ -1763,7 +1763,7 @@ index aa79ffd..fe89454 100644
 From e56a1c5afbb27b498e0bc8c33e42fe81a7f699c3 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Tue, 27 Oct 2026 15:14:12 +0100
-Subject: [PATCH 8/9] real_robot_controllers.yaml: full parameter set for the
+Subject: [PATCH 08/11] real_robot_controllers.yaml: full parameter set for the
  real FR3 (franka model, no friction compensation, input server off, Isaac
  integral settings)
 
@@ -1813,7 +1813,7 @@ index fd766c0..148007c 100644
 From d09356ac33c96ac785e4edb0a4333111e4faeb64 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Wed, 28 Oct 2026 17:01:01 +0100
-Subject: [PATCH 9/9] Parameters: per-joint friction values, joint torque
+Subject: [PATCH 09/11] Parameters: per-joint friction values, joint torque
  offset, rotational damping scale / z floor; real config: half rotational
  damping
 
@@ -1913,6 +1913,206 @@ index f0a1e3a..b5fbc20 100644
    tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
    tau_J_d_M = tau_d;
  
+-- 
+2.34.1
+
+
+From 5c5749e3bd2172dbd23cbb51880aeb6dc4fc56f1 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Wed, 28 Oct 2026 17:36:04 +0100
+Subject: [PATCH 10/11] Momentum observer on the real arm (model_source
+ franka): Pinocchio side model, franka mass / gravity; reset on activation
+
+observer_side_model (default false). Real config enables it. Isaac regression: run_impedance_test hold / reach PASS.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ config/real_robot_controllers.yaml            |  5 +++
+ .../cartesian_impedance_controller.hpp        |  1 +
+ src/cartesian_impedance_controller.cpp        | 35 ++++++++++++++++++-
+ 3 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/config/real_robot_controllers.yaml b/config/real_robot_controllers.yaml
+index ea2f4db..4906306 100644
+--- a/config/real_robot_controllers.yaml
++++ b/config/real_robot_controllers.yaml
+@@ -17,6 +17,11 @@ cartesian_impedance_controller:
+     observer_gain: 30.0
+     observer_torque_source: measured
+     observer_gravity: false
++    # momentum observer (~/external_wrench) on the real arm: Pinocchio side model for C^T dq, franka mass / gravity
++    # (with the Desk load); without it the observer never ran with model_source franka (2026-10-28). Untested on the robot.
++    observer_side_model: true
++    urdf_path: /home/njohnson/ci_mpc_assets/fr3.urdf
++    ee_frame: fr3_hand_tcp
+     # bring-up: no friction compensation until the ramp in ci_mpc/docs/REAL_ROBOT.md section 4
+     friction_compensation: none
+     # integral as in Isaac (only active in free space; MpcCommand.integral_enabled false switches it off)
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index 6971338..bd7195c 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -187,6 +187,7 @@ public:
+     double rz_damping_floor_{1.0};          // D_rz >= floor * 2 sqrt(K_rz)
+     std::unique_ptr<PinocchioModel> pinocchio_model_;
+     bool usePinocchio() const { return model_source_ == "pinocchio"; }
++    bool observer_side_model_{false};  // franka model + Pinocchio side model for the observer only (real robot)
+     const double delta_tau_max_{1.0};  // per 1 ms step, scaled with dt_
+     double dt_ = 0.001;                // control period [s], set from update()'s period
+                 
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index b5fbc20..86bfd19 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -205,7 +205,7 @@ controller_interface::InterfaceConfiguration CartesianImpedanceController::state
+     state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/velocity");
+     //state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/effort");
+   }
+-  if (usePinocchio() && observer_torque_source_ == "measured") {  // after all position / velocity interfaces
++  if ((usePinocchio() || observer_side_model_) && observer_torque_source_ == "measured") {  // after all position / velocity interfaces
+     for (int i = 1; i <= num_joints; ++i) {
+       state_interfaces_config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/effort");
+     }
+@@ -244,6 +244,9 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<double>("observer_gain", 30.0);
+      auto_declare<std::string>("observer_torque_source", "measured");
+      auto_declare<bool>("observer_gravity", false);
++     // model_source franka (real robot): build a Pinocchio side model (urdf_path) only for the momentum observer
++     // (~/external_wrench); it uses the measured joint torques minus franka's gravity (with the Desk load)
++     auto_declare<bool>("observer_side_model", false);
+      auto_declare<double>("observer_torque_noise", 0.0);
+      auto_declare<std::vector<double>>("observer_torque_bias", std::vector<double>{});
+      auto_declare<std::vector<double>>("observer_armature", std::vector<double>{});
+@@ -378,6 +381,26 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+       franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
+       franka_semantic_components::FrankaRobotModel(arm_id_ + "/" + k_robot_model_interface_name,
+                                                    arm_id_ + "/" + k_robot_state_interface_name));
++      observer_side_model_ = get_node()->get_parameter("observer_side_model").as_bool();
++      if (observer_side_model_) {
++        if (observer_torque_source_ != "measured" || observer_gravity_) {
++          RCLCPP_ERROR(get_node()->get_logger(),
++                       "observer_side_model needs observer_torque_source measured and observer_gravity false");
++          return CallbackReturn::ERROR;
++        }
++        std::vector<std::string> arm_joints;
++        for (int i = 1; i <= num_joints; ++i) {
++          arm_joints.push_back(arm_id_ + "_joint" + std::to_string(i));
++        }
++        try {
++          pinocchio_model_ = std::make_unique<PinocchioModel>(urdf_path_, arm_joints, ee_frame_, std::vector<double>{});
++        } catch (const std::exception& e) {
++          RCLCPP_ERROR(get_node()->get_logger(), "observer side model from '%s': %s", urdf_path_.c_str(), e.what());
++          return CallbackReturn::ERROR;
++        }
++        RCLCPP_INFO(get_node()->get_logger(), "Observer side model: pinocchio (%s) with franka mass / gravity",
++                    urdf_path_.c_str());
++      }
+     } else {
+       RCLCPP_ERROR(get_node()->get_logger(), "Unknown model_source '%s' (expected 'franka' or 'pinocchio')",
+                    model_source_.c_str());
+@@ -418,6 +441,7 @@ CallbackReturn CartesianImpedanceController::on_activate(
+   computeModel(M, coriolis, initial_transform);
+   tau_J_d_M.setZero();
+   I_error.setZero();
++  observer_initialized_ = false;  // momentum observer restarts from the current state (also after re-activation)
+   position_d_ = initial_transform.translation();
+   orientation_d_ = Eigen::Quaterniond(initial_transform.rotation());
+   position_d_target_ = position_d_;
+@@ -584,6 +608,15 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+       }
+     }
+     updateExternalWrench(M, coriolis, tau);
++  } else if (observer_side_model_) {
++    // real robot: the measured link torques include gravity; franka's gravity vector has the Desk load
++    pinocchio_model_->compute(q_, dq_);  // coriolis_transpose_dq() for the observer
++    const std::array<double, 7> g = franka_robot_model_->getGravityForceVector();
++    Eigen::Matrix<double, 7, 1> tau;
++    for (int i = 0; i < num_joints; ++i) {
++      tau(i) = state_interfaces_.at(2 * num_joints + i).get_value() - g[i] + observer_torque_bias_(i);
++    }
++    updateExternalWrench(M, coriolis, tau);
+   }
+   Eigen::Vector3d position(transform.translation());
+   Eigen::Quaterniond orientation(transform.rotation());
+-- 
+2.34.1
+
+
+From 347044fd233d3f4425747bdc81373d1d55e9f6a6 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Wed, 28 Oct 2026 17:38:15 +0100
+Subject: [PATCH 11/11] Hybrid friction compensation: velocity direction while
+ moving, torque direction (friction_scale_rest) at rest
+
+Real FR3 2026-10-28: velocity 0.75 tracks best, coulomb 0.5 halves the breakaway but wobbles in motion.
+Isaac run_impedance_test (hybrid 0.75 / 0.5): hold / reach PASS.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../cartesian_impedance_controller.hpp           |  1 +
+ src/cartesian_impedance_controller.cpp           | 16 ++++++++++++++--
+ 2 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index bd7195c..e8a8283 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -182,6 +182,7 @@ public:
+     double friction_scale_{1.0};           // coulomb: scale on the identified friction
+     double friction_tau_eps_{0.3};         // coulomb: tanh width on the impedance torque [Nm]
+     double friction_vel_eps_{0.02};        // velocity: tanh width on the joint velocity [rad/s]
++    double friction_scale_rest_{0.5};      // hybrid: torque-direction scale at rest (friction_scale while moving)
+     Eigen::Matrix<double, 7, 1> joint_torque_offset_ = Eigen::Matrix<double, 7, 1>::Zero();  // added to tau_d [Nm]
+     double rotational_damping_scale_{1.3};  // D_rot = scale * 2 sqrt(K Lambda)
+     double rz_damping_floor_{1.0};          // D_rz >= floor * 2 sqrt(K_rz)
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index 86bfd19..cc9288b 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -258,6 +258,10 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<double>("friction_scale", 1.0);
+      auto_declare<double>("friction_tau_eps", 0.3);
+      auto_declare<double>("friction_vel_eps", 0.02);
++     // hybrid: velocity-direction compensation (friction_scale) while a joint moves, fading into torque-direction
++     // compensation (friction_scale_rest) at rest: coulomb at rest lowers the breakaway, but switching on the torque
++     // sign during motion made the real arm wobble (2026-10-28)
++     auto_declare<double>("friction_scale_rest", 0.5);
+      // per-joint identified values (7 each; empty = the header values): coulomb / velocity modes
+      auto_declare<std::vector<double>>("friction_coulomb", std::vector<double>{});
+      auto_declare<std::vector<double>>("friction_viscous", std::vector<double>{});
+@@ -343,6 +347,7 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     friction_scale_ = get_node()->get_parameter("friction_scale").as_double();
+     friction_tau_eps_ = get_node()->get_parameter("friction_tau_eps").as_double();
+     friction_vel_eps_ = get_node()->get_parameter("friction_vel_eps").as_double();
++    friction_scale_rest_ = get_node()->get_parameter("friction_scale_rest").as_double();
+     for (const auto& [name, target] : {std::pair<std::string, Eigen::Matrix<double, 7, 1>*>{"friction_coulomb", &coulomb_friction},
+                                        {"friction_viscous", &beta}, {"joint_torque_offset", &joint_torque_offset_}}) {
+       const auto v = get_node()->get_parameter(name).as_double_array();
+@@ -356,8 +361,8 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     rotational_damping_scale_ = get_node()->get_parameter("rotational_damping_scale").as_double();
+     rz_damping_floor_ = get_node()->get_parameter("rz_damping_floor").as_double();
+     if (friction_compensation_ != "none" && friction_compensation_ != "lugre" && friction_compensation_ != "coulomb" &&
+-        friction_compensation_ != "velocity") {
+-      RCLCPP_ERROR(get_node()->get_logger(), "friction_compensation must be none, lugre, coulomb or velocity");
++        friction_compensation_ != "velocity" && friction_compensation_ != "hybrid") {
++      RCLCPP_ERROR(get_node()->get_logger(), "friction_compensation must be none, lugre, coulomb, velocity or hybrid");
+       return CallbackReturn::ERROR;
+     }
+ 
+@@ -751,6 +756,13 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+       tau_friction(i) = friction_scale_ * (coulomb_friction(i) * std::tanh(dq_(i) / friction_vel_eps_) +
+                                            beta(i) * dq_(i));
+     }
++  } else if (friction_compensation_ == "hybrid") {
++    for (int i = 0; i < 7; ++i) {
++      const double s = std::tanh(dq_(i) / friction_vel_eps_);  // ~sign(dq) when moving, ~0 at rest
++      tau_friction(i) = coulomb_friction(i) * (friction_scale_ * s + (1.0 - std::abs(s)) * friction_scale_rest_ *
++                                                                        std::tanh(tau_impedance(i) / friction_tau_eps_)) +
++                        friction_scale_ * beta(i) * dq_(i);
++    }
+   }
+   // friction compensation goes through the torque-rate limit too (upstream added it after the limit)
+   tau_d << tau_impedance + tau_nullspace + coriolis + tau_friction + joint_torque_offset_; //add nullspace and coriolis components to desired torque
 -- 
 2.34.1
 
