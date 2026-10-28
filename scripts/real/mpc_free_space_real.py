@@ -198,7 +198,8 @@ def spin(seconds):
             abort(f"TCP {np.round(x, 3).tolist()} left the MPC box by > 3 cm")
         if cmds and now - cmds[-1][0] < 0.2 and np.linalg.norm(x - cmds[-1][1]) > args.abort_dev:
             abort(f"TCP {np.linalg.norm(x - cmds[-1][1]) * 1000:.1f} mm from the MPC command")
-        if watch["prev"] is not None and now - watch["prev"][0] >= 0.01:
+        # speed over >= 50 ms: /joint_states arrival jitter made 10 ms differences read 0.34 m/s at a true 0.1 m/s
+        if watch["prev"] is not None and now - watch["prev"][0] >= 0.05:
             v = float(np.linalg.norm(x - watch["prev"][1]) / (now - watch["prev"][0]))
             watch["prev"] = (now, x)
             if v > args.abort_speed:
