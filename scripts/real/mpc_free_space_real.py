@@ -130,7 +130,9 @@ goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
 path_pub = node.create_publisher(PoseArray, "/ci_mpc_planner/path", 10)
 active_pub = node.create_publisher(Bool, "/ci_mpc_planner/active", 10)
 out = {"tests": {}, "config": cfg_file, "ee_profile": args.ee_profile}
-watch = {"on": False, "aborting": False, "prev": None}
+watch = {"on": False, "aborting": False, "prev": None, "sigint": False}
+# Ctrl-C: stop at the next spin and save what was measured so far (abort -> finish)
+signal.signal(signal.SIGINT, lambda *_: watch.__setitem__("sigint", True))
 mpc = {"proc": None, "log": None}
 
 
@@ -179,11 +181,13 @@ def spin(seconds):
     t_end = time.monotonic() + seconds
     while time.monotonic() < t_end:
         rclpy.spin_once(node, timeout_sec=0.002)
+        if watch["sigint"] and not watch["aborting"]:
+            abort("stopped by Ctrl-C")
         if not watch["on"] or watch["aborting"] or state["q"] is None:
             continue
         now = time.monotonic()
         if mpc["proc"] is not None and mpc["proc"].poll() is not None:
-            abort(f"mpc_node exited (see {mpc['log']})")
+            abort("stopped by Ctrl-C" if watch["sigint"] else f"mpc_node exited (see {mpc['log']})")
         if state["mode"] is not None and (now - state.get("tau_t", now) > 0.3 or now - state.get("js_t", now) > 0.3):
             abort("robot state frozen / no /joint_states for 0.3 s: the robot stopped (reflex? see launch.log; "
                   "communication_constraints_violation = the 1 kHz loop missed its deadline)")

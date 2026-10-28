@@ -106,4 +106,4 @@ ros2 control list_controllers | grep -E "cartesian_impedance_controller.*active"
   || { echo "cartesian_impedance_controller is not active"; exit 1; }
 
 echo "--- 4. MPC tests ($TESTS) -> $D"
-python3 -u "$HERE/mpc_free_space_real.py" --tests "$TESTS" --out "$D" "$@" 2>&1 | tee "$LOG/mpc_free_space.out"
+python3 -u "$HERE/mpc_free_space_real.py" --tests "$TESTS" --out "$D" "$@" 2>&1 | tee -i "$LOG/mpc_free_space.out"  # tee -i: Ctrl-C must not cut the results output
