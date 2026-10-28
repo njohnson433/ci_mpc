@@ -300,7 +300,8 @@ else:
             Rh = np.array([[1 - 2 * (y_ * y_ + z_ * z_), 2 * (x_ * y_ - w_ * z_), 2 * (x_ * z_ + w_ * y_)],
                            [2 * (x_ * y_ + w_ * z_), 1 - 2 * (x_ * x_ + z_ * z_), 2 * (y_ * z_ - w_ * x_)],
                            [2 * (x_ * z_ - w_ * y_), 2 * (y_ * z_ + w_ * x_), 1 - 2 * (x_ * x_ + y_ * y_)]])
-            wrench_log.append((t, *(Rh @ f), *(Rh @ tq)))
+            # the CSV's stamps run 0.23 s behind the joint-state clock (PROGRESS "RETRACTION", 2026-10-28)
+            wrench_log.append((t - 0.23, *(Rh @ f), *(Rh @ tq)))
 
     node.create_timer(0.005, _poll_wrist)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
