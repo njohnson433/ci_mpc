@@ -596,9 +596,29 @@ Read this before starting work (and before re-investigating something "new").
   - **Square 10: 0/3, parked.** The belief models a round peg in a round hole, but the tilted square peg's low point is a
     corner. The flats also let the peg turn 1.2° and move 0.5–0.9 mm in the hand, even with the x tilt. It needs a
     shape-aware hole model; H5 has rect 8 / 12 mm.
-- **Resume here:** `~/ci_mpc_runs/nochamfer/tilt9_est` results. Then combine the levers that won alone (x tilt +
-  wiggle + upright at estimate (+ tilt-engage)) on a round 8 / 10 sweep of ~8 offsets, then a D1 no-regression check
-  (flag off = unchanged code path), and H5 round 4 / 8 / 12 only at the end.
+  9. Results of the single-lever runs:
+     - `--tilt-upright-at-est`: no clean evidence. Of 4 runs, 1 inserted ((3, 0); that run did not stall), and the 3
+       failures came from other causes (square model; centering slip; a flat-reference bug). Left out.
+     - `--tilt-engage 0.0005`: 2/2 ((−1, −2), the centering-slip case: 18.8 s; (0, −3): 55 s).
+     - **Flat-reference bug, found by offline replay** (`tiltpred` on (1.41, 1.41)): the model predicts the first 6
+       tilted heights within 0.05 mm, then every later drop reads ~0.35 mm short. Four drops in a row (probes 2–5) had
+       made a drop height the flat reference (max of the last 4 raw heights). Fix: only probes the belief predicts flat
+       (`HoleBelief.predicted_drop` < 0.1 mm) update the reference. (1.41, 1.41) then inserted in 21.5 s.
+  10. **Combined sweep** (`~/ci_mpc_runs/nochamfer/sweep1`; `--tilt-probe 10 --tilt-axis x --push-wiggle 0.5
+      --tilt-engage 0.0005` + the flat-reference fix; 8 fresh offsets (seed 500, r 1–4 mm) per hole, plus (1.41, 1.41)):
+
+      | dev hole | inserted | contact median (range) | wrist max / 50 ms / pre-seat (median, lag-corrected) | slip |
+      |---|---|---|---|---|
+      | round 8 (0.10 mm diametral) | **9/9** | 42.5 s (21–57) | 18.8 / 11.8 / 11.7 N | 0.39 mm |
+      | round 10 (0.15 mm) | **8/8** | 42.0 s (21–51) | 15.9 / 9.7 / 8.9 N | 0.40 mm |
+
+      Plain probe on the same hole: 0/2 at 2 mm. Force: the max is often a 1-sample spike at the drop into the bore
+      or at seating (up to 25 N); `--tilt-engage` pushes from 0.5 mm deep, so the drop is fast. Open lever: a slower
+      final descent.
+- **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
+  diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
+  when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
+  (src-5e: no new instances while H3-100 + item 3 + src-35 run). (3) Square / rect: a shape-aware hole model.
 
 ### 2026-10-28 (12:20): integrator in the C3 phase: it partly replaces the stiction feedforward but adds nothing on top of MF3 (`night/run_integ.sh`)
 - One lever: `--c3-integral` turns the controller integrator on during the C3 phase only (the probe commands keep it
