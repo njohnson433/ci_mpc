@@ -156,6 +156,14 @@ Read this before starting work (and before re-investigating something "new").
   repeats (5.28 / 5.23 N), the tip height not (flat tips +0.25 vs +0.08 mm). Batched vs pipeline class agreement
   (0.45–0.51) is at this floor: the ≥ 80 % target of step 4 is not reachable, use distributions (flat Fz, tip, engaged
   fraction by radius) and true force instead.
+- **Validation set** (`~/ci_mpc_runs/vec/step4d`: sweeps2 w0_e001–e008 rerun with wrist F/T + bag, + the step-4c
+  episode; `scripts/isaac/hold_forces.py`): 366 probe holds, observer − true Fz **+1.42 ± 1.54 N** (median 4.79 vs
+  2.72 N), lateral |F| 1.18 vs 0.80 N.
+- **Free space: no over-read** (`~/ci_mpc_runs/vec/step5/breakaway_obs`, pipeline `--breakaway`, peg in hand, bag +
+  wrist F/T): feedforward ramped to the breakaway (x 3.13 / 1.54, y 1.75 / 1.83, z 2.04 / 2.61 N) with the arm held
+  by stiction, the observer changes 0.01–0.13 N (0–4 % of the feedforward), the wrist ~0. So the observer does not read
+  held joint friction; the over-read needs contact (mechanism still open: load path through the held peg / proximal
+  joints under a contact load?). A free-space test on the real arm therefore does not answer the in-contact question.
 - **Decision (user, via src-5e, 2026-10-28): validate on true force (option a).** The per-probe ≥ 80 % class-agreement
   target of step 4 is **dropped** (the pipeline agrees with itself 47–50 %). Batched vs pipeline is now compared on
   the wrist F/T force and on distributions (probe class rates by radius, Fz / xy distributions, success / time).
