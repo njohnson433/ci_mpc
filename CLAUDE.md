@@ -47,4 +47,7 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
 - Isaac ros2_control: Controller Manager targetPrim is `/fr3` (joints live in `/fr3/Physics`); the scene needs
   `scripts/isaac/prepare_scene.py` (physx variant + FR3 joint armature, else the wrist chatters at 240 Hz,
   + identified joint friction from the controller header; `--no-friction` to remove).
+- Isaac stamps `/joint_states` ~0.235 s behind `/clock` and the wrist F/T log (`wrist_ft.csv`), constant. Any
+  comparison of wrist force with joint-state-timed windows must go through `scripts/wrist_csv.py` (WRIST_LAG). Skipping it
+  produced a fake "+1.4 N observer over-read" and wrong wrist peaks (retracted 2026-10-28).
 - Test: `scripts/isaac/run_impedance_test.sh` (headless, ~1 min); `--dump x.npz`, `CONTROLLER_CONFIG=...`.
