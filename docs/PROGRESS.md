@@ -167,7 +167,10 @@ Read this before starting work (and before re-investigating something "new").
   7. **z stopped 4-6 mm short both ways at K_z 1000:** joint stiction at home (~4-5 N in z) > window x K (3 mm x 1000 =
      3 N), so the integrator never engaged. K_z 2500 -> 0.10-0.37 mm.
   8. Speed watchdog over 10 ms read arrival jitter (0.34 m/s at 0.1): now >= 50 ms.
-- Circle r 4 cm at 6 cm/s (all_1621, K_z 1000): 4.1 mm RMS vs the command, mostly z (bug 7); rerun pending.
+- **Full set with the new defaults (`all_1627`, no extra args):** steps as above (final 0.02-0.34 mm, 1.38-1.94 s to
+  1 mm); rotations +-0.3 rad z / +-0.2 rad x: 10 mrad in 1.3-3.9 s (one +rx back never got under 10 mrad), final
+  2.9-11.5 mrad; circle r 4 cm at 6 cm/s: 1.92 mm RMS / 3.04 max vs the command, 1.37 mm radial (K_z 1000: 4.1 mm;
+  Isaac 1.06 mm), back home 0.15 mm; no buzz.
 - Warm breakaway at the probe (15:50, before the cable dropped): x 1.37, y 0.86, z 1.15 N (cold 1.43 / 0.80 / 1.25).
 - Joint 7 at q2 -0.40 (not true home): static 0.37, Coulomb 0.40 (controller header 0.53), viscous 0.065, armature
   0.045 (Isaac scene 0.206).
