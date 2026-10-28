@@ -196,6 +196,20 @@ Read this before starting work (and before re-investigating something "new").
   excludes almost nothing; the `--geo` 0.5 mm chamfer guess is wrong for these holes. Probing as built (tip height +
   chamfer contacts, tuned on the chamfered Factory hole) does not transfer; needs an edge cue (lateral force / tilt when
   the peg's 0.5 mm chamfer catches the hole edge) or a spiral / tilt search. Recorded as a peg-overfit result.
+- **H5 round 1** (`~/ci_mpc_runs/h5/r1` + smoke; pipeline, plain probe, `--geo`, 25 probes / 150 s, 1 run each):
+
+  | task (clearance) | 0 mm | 1 mm | 2 mm | 3 mm |
+  |---|---|---|---|---|
+  | round 4 mm (0.095) | ✓ 11.4 s | – | ✗ | – |
+  | round 8 mm (0.144) | ✓ 12.6 s | ✓ 14.0 s | ✗ ✗ | ✗ |
+  | round 12 mm (0.261) | ✓ 15.8 s | – | ✗ | – |
+  | rect 8 mm (0.19 × 0.15) | ✓ 11.0 s | – | ✗ | – |
+  | rect 12 mm (0.16 × 0.23) | ✗ | – | ✗ | – |
+
+  6/6 successes within 1–2 probes (a direct hit at the estimate); 0/7 at ≥ 2 mm, all with 25 uninformative flat
+  probes. rect 12 mm fails even at 0 mm (not investigated yet). H5 is a clean negative for the peg-tuned probe
+  strategy: needs an edge cue or a search that does not rely on chamfer / tip height (next H5 step, held out: design
+  on the Factory / AutoMate tasks, evaluate on H5).
 - Batched design (after peg fidelity passes): one task per run (Factory, `ci_hole_top`, `batched_probe` and the
   likelihood assume one geometry); `CI_TASK=nist:<id>` / `automate:<id>` filled from the same `info()`; the
   `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
