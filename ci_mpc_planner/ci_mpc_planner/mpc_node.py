@@ -47,6 +47,7 @@ class MpcNode(Node):
         dp = self.declare_parameter
         dp("urdf_path", "/home/njohnson/ci_mpc_assets/fr3.urdf")
         dp("ee_frame", "fr3_hand_tcp")
+        dp("ee_profile", "")  # Desk end-effector profile JSON (real robot): its TCP is the EE (EeModel)
         dp("command_topic", "/cartesian_impedance_controller/mpc_command")
         dp("task", "hold")
         dp("goal", [0.4, 0.1, 0.4])
@@ -102,7 +103,7 @@ class MpcNode(Node):
         self.singular_stop = False
         self.goal_rotvec = np.array(gp("goal_rotvec"), dtype=float)
         armature = [a for a in gp("armature")] if len(gp("armature")) == 7 else None
-        self.model = EeModel(gp("urdf_path"), gp("ee_frame"), armature)
+        self.model = EeModel(gp("urdf_path"), gp("ee_frame"), armature, gp("ee_profile"))
         self.replan_from = gp("replan_from")
         self.reset_threshold = gp("reset_threshold")
         self.resets = 0

@@ -18,6 +18,8 @@ Read this before starting work (and before re-investigating something "new").
      breakaway runs.
   4. The frozen-state abort (measured torques bit-identical / no /joint_states for 0.3 s after a reflex) is untested on
      the robot: check it does not fire falsely in the first run.
+  5. Free-space MPC (new, entry "2026-10-28"): `scripts/real/mpc_free_space_session.sh test`, then `all`. Breakaway
+     moves faster: `c3_breakaway_session.sh probe --goto-speed 0.04` (default 0.015 m/s).
   Controller commit e56a1c5 (real_robot_controllers.yaml) is not pushed (blocked by a permission check).
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
@@ -112,6 +114,22 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-28: free-space MPC session for the real FR3 (`scripts/real/mpc_free_space_session.sh`; Isaac check `~/ci_mpc_runs/real_prep/sim_mpc_free*`)
+- **Frame fix:** mpc_node planned in URDF `fr3_hand_tcp`, but on the robot the controller (model_source franka) tracks
+  the Desk profile's TCP, 8.5 mm further along the tool (same orientation): starting the MPC would have moved the arm
+  8.5 mm. New `ee_profile` parameter (EeModel adds the frame fr3_link8 * profile tcp); set in `mpc_real.yaml` (+ the
+  controller's default K 2500/2500/1000/130/130/45 commanded explicitly). Isaac (`mpc_sim.yaml`) unchanged.
+- `scripts/real/mpc_free_space_real.py`: starts mpc_node, runs hold / home / steps / rotate / circle via `~/goal_pose` and
+  `~/path`, safety stops (entry in REAL_ROBOT.md 5), json + raw.npz. The session script moves to home in joint space
+  first (move_to_start), so the start pose does not matter.
+- **Isaac check** (same driver, `mpc_real.yaml` limits, no profile, sim time): mpc_node solves 1.2 ms mean / 2.8 ms max;
+  ±5 cm steps 1.22–1.33 s to 1 cm, 1.9–3.9 s to 1 mm, overshoot ≤ 0.13 mm, line deviation ≤ 2.1 mm, final 0.3–1.1 mm,
+  peak 0.14 m/s (v_max 0.1 per axis); rotations reach 10 mrad in 2.1–2.9 s, final 1–11 mrad (wrist stiction, as before);
+  circle r 4 cm at 6 cm/s: 1.06 mm RMS / 2.5 mm max vs the command, 0.72 mm radial RMS. The frame check aborts after
+  2.0 mm when the profile frame is used against the sim's fr3_hand_tcp controller (as intended). Command gaps up to
+  120 ms in sim are wall time vs a slower-than-real-time sim; on the robot the controller logs gaps > 50 ms ("no MPC
+  command"), the session counts them.
 
 ### 2026-10-27 (20:30): C3 overnight result: feedforward MF3 fixes the stiction stall, the handover estimate is now the limit; plain still wins (`~/ci_mpc_runs/c3_isaac/night`)
 - 18 D1 queue runs (`night/run_night.sh`, 3 workers, 16:38–20:14, no tracebacks), pooled with the earlier repeats

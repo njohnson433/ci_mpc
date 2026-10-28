@@ -83,5 +83,12 @@ Validated against Isaac's ros2_control pipeline (home pose, PROGRESS 2026-10-27 
       JointIdController with `ci_mpc_sysid/config/real_sysid.yaml` (±0.2 rad, ≤ 0.4 rad/s, ramps ≤ 3 Nm, sines
       ≤ 0.5 rad/s), fit per pose → `~/ci_mpc_runs/real/joint_id/<pose>_<HHMM>/fitted.yaml`. No questions; Ctrl-C stops.
 - [ ] Fitted values → sim scene (`prepare_scene.py --params`) and controller.
-- [ ] Stage-1 MPC: `ros2 launch ci_mpc_planner mpc.launch.py config:=real` (v 0.1 m/s, a 0.5 m/s², small box,
-      singularity stop σ 0.1), then the stage-1 tests; compare with sim.
+- [ ] Stage-1 MPC in free space: `scripts/real/mpc_free_space_session.sh test` (move to home in joint space, impedance
+      controller, mpc_node 10 s hold: frame check, solve times, command gaps), then `all` (hold, ±5 cm steps in x / y / z,
+      ±0.3 rad about z / ±0.2 rad about x, circle r 4 cm at 6 cm/s; ~4 min). mpc_node uses `config/mpc_real.yaml`
+      (v 0.1 m/s, a 0.5 m/s², box x 0.25–0.55 / y ±0.25 / z 0.2–0.6, singularity stop σ 0.1, K = controller default) and
+      the Desk profile's TCP as EE (`ee_profile`; without it every command is 8.5 mm off along the tool). Safety stops:
+      Move mode, frozen state, TCP speed > 0.2 m/s, > 20 mm from the command, > 3 cm outside the box, arm moving > 2 mm
+      when the commands start (frame mismatch); stop = mpc_node stops, the controller holds after 50 ms (mpc_timeout).
+      Results `~/ci_mpc_runs/real/mpc_free/<preset>_<HHMM>/`. Isaac reference (same driver, `mpc_real.yaml` limits):
+      steps 1.2–1.3 s to 1 cm, final 0.3–1.1 mm, overshoot ≤ 0.13 mm; circle 1.1 mm RMS vs the command, 0.7 mm radial.
