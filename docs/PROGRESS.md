@@ -5,6 +5,16 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-28 15:30 PAUSED for the robot session (src-54), vectorized fidelity → v5.** Nothing of src-35 running.
+  Resume, one Isaac instance at a time (GPU was 99 % with src-f1's H3-100; 8-env runs reached RTF ~0.07):
+  1. Batched replay of the true-force validation set: `fidelity_probe_replay.py --sweeps ~/ci_mpc_runs/vec/step4d
+     --out ~/ci_mpc_runs/vec/step5/replay_val.npz` (the 15:26 run timed out at 218/320 probes after 1 h; no partial
+     save in the replay): compare its batched observer (sim_F) with `~/ci_mpc_runs/vec/step4d/holds_all.npz` (pipeline
+     true wrist force per hold, `hold_forces.py`) as distributions.
+  2. `batched_collect.py --envs 512 --seed 0 --out ~/ci_mpc_runs/vec/step5/collect_s0.npz` (saves every 200 steps;
+     never ran: the 16-env smoke timed out at 549/640 probes, so the script itself is untested past the loop).
+  3. Train v5 on it (`train_probe_likelihood.py`, v4 recipe), validate on held-out pipeline sweeps2 with true force,
+     benchmark v5 vs v3 on D1 / R, then H sets, one lever at a time.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
   Cartesian breakaway measured at the probe pose (cold): **C3 arm_friction 1.43, 0.80, 1.25 N, 1.56, 0.61 Nm**; offline
   check recommends `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` (entries below). Open, in order:
