@@ -12,7 +12,10 @@ Read this before starting work (and before re-investigating something "new").
   as parameters (d09356a, pushed). Next: (1) send src-35 the breakaway raw.npz paths (observer vs O_F_ext_hat_K;
   the observer topic published nothing on the robot: check why); (2) phase-dependent compensation (velocity for
   motion, coulomb 0.5 halves the breakaway at rest but wobbles in motion) and the C3 values with it, both through the
-  held-out sim set before any default; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
+  held-out sim set before any default; (2b) next robot session, needs a peg + a flat reference: grasp slip under
+  ~3 N probe presses (src-35: Isaac slips 2.1 mm up / 3.4 mm along the pads in 40 probes, res.json peg_slip_hand_mm,
+  66aa91b): re-touch the reference every N probes, log z (and xy at an edge) drift; no slip on the real hand = sim
+  artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
   Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
 
 - **2026-10-28 17:28 RESUMED (robot session over), vectorized fidelity → v5;** queue `~/ci_mpc_runs/vec/step6/queue.sh`
