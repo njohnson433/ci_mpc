@@ -2,8 +2,11 @@
 pipeline loads them through automate_scene.py / demo_automate.sh unchanged (AUTOMATE_ASSETS=~/ci_mpc_assets/nist,
 AUTOMATE=nist_round_8mm) and the batched env can read the same files later.
 Source: NVIDIA's simulation-ready NIST USDs (SDF collision), Isaac/6.2/Isaac/IsaacLab/Factory/NIST/ on the Isaac asset
-server, cached in ~/ci_mpc_assets/nist/src (license: NVIDIA Isaac asset terms, unverified: internal use only until
-checked). Built per task <id> in ~/ci_mpc_assets/nist/<id>/:
+server, cached in ~/ci_mpc_assets/nist/src. License: NVIDIA Isaac Sim Additional Software and Materials License (the
+Isaac Sim license FAQ: NVIDIA's 3D models may not be modified or redistributed except as that license permits), so
+the source USDs AND everything built from them here (the .obj meshes are derived geometry) stay local, never in the
+repo or a release; publish only this script (it rebuilds from the asset server). Redistributable alternative: NIST's
+own task-board CAD (US government work) meshed ourselves. Built per task <id> in ~/ci_mpc_assets/nist/<id>/:
   plug.usd, socket.usd    thin wrappers: body prim a_<id>_{plug,socket} referencing the source body (this also drops
                           the mis-declared stage metadata of round_hole_4mm / 8mm: metersPerUnit 0.01, upAxis Y, while
                           the points are in metres, Z-up), metersPerUnit 1, upAxis Z, SDF resolution (holes 512: the

@@ -375,6 +375,12 @@ Read this before starting work (and before re-investigating something "new").
   holds: the pipeline arm is equally stuck and its true force is the batched one's.
 
 ### 2026-10-28: NIST task board #1 = held-out H5: assets in the AutoMate layout (`~/ci_mpc_assets/nist`)
+- **License (checked 2026-10-28 evening):** NVIDIA's NIST USDs fall under the NVIDIA Isaac Sim Additional Software
+  and Materials License (Isaac Sim license FAQ: NVIDIA 3D models not to be modified or redistributed except as that
+  license permits). So `~/ci_mpc_assets/nist` (source USDs, wrappers, derived .obj) stays local, never in the repo
+  or a release; only `nist_assets.py` (rebuilds from the asset server) is published. Results / numbers are fine.
+  Redistributable route if needed: mesh NIST's own ATB #1 CAD (public information, attribution). AutoMate assets:
+  CC BY 4.0 (`~/ci_mpc_assets/automate/LICENSE`): redistributable with attribution.
 - Scoping (web, full report with sources in the session scratchpad, summary here): NVIDIA hosts simulation-ready
   USDs with SDF collision for all ATB #1 parts (Isaac/6.2/Isaac/IsaacLab/Factory/NIST/; Isaac Lab
   `contrib/nist`, gym id IsaacContrib-Factory-Franka); no CAD conversion needed. NIST originals: SolidWorks + an STL zip,
