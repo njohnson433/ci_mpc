@@ -179,6 +179,10 @@ Read this before starting work (and before re-investigating something "new").
   band"). This, plus the confirmed pipeline in-hand slip, is the remaining fidelity gap; the v5 collection
   (batched, sff 3.0) was stopped at 19:38 before saving anything.
 - Real-arm O_F_ext_hat_K result (held friction read as force, slope ~0.75) is unaffected (no wrist log involved).
+- **Slip in the v3 / v4 training data** (likelihood sweeps + sweeps2, 99 episodes with >= 4 probes > 6 mm from the
+  hole): per-episode linear fit of the far (flat-face) tips vs probe index: median -0.009 mm / probe; fitted tip at
+  k 39 median -0.32 mm, p10 -0.85 mm; 54 % of episodes drift past the 0.3 mm "sunk" threshold by the last probe.
+  Candidate lever (one at a time, after v5): v4 retrained on drift-corrected tips (tip - slope x k per episode).
 
 ### 2026-10-28 (evening): Isaac scene with the real FR3's identified joint friction does NOT match the real Cartesian breakaway (`~/ci_mpc_runs/vec/step6/breakaway_real1028`)
 - `fr3_scene_real1028.usd` = `prepare_scene.py --params ci_mpc_sysid/config/fr3_joint_params_sim_real20261028.yaml`
