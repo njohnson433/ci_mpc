@@ -17,6 +17,17 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
   `create-readme` skill (`.claude/skills/create-readme`) and follow it.
 - Commit and push this repo when the user asks (they asked for regular backup commits on 2026-10-22).
 
+## Don't overfit to the peg (user rule, 2026-10-28)
+- The controller must generalize across assembly tasks, not just the 8 mm peg. D1 / R / R2 are tuning and
+  validation sets on the peg only.
+- Before a change becomes a default or goes to the real robot, run it on the held-out set: H1 (peg conditions),
+  H2 (gear), H3 (AutoMate), and offline H4. Use `scripts/queue_cross_task.sh`, comparing base vs new. Report the result
+  per task in PROGRESS.md. Read H3 against its run-to-run noise (7/36 flips with identical code).
+- Don't tune parameters (feedforward, gates, thresholds) on H1–H4. Only tune on D1 / R, otherwise H stops being
+  held out.
+- Peg-only components (e.g. the v3/v4 learned likelihood, the vectorized Factory PegInsert sim) must be labeled
+  peg-only in results, and claims must not go beyond what they cover.
+
 ## Facts that bite
 - Isaac: articulation root `/fr3/Geometry/base/fr3_link0`; robot gravity off; effort mode; the controller
   must run inside Isaac's physics step (`isaacsim.ros2.control`), not via ROS topics.
