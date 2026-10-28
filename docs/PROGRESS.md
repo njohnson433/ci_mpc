@@ -57,8 +57,8 @@ Read this before starting work (and before re-investigating something "new").
   MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
   (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). MF4 = MF3, so keep MF3. **MF3 + std gate 3 mm: 40/40, 20/20 phases deep, time = plain (25.1 vs 25.0 s), engaged
   observer peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. **But the force gain is an observer artifact (2026-10-28):
-  on the true contact force (PhysX contact on the hole block, `hole_contact.csv`) the engaged peak is equal, 14.8 vs
-  14.8 N (mean diff 0.1 N, p = 0.92); see entry "true contact force".** So gated C3 = plain on D1 (success, time, true
+  on the true force (wrist F/T, 20 runs per arm) the engaged peak is equal, 9.3 vs 9.0 N (p = 0.64); see
+  entry "true contact force".** So gated C3 = plain on D1 (success, time, true
   force). Real-arm match: gated C3 30/30 but 9 s slower than plain, true peak equal (7.6 vs 7.4 N), so no gain.
   Integrator in the C3 phase (`--c3-integral`): replaces part of the feedforward (no ff: 0/13 → 7/11 deep) but adds
   nothing on top of MF3, so off. Running 2026-10-28: D1 wrist F/T recheck (`night/run_ft.sh`), held-out
@@ -239,7 +239,7 @@ Read this before starting work (and before re-investigating something "new").
 - Real-arm match: the integrator speeds the median up (20.2 vs 24.9 s) but not the mean, and the true peak is higher
   (9.4 vs 7.6 N); plain (16.0 s, 7.4 N) still wins. No reason to try C3 on the robot.
 
-### 2026-10-28: true contact force: C3's engaged-peak gain was an observer artifact; the true peak is the same in every arm (`scripts/c3_night_cmp.py`)
+### 2026-10-28: true contact force (wrist F/T): C3's engaged-peak gain was an observer artifact; the true peak is the same in plain and gated C3 (`scripts/c3_night_cmp.py`, `night/ft_*`)
 - Prompted by src-35: with the wrist F/T in pipeline holds, the observer over-reads by ~2.5 N (stiction: the spring
   stretch counts as contact force). `peak_force_engaged_N` is the observer's |F|, so arms with different feedforward
   could shift its bias without any change in true force. Checked offline on every D1 run against the PhysX contact
@@ -248,8 +248,8 @@ Read this before starting work (and before re-investigating something "new").
   free peg resting in the hole reads 2x its weight (entry "Ground truth for contact"). In src-35's holds it read 3.56 N
   vs wrist F/T 2.51 N. Friction-carried load matters most in centering (lateral stick-slip). Recheck pending: D1 plain vs
   MF3 + gate 3 mm, 2 repeats each, with the wrist F/T (`night/run_ft.sh`, after the integrator queue).
-- **Result (hole contact, pending the wrist F/T recheck): the engaged peak is equal across arms; the observer reads
-  5–8 N below it, by an amount that depends on the arm.**
+- **Result (hole contact; confirmed by the wrist F/T below): the engaged peak is equal across arms.** (The 5–8 N
+  observer offsets in this table are against the hole report, which reads high; see the correction below.)
 
   | Arm (nominal unless noted) | n | Observer peak median | True peak median / mean | Observer − true median |
   |---|---|---|---|---|
@@ -263,6 +263,22 @@ Read this before starting work (and before re-investigating something "new").
 
   True peak plain − gated C3: mean −0.11 N (bootstrap 95 % CI −1.85 to +1.58, Mann-Whitney p = 0.92); real-arm
   match +0.18 N (p = 0.40). The "−1.46 N, p = 0.001" gain (entry above, observer) does not survive.
+- **Wrist F/T recheck (2026-10-28 13:30, `night/run_ft.sh`, the truth incl. friction, tared at the first hover):**
+  D1, plain vs MF3 + gate 3 mm, 2 repeats each (20 runs per arm), `WRIST_FT=1`.
+
+  | Arm | Inserted | Contact median | **Wrist F/T peak median / mean / p90** | Hole contact median | Observer median |
+  |---|---|---|---|---|---|
+  | plain | 20/20 | 28.9 s | **9.3 / 9.3 / 12.2 N** | 14.9 N | 10.0 N |
+  | MF3 + gate 3 mm | 20/20 | 33.7 s | **9.0 / 9.7 / 12.5 N** | 15.0 N | 8.3 N |
+
+  Wrist plain − C3: mean −0.46 N (CI −1.75 to +0.84, p = 0.64): **equal, confirmed.** The peak sits in centering
+  (17/20 plain, 15/20 C3; the rest in the C3 phase). Per-phase wrist peaks: centering 9.0 / 8.9 N, C3 phase 8.9 N,
+  plain's push 5.1 N, push after C3 4.7 N. So the C3 phase presses ~1.7x harder than plain's push over the same depth.
+- **Correction to the bias numbers above:** they were against the hole contact report, which over-reads the wrist
+  F/T by ~5.7 N (14.9 vs 9.3 N, as src-35 warned). Against the wrist F/T, the observer reads +0.7 N for plain
+  and −0.8 N for gated C3. The bias is small but differs between the arms by ~1.5 N, which is exactly the size of the
+  "C3 gain". Use the wrist F/T (`peak_force_wrist_engaged_N` in res.json) as the force metric; the hole contact report
+  only for relative checks within an arm.
 - Where the true peak sits: in the **centering phase** in 27/30 plain, 34/40 never-hand-over and 32/40 gated runs.
   Centering runs before any C3 handover and is the same code in every arm, so the C3 phase cannot change the run's peak.
   Per-phase true peak medians: centering 11.4–14.5 N, push to the bottom 4.8–5.5 N, C3 phase 10.2 N. So C3's own
