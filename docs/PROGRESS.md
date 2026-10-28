@@ -199,6 +199,16 @@ Read this before starting work (and before re-investigating something "new").
   on batched data will read "flat" more often at 4-9 mm; check v5 on these 320 probes before any benchmark.
 - Calibration touch: z_bias log 0.63 mm vs batched 0.08 mm, corr 0.999, diff sd 0.03 mm: a constant 0.55 mm
   definitional offset, not a fidelity gap (flat tips agree).
+- **Step 5b, press lever (one change: press / hold feedforward 3.0 -> 3.5 N, `--sff 3.5`, `~/ci_mpc_runs/vec/step6/
+  replay_sff35.npz`): negative.** Batched Fz now 2.91 median / 3.06 mean (pipeline true 2.72 / 2.78), but engagement
+  went DOWN, not up: tip classes 244 / 54 / 22 (was 208 / 85 / 27; pipeline 126 / 139 / 55); engaged r < 4 mm 42 %
+  (was 54, pipeline 85), 4-5.5 mm 10 % (19, 60). The press force does not explain the gap.
+- **Likely mechanism: the pipeline's "sinking" is cumulative peg slip in the grasp, not hole geometry.** Probes far
+  from the hole (r > 6 mm, flat face only) drift down monotonically over the episode in the pipeline (ep 6: -0.09 ->
+  -0.91 mm over 10 far probes; ep 0 0.02 -> -0.44; ep 4 -0.15 -> -0.60), batched stays within -0.16 mm. The tip is
+  TCP - fixed offset, so a peg pushed up into the fingers reads as a sunk tip. Check running: nofric_e001 with a bag
+  of /perception/detections (true peg pose) next to /joint_states. If confirmed, the pipeline engaged classes (and
+  the v3/v4 training labels from the pipeline) carry grasp slip; the batched geometry would be the cleaner one.
 
 ### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
 - **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the
