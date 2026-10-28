@@ -20,6 +20,10 @@ Read this before starting work (and before re-investigating something "new").
      the robot: check it does not fire falsely in the first run.
   5. Free-space MPC (new, entry "2026-10-28"): `scripts/real/mpc_free_space_session.sh test`, then `all`. Breakaway
      moves faster: `c3_breakaway_session.sh probe --goto-speed 0.04` (default 0.015 m/s).
+  6. Later (needs a surface / fixture): press ~3 N for >= 0.3 s static, log observer vs O_F_ext_hat_K vs K(x_d - x) +
+     F_ff. In Isaac the observer over-reads only in contact (+1.4-2.5 N), not in the free-space stiction-held ramp
+     (0.01-0.13 N, src-35); tomorrow's free-space breakaway logs answer only the free-space half. Send src-35 the
+     breakaway raw.npz paths after the session.
   Controller commit e56a1c5 (real_robot_controllers.yaml) is not pushed (blocked by a permission check).
 - **2026-10-27 (workstation move done):** new machine (omar-OMEN: RTX 4090 24 GB, 62 GB RAM, 32 threads) passes
   all `MIGRATION.md` B.3 checks; resume with the two lists below unchanged. Isaac capacity (old limit: 4 instances)
