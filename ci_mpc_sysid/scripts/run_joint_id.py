@@ -81,6 +81,9 @@ else:
     ok = run(["ros2", "control", "load_controller", "--set-state", "active", args.controller])
 if not ok:
     finish(2)
+# nothing was spun while the spawner ran (blocking): restart the frozen-state clock, or the first log row triggers a
+# false "frozen" abort (real robot, 2026-10-28)
+mode["tau_t"] = time.time()
 
 def save():
     log = np.array(rows)
