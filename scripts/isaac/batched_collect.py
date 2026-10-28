@@ -71,6 +71,21 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     hold, settle = U(0.0005, 0.002, N, P), U(0.2, 0.6, N, P)
     tg[:, 0], hold[:, 0], settle[:, 0] = 0.0, 0.001, 0.3  # probe 0: the estimate, nominal hold / settle
     rp.setup(tg, torch.full((N,), P, device=dev), hold, settle)
+    tag = args.tag or f"batched_s{args.seed}"
+    hole_np = hole.cpu().numpy()
+
+    def save():
+        """Probes measured so far (also periodically: a timeout or the 06:00 backstop still leaves data)."""
+        x, F = rp.rec_x.cpu().numpy(), rp.rec_F.cpu().numpy()
+        ok = ~np.isnan(x[..., 0])
+        tip = x[..., 2] - rp.tip_below_tcp  # as rp.tip(): measure() already removed the grasp-height offset
+        run, k = np.nonzero(ok)
+        ep = {f"ep_{n}": v.cpu().numpy() for n, v in u.ep.items()}
+        np.savez(args.out, run=run, k=k, tcp=x[run, k, :2] * 1000, hole=hole_np[run] * 1000, tip=tip[run, k] * 1000,
+                 force=F[run, k], calibrated=rp.calib_ok.cpu().numpy()[run],
+                 runs=np.array([f"{tag}/env{i:04d}" for i in range(N)]), z_bias=rp.rec_zb.cpu().numpy(), **ep)
+        return ok, tip, F
+
     steps = 0
     while not (rp.phase == DONE).all() and steps < 20000:
         rp.step()
@@ -78,14 +93,7 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         steps += 1
         if steps % 200 == 0:
             print(f"  t {rp.t:6.1f} s: probes done {int(rp.rp_k.sum())} / {N * P}", flush=True)
-    x, F = rp.rec_x.cpu().numpy(), rp.rec_F.cpu().numpy()
-    ok = ~np.isnan(x[..., 0])
-    tip = x[..., 2] - rp.tip_below_tcp  # as rp.tip(): measure() already removed the grasp-height offset
-    run, k = np.nonzero(ok)
-    tag = args.tag or f"batched_s{args.seed}"
-    ep = {f"ep_{n}": v.cpu().numpy() for n, v in u.ep.items()}
-    np.savez(args.out, run=run, k=k, tcp=x[run, k, :2] * 1000, hole=hole.cpu().numpy()[run] * 1000,
-             tip=tip[run, k] * 1000, force=F[run, k], calibrated=rp.calib_ok.cpu().numpy()[run],
-             runs=np.array([f"{tag}/env{i:04d}" for i in range(N)]), z_bias=rp.rec_zb.cpu().numpy(), **ep)
+            save()
+    ok, tip, F = save()
     print(f"COLLECT {int(ok.sum())} probes from {N} envs ({int(rp.calib_ok.sum())} calibrated), {rp.t:.0f} s sim, "
           f"tip mean {np.nanmean(tip[ok]) * 1000:+.2f} mm, Fz mean {np.nanmean(F[ok][:, 2]):.2f} N", flush=True)
