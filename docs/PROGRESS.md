@@ -189,6 +189,9 @@ Read this before starting work (and before re-investigating something "new").
   Isaac (hybrid 0.75 / rest 0.5, run_impedance_test): hold / reach PASS. Next robot session: `friction_session.sh
   hybrid 0.75 hold` (nudge), `... mpc all` (expect the 0.5 mm circle, no wobble), `... probe` (expect ~coulomb-0.5
   breakaway). `REST=` sets the rest scale.
+  **Caveat (src-f1 offline H4, 8475e62, plant with real FR3 stiction):** contact peak force p90 3.5-4.2 N plain,
+  4.1-4.9 N with coulomb 0.5 (over the 4 N gate). So the rest part is for free-space holds / breakaway only; in
+  contact use velocity-only (`REST=0`, hybrid = velocity mode) until H1-H3 say otherwise.
 
 ### 2026-10-28 (evening): J^T check: the Cartesian breakaway is NOT the joint friction mapped through J^T in any simple model
 - Probe pose (joint_id 'probe' q, the IK of the C3 probe pose; the breakaway goto may sit slightly elsewhere in the
