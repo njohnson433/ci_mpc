@@ -479,13 +479,37 @@ Read this before starting work (and before re-investigating something "new").
      0.6 mm at handover). (0, −3): localized 0.06 mm off, but upright read flat several times, then stalled at 9.5 of 15 mm
      (suspect: tilted presses rotate the peg in the fingers, then it jams in the 0.1 mm hole). (−2.5, 1.5): estimate
      right, but std stayed 0.5–0.8 mm, never went upright.
-  6. (ready, not run: stopped for the robot session) `--tilt-max-probes 12` (upright after 12 tilted probes) and a
-     truth diagnostic at the handover: peg axis vs hand axis (tests the rotation-in-grasp suspicion).
-- **Resume here:** rerun the (0, −3) and (−2.5, 1.5) offsets (`~/ci_mpc_runs/nochamfer/tilt6`, killed at start), read
-  the peg-vs-hand angle. If the peg rotates in the grasp: lower the tilted press force (or re-square the peg on the face
-  before going upright). Then a dev sweep (round 8 / 10, square 10; ~8 offsets each), D1 no-regression check (flag off =
-  unchanged code path), and H5 only at the end.
-
+  6. `--tilt-max-probes 12` + truth diagnostics (peg axis vs hand axis; peg position in the hand frame since the grasp,
+     also `res.json` `peg_slip_hand_mm`), `~/ci_mpc_runs/nochamfer/tilt6`, `tilt7`: (0, −3) 0/3 over tilt5–7 with the
+     ry tilt (each: localized 0.2–0.3 mm, then 11.4–11.8 mm short), (−2.5, 1.5) 0/2 (once 3 mm short). At the handover the
+     peg sits 0.5–0.6° off the hand axis and has moved 0.3 mm. **Mechanism:** the fingers close along y, so an ry tilt
+     loads the peg in the pad plane, where only friction holds it; with 0.10 mm diametral clearance a 0.58° peg wedges at
+     0.10 / tan 0.58° ≈ 10 mm, where the earlier runs stalled.
+  7. **`--tilt-axis x`** (one lever: tilt about x, across the pads): at the handover the peg is 0.06–0.48° off the hand
+     axis and has moved 0.07–0.35 mm. Round 8: 2/5 ((0, −3) 35 s, 6.2 N; (−2.5, 1.5) 21 s, 7.7 N); round 10: **3/3**
+     (54–102 s, 6.3–14.5 N); square 10: 0/3 (see below). Round-8 failures, three different mechanisms:
+     - (1.41, 1.41), (3, 0): localized, entered 3–4 mm, then the **push wedged** 3 / 6.4 mm short. Wrist over 15 s: 2.2 N
+       lateral, 2.8 N down, 0.27 Nm about x. The observer reads no torque (rotational stiction absorbs it), so the fix
+       must not need sensing.
+     - (−1, −2): localized 0.06 mm off in 3 probes and entered 1.3 mm; then **lateral centering** (built for chamfers)
+       moved the hand 0.8 mm while the tip was in the bore, the peg slid 0.88 mm in the fingers, and the push stalled.
+  8. Levers for these, each run alone first:
+     - `--push-wiggle 0.5` (once the push stalls, cone the commanded axis at 0.5° at 1 Hz, +6 s push budget): (3, 0)
+       **inserted** (wiggle started at −11.93 mm, 57.5 s, 11.0 N). (1.41, 1.41) did not reach the push this time: the
+       tilted search looped (below).
+     - **Search loop, found and fixed:** with the lateral force of a tilted press (1–2 N at 1500 N/m) the measured low
+       point lands 0.7–1.3 mm short of its target, back towards the last probe. Excluding only measured points re-picked
+       the same spot (probes 2–6 within 0.4 mm). The commanded targets are now excluded too (tilt mode only).
+     - `--tilt-engage 0.0005` (in tilt mode, 0.5 mm deep counts as in the bore: push, no centering): opt-in, not run alone yet.
+     - `--tilt-upright-at-est`: the first upright probe goes to the estimate. Upright `next_probe` keeps 1.5 mm from earlier
+       probes, but on a sharp hole only the estimate (within the peg's 0.5 mm end chamfer) can capture. Square (0, −3):
+       localized 0.04 mm off, then 17 upright probes wandered over the face. Running alone now (`tilt9_est`).
+  - **Square 10: 0/3, parked.** The belief models a round peg in a round hole, but the tilted square peg's low point is a
+    corner. The flats also let the peg turn 1.2° and move 0.5–0.9 mm in the hand, even with the x tilt. It needs a
+    shape-aware hole model; H5 has rect 8 / 12 mm.
+- **Resume here:** `~/ci_mpc_runs/nochamfer/tilt9_est` results. Then combine the levers that won alone (x tilt +
+  wiggle + upright at estimate (+ tilt-engage)) on a round 8 / 10 sweep of ~8 offsets, then a D1 no-regression check
+  (flag off = unchanged code path), and H5 round 4 / 8 / 12 only at the end.
 
 ### 2026-10-28 (12:20): integrator in the C3 phase: it partly replaces the stiction feedforward but adds nothing on top of MF3 (`night/run_integ.sh`)
 - One lever: `--c3-integral` turns the controller integrator on during the C3 phase only (the probe commands keep it
