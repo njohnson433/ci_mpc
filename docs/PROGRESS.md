@@ -154,6 +154,29 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (evening): H4 offline with the real FR3 arm stiction as the true plant (`~/ci_mpc_runs/h4_real`, `scripts/heldout_h4_real.sh`)
+- **Setup:** same 30 fair starts as `heldout_h4.sh` (seeds 50–64 × 2). The true plant's Cartesian arm stiction is the
+  probe-pose breakaway measured on the real FR3 today (x y z N, rx ry Nm). It is used directly, since the J^T mapping
+  from the joint values does not reproduce it (entry "J^T check"). The MPC keeps its nominal model (2, 2, 3.5 N,
+  0.05, 0.05 Nm). New flag `sampled_teacher_eval.py --plant-fa` sets the absolute true stiction. Nothing tuned.
+
+  | true plant stiction | heuristic entered | steps median | peak p90 | GPU MPC entered | steps median | peak p90 |
+  |---|---|---|---|---|---|---|
+  | nominal (2, 2, 3.5 N; 0.05 Nm) | 20/30 | 35 | 4.96 N | 30/30 | 14 | 5.36 N |
+  | real warm (1.37, 0.86, 1.15 N; 1.24, 0.68 Nm) | 30/30 | 8 | 3.61 N | 30/30 | 8 | 4.17 N |
+  | real cold (1.43, 0.80, 1.25; 1.56, 0.61) | 30/30 | 9 | 3.51 N | 30/30 | 8 | 4.10 N |
+  | real + coulomb comp 0.5 (0.84, 0.66, 0.61; 0.67, 0.39) | 30/30 | 8 | 4.06 N | 30/30 | 8 | 4.89 N |
+
+- **The real arm is an easier plant than the nominal model in H4.** Its translational stiction is 2–3× lower than the
+  model's, so the commanded steps happen. The heuristic loses its nominal failures (10 runs stuck in the stiction band)
+  and both policies enter in ~8 steps. The real rotational stiction (1.2–1.6 Nm vs 0.05 in the model) does not hurt:
+  the peg stays near upright in this task.
+- **Lower stiction raises the peak force:** p90 3.5–3.6 N without compensation, 4.1–4.9 N with coulomb 0.5. Less of the
+  commanded penetration is absorbed by the arm, so more turns into contact force. The GPU MPC's p90 rises past the 4 N
+  gate with the compensation (4.89 N). Mechanism, not a verdict: its force cost is tuned on the nominal plant.
+- **No change of defaults from H4:** the plant change is benign. The phase-dependent compensation (src-54's item)
+  should be checked for the force rise in H1–H3, not only for entry.
+
 ### 2026-10-28 (evening): offline robot items: observer side model, hybrid friction compensation (controller 5c5749e + next)
 - **Observer on the real arm:** `observer_side_model: true` (real config) builds a Pinocchio side model (URDF) for the
   momentum observer's C^T dq; mass matrix and gravity come from franka's model (gravity with the Desk load), torques =

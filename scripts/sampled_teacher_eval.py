@@ -20,6 +20,8 @@ p.add_argument("--student", default="")
 p.add_argument("--plant-mu", type=float, default=None, help="held-out H4: true friction (model keeps 0.75)")
 p.add_argument("--plant-R", type=float, default=None, help="held-out H4: true hole radius [mm] (model 4.5)")
 p.add_argument("--plant-fa-scale", type=float, default=1.0, help="held-out H4: true arm stiction scale")
+p.add_argument("--plant-fa", default="", help="held-out H4: true arm stiction x,y,z [N],rx,ry [Nm] (replaces the "
+               "nominal before --plant-fa-scale), e.g. the real FR3 probe-pose breakaway 1.37,0.86,1.15,1.24,0.68")
 p.add_argument("--gpu-wforce", type=float, default=0.5, help="gpu policy: weight of the force penalty above f_soft")
 p.add_argument("--gpu-fsoft", type=float, default=3.0, help="gpu policy: force [N] above which it is penalized")
 p.add_argument("--refine-margin", type=float, default=0.0, help="refine policy: C3 replaces the sample if its score "
@@ -45,7 +47,7 @@ for ep in range(args.episodes):
     if args.plant_R is not None:
         geo_true.R = args.plant_R / 1000.0
     plant = PegHole3D(geo_true, hole_xy=-off, n_ring=8, n_rim=12)
-    fa_true = fa * args.plant_fa_scale
+    fa_true = (np.array([float(v) for v in args.plant_fa.split(",")]) if args.plant_fa else fa) * args.plant_fa_scale
     tb = plant.g.tip_below_tcp
     x = np.array([0.0, 0.0, tb + 0.0005, 0.0, 0.0])
     for _ in range(10):
