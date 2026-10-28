@@ -112,6 +112,72 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     env.reset()
     rp.reset()
     rp.setup(tg, n, hold, settle)
+
+    def report(final):
+        """Compare the probes measured so far with the log; write --out (and --trace when final)."""
+        sim_x, sim_F, sim_zb = rp.rec_x.cpu().numpy(), rp.rec_F.cpu().numpy(), rp.rec_zb.cpu().numpy()
+        tip_off = rp.tip_below_tcp
+        log_tip = np.full((N, P), np.nan)
+        log_F = np.full((N, P, 3), np.nan)
+        log_xy = np.full((N, P, 2), np.nan)
+        for i, e in enumerate(eps):
+            k = len(e["tip"])
+            log_tip[i, :k], log_F[i, :k], log_xy[i, :k] = e["tip"], e["F"], e["tcp"]
+        sim_tip = sim_x[..., 2] - tip_off
+        hole = -np.array([[v / 1000.0 for v in e["params"]["offset"]] for e in eps])  # true hole in the model frame
+        r_log = np.linalg.norm(log_xy - hole[:, None], axis=-1)
+        valid = ~np.isnan(log_tip) & ~np.isnan(sim_tip)
+
+        def cls(tip, F):  # flat face / engaged (chamfer push or sunk) / in the hole
+            lat = np.linalg.norm(F[..., :2], axis=-1)
+            return np.where(tip < -0.003, 2, np.where((tip < -3e-4) | (lat > 1.2), 1, 0))
+
+        cl, cs = cls(log_tip, log_F), cls(sim_tip, sim_F)
+        out = {"episodes": N, "probes": int(valid.sum())}
+        out["xy_track_mm"] = float(np.nanmedian(np.linalg.norm(sim_x[..., :2] - log_xy, axis=-1)[valid]) * 1000)
+        out["class_agree"] = float((cl == cs)[valid].mean())
+        conf = np.zeros((3, 3), int)
+        for a in range(3):
+            for b in range(3):
+                conf[a, b] = int(((cl == a) & (cs == b) & valid).sum())
+        out["confusion_log_rows_sim_cols"] = conf.tolist()
+        flat = valid & (cl == 0) & (cs == 0)
+        d_tip = (sim_tip - log_tip)[flat] * 1000
+        out["flat_tip_diff_mm"] = {"mean": float(d_tip.mean()) if flat.any() else None,
+                                   "sd": float(d_tip.std()) if flat.any() else None, "n": int(flat.sum())}
+        for name, m in (("flat", flat), ("engaged_both", valid & (cl == 1) & (cs == 1)), ("all", valid)):
+            if m.any():
+                dF = sim_F[m] - log_F[m]
+                out[f"force_{name}"] = {"log_mean": np.round(log_F[m].mean(0), 2).tolist(),
+                                        "sim_mean": np.round(sim_F[m].mean(0), 2).tolist(),
+                                        "log_sd": np.round(log_F[m].std(0), 2).tolist(),
+                                        "sim_sd": np.round(sim_F[m].std(0), 2).tolist(),
+                                        "diff_rms": np.round(np.sqrt((dF ** 2).mean(0)), 2).tolist()}
+        eng = valid & (cl == 1) & (cs == 1)
+        if eng.any():
+            a, b = log_F[eng][:, :2], sim_F[eng][:, :2]
+            big = (np.linalg.norm(a, axis=1) > 1.2) & (np.linalg.norm(b, axis=1) > 1.2)
+            cosang = (a * b).sum(1) / (np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) + 1e-9)
+            out["engaged_lateral_dir_cos_median"] = float(np.median(cosang[big])) if big.any() else None
+        for lo, hi in ((0, 4), (4, 5.5), (5.5, 9)):
+            m = valid & (r_log * 1000 >= lo) & (r_log * 1000 < hi)
+            if m.any():
+                out[f"r_{lo}_{hi}mm"] = {"n": int(m.sum()), "agree": float((cl == cs)[m].mean()),
+                                         "log_engaged": float((cl >= 1)[m].mean()), "sim_engaged": float((cs >= 1)[m].mean())}
+        log_zb = np.array([e["z_bias"] for e in eps])
+        zm = ~np.isnan(log_zb) & ~np.isnan(sim_zb)
+        out["z_bias_mm"] = {"log_mean": float(np.nanmean(log_zb) * 1000), "sim_mean": float(np.nanmean(sim_zb) * 1000),
+                            "diff_sd": float(np.nanstd(sim_zb - log_zb) * 1000),
+                            "corr": float(np.corrcoef(*[v[zm] for v in (log_zb, sim_zb)])[0, 1]) if zm.sum() > 2 else None}
+        print(("FIDELITY " if final else "partial ") + json.dumps(out), flush=True)
+        if args.trace and final:
+            np.savez(args.trace, trace=np.array(tr), cols=np.array(
+                "t phase k pos_d_x pos_d_y pos_d_z x y z ff_x ff_y ff_z I_x I_y I_z F_x F_y F_z Fext_x Fext_y Fext_z".split()),
+                     hole_top=u.ci_hole_top()[0].cpu().numpy(), tip_off=tip_off, dir=eps[0]["dir"])
+        if args.out:
+            np.savez(args.out, sim_x=sim_x, sim_F=sim_F, sim_zb=sim_zb, log_tip=log_tip, log_F=log_F, log_xy=log_xy,
+                     hole=hole, tip_off=tip_off, summary=json.dumps(out), dirs=np.array([e["dir"] for e in eps]))
+
     steps = 0
     tr = []
     while not (rp.phase == DONE).all() and steps < 20000:
@@ -126,65 +192,6 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
                                       c.F_ext[0, :3].cpu().numpy())))
         if steps % 200 == 0:
             print(f"  t {rp.t:6.1f} s: probes done {int(rp.rp_k.sum())} / {int(n.sum())}", flush=True)
-    sim_x, sim_F, sim_zb = rp.rec_x.cpu().numpy(), rp.rec_F.cpu().numpy(), rp.rec_zb.cpu().numpy()
-    tip_off = rp.tip_below_tcp
-
-    # ---- comparison
-    log_tip = np.full((N, P), np.nan)
-    log_F = np.full((N, P, 3), np.nan)
-    log_xy = np.full((N, P, 2), np.nan)
-    for i, e in enumerate(eps):
-        k = len(e["tip"])
-        log_tip[i, :k], log_F[i, :k], log_xy[i, :k] = e["tip"], e["F"], e["tcp"]
-    sim_tip = sim_x[..., 2] - tip_off
-    hole = -np.array([[v / 1000.0 for v in e["params"]["offset"]] for e in eps])  # true hole in the model frame
-    r_log = np.linalg.norm(log_xy - hole[:, None], axis=-1)
-    valid = ~np.isnan(log_tip) & ~np.isnan(sim_tip)
-
-    def cls(tip, F):  # flat face / engaged (chamfer push or sunk) / in the hole
-        lat = np.linalg.norm(F[..., :2], axis=-1)
-        return np.where(tip < -0.003, 2, np.where((tip < -3e-4) | (lat > 1.2), 1, 0))
-
-    cl, cs = cls(log_tip, log_F), cls(sim_tip, sim_F)
-    out = {"episodes": N, "probes": int(valid.sum())}
-    out["xy_track_mm"] = float(np.nanmedian(np.linalg.norm(sim_x[..., :2] - log_xy, axis=-1)[valid]) * 1000)
-    out["class_agree"] = float((cl == cs)[valid].mean())
-    conf = np.zeros((3, 3), int)
-    for a in range(3):
-        for b in range(3):
-            conf[a, b] = int(((cl == a) & (cs == b) & valid).sum())
-    out["confusion_log_rows_sim_cols"] = conf.tolist()
-    flat = valid & (cl == 0) & (cs == 0)
-    d_tip = (sim_tip - log_tip)[flat] * 1000
-    out["flat_tip_diff_mm"] = {"mean": float(d_tip.mean()), "sd": float(d_tip.std()), "n": int(flat.sum())}
-    for name, m in (("flat", flat), ("engaged_both", valid & (cl == 1) & (cs == 1)), ("all", valid)):
-        if m.any():
-            dF = sim_F[m] - log_F[m]
-            out[f"force_{name}"] = {"log_mean": np.round(log_F[m].mean(0), 2).tolist(),
-                                    "sim_mean": np.round(sim_F[m].mean(0), 2).tolist(),
-                                    "log_sd": np.round(log_F[m].std(0), 2).tolist(),
-                                    "sim_sd": np.round(sim_F[m].std(0), 2).tolist(),
-                                    "diff_rms": np.round(np.sqrt((dF ** 2).mean(0)), 2).tolist()}
-    eng = valid & (cl == 1) & (cs == 1)
-    if eng.any():
-        a, b = log_F[eng][:, :2], sim_F[eng][:, :2]
-        big = (np.linalg.norm(a, axis=1) > 1.2) & (np.linalg.norm(b, axis=1) > 1.2)
-        cosang = (a * b).sum(1) / (np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) + 1e-9)
-        out["engaged_lateral_dir_cos_median"] = float(np.median(cosang[big])) if big.any() else None
-    for lo, hi in ((0, 4), (4, 5.5), (5.5, 9)):
-        m = valid & (r_log * 1000 >= lo) & (r_log * 1000 < hi)
-        if m.any():
-            out[f"r_{lo}_{hi}mm"] = {"n": int(m.sum()), "agree": float((cl == cs)[m].mean()),
-                                     "log_engaged": float((cl >= 1)[m].mean()), "sim_engaged": float((cs >= 1)[m].mean())}
-    log_zb = np.array([e["z_bias"] for e in eps])
-    out["z_bias_mm"] = {"log_mean": float(np.nanmean(log_zb) * 1000), "sim_mean": float(np.nanmean(sim_zb) * 1000),
-                        "diff_sd": float(np.nanstd(sim_zb - log_zb) * 1000),
-                        "corr": float(np.corrcoef(*[v[~np.isnan(log_zb) & ~np.isnan(sim_zb)] for v in (log_zb, sim_zb)])[0, 1])}
-    print("FIDELITY " + json.dumps(out), flush=True)
-    if args.trace:
-        np.savez(args.trace, trace=np.array(tr), cols=np.array(
-            "t phase k pos_d_x pos_d_y pos_d_z x y z ff_x ff_y ff_z I_x I_y I_z F_x F_y F_z Fext_x Fext_y Fext_z".split()),
-                 hole_top=u.ci_hole_top()[0].cpu().numpy(), tip_off=tip_off, dir=eps[0]["dir"])
-    if args.out:
-        np.savez(args.out, sim_x=sim_x, sim_F=sim_F, sim_zb=sim_zb, log_tip=log_tip, log_F=log_F, log_xy=log_xy,
-                 hole=hole, tip_off=tip_off, summary=json.dumps(out), dirs=np.array([e["dir"] for e in eps]))
+            if steps % 400 == 0:
+                report(final=False)  # partial results survive a timeout (unfinished probes are NaN, excluded)
+    report(final=True)
