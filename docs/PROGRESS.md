@@ -634,6 +634,12 @@ Read this before starting work (and before re-investigating something "new").
       Mechanisms for the next design round (dev set, not H5): an upright probe at the estimate first (a hit at ≤ 1 mm
       costs one probe; the tilt search only after a flat read), and a larger tilt or a shorter grasp for thin pegs
       (bigger drop per mm).
+  12. **`--tilt-first-upright`** (dev set, one lever: one upright probe at the estimate after the tilted calibration,
+      the tilted search only if it does not go in; `~/ci_mpc_runs/nochamfer/sweep2_upfirst` vs `sweep1`, same 14 starts:
+      round 8 / 10 at 0, 1, 0.8 mm + 4 sweep offsets): **14/14 vs 14/14**, contact median at ≤ 1 mm **21.4 vs 41.0 s**
+      (3 of 6 direct hits in 6.3–6.7 s; the baseline took 15–95 s there), at 1–4 mm 32.3 vs 36.1 s (a missed upright
+      probe costs about one probe; the per-run spread is ±20 s). Pre-seat force median 9.1 vs 11.8 N. **Adopted** into the
+      chamferless flag set: `--tilt-probe 10 --tilt-axis x --push-wiggle 0.5 --tilt-engage 0.0005 --tilt-first-upright`.
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
