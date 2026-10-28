@@ -143,6 +143,37 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-28 (afternoon): first MPC runs on the real FR3, free space (`~/ci_mpc_runs/real/mpc_free/`)
+- **Works:** stage-1 mpc_node -> cartesian_impedance_controller on the real arm; frame check 0.01 mm; 10 s hold drift
+  0.02 mm; solves ~1.1 ms; command gaps <= 35 ms (timeout 50).
+- **Final settings** (`steps_1625`, now `mpc_real.yaml`): K 2500/2500/2500/130/130/45, D 337/214/231/6.4/11.2/6.7,
+  integral on. +-5 cm steps x/y/z: 0.61-0.66 s to 1 cm, 1.37-1.96 s to 1 mm, final 0.02-0.37 mm, overshoot <= 0.33 mm,
+  rotation error after steps 1.5-10.5 mrad; no buzz.
+- **Bugs found on the way, in order:**
+  1. Desk profile had been switched to the plain Franka Hand (0.73 kg, TCP 103.4): start-up guard caught it (6.7 mm).
+  2. Stale ros2 CLI daemon (`xmlrpc Fault !rclpy.ok()`): session scripts restart it.
+  3. Loose Ethernet cable -> NetworkException; after replugging NetworkManager picked `netplan-enp3s0` (10.0.0.2);
+     re-activated "Wired connection 1" (192.168.1.145). The frozen-state abort fired correctly.
+  4. run_joint_id false "frozen" abort (blocking spawner, stale clock): fixed.
+  5. **move_to_start commands zero torque once finished; with only the robot's gravity compensation joint 2 sank
+     ~0.1 rad/s (0.38 rad before the session released it).** move_monitor.py now switches to the pre-loaded impedance
+     controller the moment tau_J_d is exactly 0 (joint 2 then -0.784 of -0.785). Joint-ID test 15:59 ran at q2 -0.40.
+  6. **Wrist buzz ~30-40 Hz (joint 6) after the first MPC move, self-sustaining and growing** (0.5-1.5 mrad). Not the
+     integral (off: still), not translational K (1500: still), not the MPC commands (constant after the move). Once
+     also in the controller's own hold before the MPC (16:16). Halving the rotational damping (commanded D) removed it
+     in all later runs. Mechanism (inferred): D_rot = 1.3 x 2 sqrt(K Lambda) with the z floor 2 sqrt(K) is a fast
+     derivative loop on the light wrist; with ~1 ms delay and raw dq it rings. TODO: make the 1.3 factor / z floor
+     controller parameters so the controller's own hold has the margin too.
+  7. **z stopped 4-6 mm short both ways at K_z 1000:** joint stiction at home (~4-5 N in z) > window x K (3 mm x 1000 =
+     3 N), so the integrator never engaged. K_z 2500 -> 0.10-0.37 mm.
+  8. Speed watchdog over 10 ms read arrival jitter (0.34 m/s at 0.1): now >= 50 ms.
+- Circle r 4 cm at 6 cm/s (all_1621, K_z 1000): 4.1 mm RMS vs the command, mostly z (bug 7); rerun pending.
+- Warm breakaway at the probe (15:50, before the cable dropped): x 1.37, y 0.86, z 1.15 N (cold 1.43 / 0.80 / 1.25).
+- Joint 7 at q2 -0.40 (not true home): static 0.37, Coulomb 0.40 (controller header 0.53), viscous 0.065, armature
+  0.045 (Isaac scene 0.206).
+- Free-space O_F_ext_hat_K at home, at rest: Fx -1.2 N, ty -0.8 Nm (model bias). The controller observer topic
+  published nothing in these runs.
+
 ### 2026-10-28: vectorized step 4c: the press-force gap is the pipeline observer's over-read; the pipeline is not repeatable (peg only, `~/ci_mpc_runs/vec/step4c`)
 - Pipeline episode sweeps2 w0_e000 (seed 5000) rerun twice with a bag of /joint_states, mpc_command, external_wrench
   (`scripts/isaac/bag_trace.py`: TCP by FK, sim time from the joint-state stamps; the bag's record times are wall

@@ -31,5 +31,11 @@ ci_mpc_planner:
     force_limit: 12.0           # [N] acceleration limit = force_limit / Lambda (controller clamp 18 N)
     torque_limit: [6.0, 6.0, 1.5]  # [Nm] (controller clamps 9 / 9 / 2 Nm)
     sigma_min_stop: 0.1
-    stiffness: [2500.0, 2500.0, 1000.0, 130.0, 130.0, 45.0]  # controller default; rot. 260/260/90 buzzed at home (2026-10-27)
+    # real FR3, 2026-10-28 (PROGRESS): z 2500 (at 1000 joint stiction left z 4-6 mm short, outside the 3 mm integrator
+    # window, so the integral never engaged); rotation 130/130/45 (260/260/90 buzzed at home, 2026-10-27)
+    stiffness: [2500.0, 2500.0, 2500.0, 130.0, 130.0, 45.0]
+    # commanded D: translation = the controller's critical damping at home for this K (2 sqrt(K Lambda)); rotation half
+    # of the controller's (1.3 x critical, z floor 2 sqrt(K)): with those the wrist (joint 6) buzzed at ~30-40 Hz after
+    # the first MPC move and kept going; at half: no buzz in 2 runs (all_1621, steps_1625)
+    damping: [337.0, 214.0, 231.0, 6.4, 11.2, 6.7]
     armature: [0.0]             # unknown on our robot until identified (MuJoCo Menagerie: 0.195 / 0.074)
