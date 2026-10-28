@@ -51,7 +51,7 @@ def profile_sdf(r, z, g):
 class HoleBelief:
     def __init__(self, geo=PegHoleGeometry(), spread=0.006, res=0.0005, n_ring=24, touch=4e-4, f_contact=0.8,
                  pen_tol=3e-4,
-                 f_lateral=1.0, capture=0.002, likelihood=None):  # f_lateral ~3 sigma of the wrench estimate
+                 f_lateral=1.0, capture=0.002, likelihood=None, face_rings=(), gap_sigma=None):  # f_lateral ~3 sigma of the wrench estimate
         self.g = geo
         self.likelihood = likelihood  # learned probe likelihood (probe_likelihood.py) instead of the hand model
         ax = np.arange(-spread, spread + 1e-9, res)
@@ -61,11 +61,19 @@ class HoleBelief:
         ang = np.linspace(0, 2 * np.pi, n_ring, endpoint=False)
         tip = np.column_stack([(geo.a - geo.pc) * np.cos(ang), (geo.a - geo.pc) * np.sin(ang), np.zeros(n_ring)])
         edge = np.column_stack([geo.a * np.cos(ang), geo.a * np.sin(ang), np.full(n_ring, geo.pc)])
-        self.peg_points = np.vstack([tip, edge, [[0, 0, 0]]])
+        # face_rings: extra rings on the flat bottom face (fractions of its radius): a tilted peg meets a sharp hole
+        # edge with the face interior, which the tip / edge rings alone do not see (tilt probe, 2026-10-28)
+        face = [np.column_stack([f * (geo.a - geo.pc) * np.cos(ang), f * (geo.a - geo.pc) * np.sin(ang), np.zeros(n_ring)])
+                for f in face_rings]
+        self.peg_points = np.vstack([tip, edge, *face, [[0, 0, 0]]])
         self.touch, self.f_contact, self.f_lateral, self.capture = touch, f_contact, f_lateral, capture
         # penetration tolerance: the measured tip height is only good to ~0.1-0.3 mm (grasp offset calibration,
         # estimate); without it a tip 0.07 mm "inside" the top face favoured holes next to every probe
         self.pen_tol = pen_tol
+        # gap_sigma: contact model instead of the penetration / touch rules: the peg rests at the measured pose, so for
+        # the true hole the smallest peg-hole gap is ~0 (Gaussian, capped at 4 sigma). Tilt probe on sharp holes: the
+        # informative drops are 0.2-1.5 mm, inside the 0.3 mm pen_tol of the rules (2026-10-28)
+        self.gap_sigma = gap_sigma
 
     def points_world(self, x):
         """Peg points in the model frame for TCP pose x = (x, y, z, rx, ry)."""
@@ -90,6 +98,10 @@ class HoleBelief:
             self.logw -= self.logw.max()
             return
         d, n = self.gaps(x)
+        if self.gap_sigma is not None and np.linalg.norm(force) > self.f_contact:
+            self.logw += -0.5 * np.minimum((d.min(axis=1) / self.gap_sigma) ** 2, 16.0)
+            self.logw -= self.logw.max()
+            return
         ll = -np.sum(np.minimum(d + self.pen_tol, 0.0) ** 2, axis=1) / (3e-4) ** 2  # penetration beyond tolerance
         touching = d < self.touch + self.pen_tol
         any_touch = touching.any(axis=1)
@@ -118,6 +130,24 @@ class HoleBelief:
         w = self.weights()
         mean = w @ self.h
         return mean, np.sqrt(w @ np.sum((self.h - mean) ** 2, axis=1))
+
+    def next_probe_edge(self, offset, radius, exclude=(), current=None, min_spacing=0.0015):
+        """Tilt probe: the probe point (the peg's low point) where P(the hole is under it) is closest to 0.5, i.e. on the
+        uncertain edge of the belief (a sure drop or a sure miss teaches nothing); offset = low point - TCP is
+        irrelevant here, candidates are low-point positions; near-ties (within 0.05) the one closest to `current`."""
+        w = self.weights()
+        cands, sc = [], []
+        for c in self.h[::2]:
+            if any(np.linalg.norm(c - e) < min_spacing for e in exclude):
+                continue
+            pin = w[np.linalg.norm(self.h - c, axis=1) < radius].sum()
+            cands.append(c)
+            sc.append(min(pin, 1.0 - pin))
+        cands, sc = np.array(cands), np.array(sc)
+        near = sc >= sc.max() - 0.05
+        cur = np.zeros(2) if current is None else np.asarray(current)
+        i = np.flatnonzero(near)[np.argmin(np.linalg.norm(cands[near] - cur, axis=1))]
+        return cands[i], sc[i]
 
     def next_probe(self, exclude=(), current=None, min_spacing=None):
         """Probe position maximizing P(hole within the capture radius); positions already probed are skipped; among

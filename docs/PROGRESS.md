@@ -227,6 +227,32 @@ Read this before starting work (and before re-investigating something "new").
   `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
   (seed 1000 + id) for a paired comparison with src-f1's pipeline runs.
 
+### 2026-10-28 (afternoon): chamferless hole search, dev set + tilted probe (in progress; H5 stays held out)
+- Task (user, via src-5e): a hole search that works without a hole chamfer or tip-height cue (H5 NIST: ≥ 2 mm offsets
+  0/7, all probes flat). Rules: design and tune on a dev set, H5 only at the end, wrist F/T as the force metric, one
+  lever at a time, the chamfered default unchanged (new search behind a flag).
+- **Dev set** (`scripts/isaac/dev_nochamfer_assets.py`, `~/ci_mpc_assets/dev_nochamfer`, AutoMate layout, procedural,
+  no NIST parts): `dev_round_8mm` (peg 8.00 / hole 8.10 mm), `dev_round_10mm` (10.00 / 10.15), `dev_square_10mm`
+  (10.00 / 10.15 square); 30 × 30 × 15 mm blocks, 40 mm pegs with a 0.5 mm end chamfer, no hole chamfer (NIST: 25 × 25
+  × 9 mm, 50 mm pegs). Plain probe on dev round 8 reproduces H5: 0 mm inserted (4.9 s), 2 mm failed (25 flat probes, 123 s).
+- **Lever: `--tilt-probe DEG`** (`peg_insert_demo.py`, off by default): probe with the peg tilted (ry), so its lowest
+  rim point drops into a sharp-edged hole wherever it is over it; the belief (HoleBelief) models a sharp hole
+  (R = peg half width + `--tilt-clearance`/2, chamfer 0) and probes place the low point; below `--tilt-std` (0.4 mm) the
+  peg goes upright at the estimate and the usual probe / centering / push take over. Tilted calibration touch (low point
+  9.5 mm off on the diagonal) sets the grasp height.
+  Development iterations (dev round 8 mm, 10°, offsets (1.41, 1.41), (−2.5, 1.5), (0, −3), 1 run each):
+  1. Plain HoleBelief rules, probe where P(hole under the low point) is highest: 1/2 inserted (2 mm: 58 s, 11 tilted
+     probes, handover 0.6 mm off). The drop signal is strong (one drop: belief std 5.7 → 0.48 mm), but probes kept
+     landing deep inside the hole (no new information).
+  2. + face rings (the tilted face meets the edge with its interior) + edge-seeking probes (P(under) closest to 0.5):
+     0/3. Cause found from the logs: the flat readings sank from −0.1 to −0.7 mm over a run (each press slips the peg up
+     in the fingers), as deep as real drops.
+  3. + flat reference = the highest of the last 4 raw low-point heights: flats back to ±0.1 mm, but still 0/3. The
+     model (offline, true hole) predicts every measured height within ~0.1 mm (drops 0.2–1.5 mm, direction-dependent),
+     so the physics is right; the belief rules are too loose: pen_tol 0.3 mm swallows the 0.2–0.4 mm drops.
+  4. + contact likelihood (`HoleBelief(gap_sigma=1e-4)`: the smallest peg-hole gap at the measured pose ~ N(0, 0.1 mm)):
+     offline replay of the logged probes converges to 0.1–0.5 mm (the in-hand offset), Isaac rerun running.
+
 ### 2026-10-28 (12:20): integrator in the C3 phase: it partly replaces the stiction feedforward but adds nothing on top of MF3 (`night/run_integ.sh`)
 - One lever: `--c3-integral` turns the controller integrator on during the C3 phase only (the probe commands keep it
   off; `peg_insert_demo.py`). The controller's integral only acts near the target (|e| < 3 mm, slow), so it can push

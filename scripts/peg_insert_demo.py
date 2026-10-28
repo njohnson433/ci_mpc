@@ -132,6 +132,15 @@ p.add_argument("--c3-stiction-ff", default="0,0",
                     "--stiction-ff 2,3 with the true stiction in the model: 16/16)")
 p.add_argument("--c3-ff-lat-depth", type=float, default=float("inf"),
                help="probe --entry c3: lateral compensation only while the tip is less than this deep [mm]")
+p.add_argument("--tilt-probe", type=float, default=0.0,
+               help="probe: tilt the peg by this angle [deg] while probing (0 = off, upright as before). A chamferless "
+                    "tight hole carries an upright peg on its face (H5 NIST: every probe > 0.1 mm off reads flat); tilted, "
+                    "the peg's lowest rim point drops into the hole wherever it is over it. The belief then models a "
+                    "sharp-edged hole (--tilt-clearance) and the probes place the lowest point; upright at the estimate once "
+                    "the belief std < --tilt-std, then the usual insertion")
+p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
+p.add_argument("--tilt-clearance", type=float, default=0.0001,
+               help="--tilt-probe: diametral clearance of the sharp-edged hole model [m]")
 p.add_argument("--c3-integral", action="store_true",
                help="probe --entry c3: controller integrator on during the C3 phase (else off: the arm stalls where the "
                     "spring force equals the stiction, vectorized step 4c)")
@@ -590,6 +599,18 @@ elif args.strategy == "probe":
 
         belief.update = learned_update
         print(f"  belief: learned probe likelihood {args.belief_model} (scale {args.belief_scale})", flush=True)
+    from ci_mpc_planner.peg_hole_3d import rotxy as _rotxy
+    c["tilt"] = (0.0, np.radians(args.tilt_probe))  # (rx, ry) of the probing peg; (0, 0) = upright
+    if args.tilt_probe > 0:
+        # sharp-edged hole model (no chamfer), hole radius = peg half width + half the clearance
+        tgeo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **{**GEO, "R": geo.a + args.tilt_clearance / 2, "c": 1e-5})
+        belief = HoleBelief(tgeo, f_lateral=1e9, touch=1.5e-4, capture=geo.a, face_rings=(0.25, 0.5, 0.75),
+                            gap_sigma=1e-4)
+        print(f"  tilt probe {args.tilt_probe:.1f} deg: sharp-edged hole model R {tgeo.R * 1000:.3f} mm", flush=True)
+
+    def low_point(x):  # lowest peg point (model frame) at TCP pose x
+        pw = belief.points_world(x)
+        return pw[np.argmin(pw[:, 2])]
     c["u_cmd"], c["ff"] = (fk(state["q"]).translation.copy(), R), np.zeros(3)
 
     c["yaw"] = 0.0  # commanded hand yaw about the world z [rad] (--yaw-search), 0 = the grasp orientation
@@ -617,7 +638,7 @@ elif args.strategy == "probe":
     def cmd(xy, z, ff=(0.0, 0.0, 0.0)):  # z in the bias-corrected model frame, like measure5()
         cy, sy = np.cos(c["yaw"]), np.sin(c["yaw"])  # yaw search: rotation about the world z on top of R
         c["u_cmd"] = (np.array([O[0] + xy[0], O[1] + xy[1], O[2] + z + c["z_bias"]]),
-                      np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]]) @ R)
+                      np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]]) @ _rotxy(*c["tilt"]) @ R)
         c["ff"] = np.asarray(ff, float)
 
     def command_probe():
@@ -679,16 +700,17 @@ elif args.strategy == "probe":
     def touch(target):
         """Hover, move over target, tare, press until contact (or in the hole); returns (x, F) in light contact."""
         x = measure5()
-        cmd(x[:2], z_hover)
+        zh = z_hover + (0.002 if any(c["tilt"]) else 0.0)  # tilted: the low rim point hangs ~1 mm lower
+        cmd(x[:2], zh)
         spin_sim(0.4)
         for _ in range(25):  # lateral move with a stiction feedforward along the remaining offset
             x = measure5()
             d = target - x[:2]
             if np.linalg.norm(d) < 2e-4:
                 break
-            cmd(target, z_hover, (*(2.5 * d / np.linalg.norm(d)), 0.0))
+            cmd(target, zh, (*(2.5 * d / np.linalg.norm(d)), 0.0))
             spin_sim(dt)
-        cmd(measure5()[:2] if np.linalg.norm(target - measure5()[:2]) > 2e-4 else target, z_hover)
+        cmd(measure5()[:2] if np.linalg.norm(target - measure5()[:2]) > 2e-4 else target, zh)
         spin_sim(0.3)
         c["tare"] = force3(0.25, raw=True)
         c.setdefault("t_hover0", state["t"])  # first hover, peg in free air: wrist F/T tare window (last 0.25 s)
@@ -708,6 +730,21 @@ elif args.strategy == "probe":
         return measure5(), force3(0.3)
 
     calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0095)
+    tilting = args.tilt_probe > 0
+    lo = low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[:2]  # lowest point relative to the TCP (xy)
+    if tilting:
+        # tilted calibration touch: the low point 9.5 mm from the estimate on the diagonal (hole radius + error < 9.5 mm),
+        # its height is the grasp offset (the tip height of an upright peg is meaningless here)
+        d_c = np.array([-1.0, -1.0]) / np.sqrt(2.0) * 0.0095
+        x, F = touch(d_c - lo)
+        lz = low_point(x)[2]
+        if F[2] > 1.0 and abs(lz) < 0.0025:
+            c["z_bias"] = lz
+            print(f"  grasp height offset {lz * 1000:+.2f} mm (tilted calibration touch, low point "
+                  f"{np.round(low_point(measure5())[:2] * 1000, 2)} mm)", flush=True)
+        else:
+            print(f"  tilted calibration touch failed (low point {lz * 1000:+.2f} mm, force {np.round(F, 2)} N)", flush=True)
+        calib_touch = 0.0
     if calib_touch > 0:
         # grasp height on a spot that is surely flat top face (2026-10-25: probe 0 skipped the calibration when its
         # lateral force read > 1.5 N, then the belief never moved; D1 plain probe 14/15 calibrated vs 7/12 not).
@@ -727,21 +764,31 @@ elif args.strategy == "probe":
     for k in range(args.max_probes):
         if state["t"] - c["t0"] > args.timeout_contact:
             break
-        x, F = touch(target)
-        if k == 0 and c["z_bias"] == 0.0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
+        x, F = touch(target - lo if tilting else target)
+        if not tilting and k == 0 and c["z_bias"] == 0.0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
             # first contact on the flat top face (no lateral push): its tip height is the grasp offset (Isaac:
             # +0.55 mm; uncorrected, every hypothesis showed a gap and the belief never moved)
             c["z_bias"] = tip_z(x)
             x = measure5()
             print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibrated on the top face)", flush=True)
+        if tilting:
+            # flat reference = the highest of the last 4 raw low-point heights: each press slips the peg up in the
+            # fingers, so readings only sink (dev round 8: flats -0.1 -> -0.7 mm over 20 probes, as deep as real drops)
+            c.setdefault("tilt_raw", [c["z_bias"]]).append(low_point(x)[2] + c["z_bias"])
+            c["z_bias"] = max(c["tilt_raw"][-4:])
+            x = measure5()
         belief.update(x, F)
         est, std = belief.estimate()
         n_probes += 1
         engaged = tip_z(x) < -3e-4 or np.linalg.norm(F[:2]) > args.engage_lateral  # sank into the chamfer / a push (centering only)
+        if tilting:  # tilted probes only inform the belief (a drop is the hole edge under the low point)
+            engaged = False
+            lp = low_point(x)
+            print(f"  tilted probe {k}: low point {np.round(lp[:2] * 1000, 2)} mm, height {lp[2] * 1000:+.2f} mm", flush=True)
         on_top = not engaged
         if on_top:
-            probes.append(x[:2].copy())
-            if args.track_height > 0:  # raw tip heights (bias added back), seeded with the calibration
+            probes.append(lp[:2].copy() if tilting else x[:2].copy())
+            if args.track_height > 0 and not tilting:  # raw tip heights (bias added back), seeded with the calibration
                 c.setdefault("flat_raw", [c["z_bias"]]).append(tip_z(x) + c["z_bias"])
                 c["z_bias"] = float(np.median(c["flat_raw"][-args.track_height:]))
         print(f"  probe {k}: TCP {np.round(x[:2] * 1000, 2)} mm (true hole {np.round(-offset[:2] * 1000, 1)}), tip "
@@ -756,6 +803,11 @@ elif args.strategy == "probe":
             if k + 1 >= args.collect:
                 break
             continue
+        if tilting and std < args.tilt_std:
+            # localized: upright at the estimate, then the usual probe / centering / push
+            tilting, c["tilt"], probes, belief.capture = False, (0.0, 0.0), [], 0.001
+            print(f"    tilt search: localized (std {std * 1000:.2f} mm) after {k + 1} probes, upright at "
+                  f"{np.round(est * 1000, 2)} mm", flush=True)
         sunk = tip_z(x) < -3e-4
         if engaged and args.entry == "gpu" and (sunk or not args.lateral_centering) and std < args.gpu_std_max:
             # engaged: GPU sampling MPC (model on the belief's hole estimate) until the tip is 5 mm in
@@ -843,8 +895,8 @@ elif args.strategy == "probe":
             c.setdefault("phases", []).append(("center", t_a, state["t"]))
             print(f"    centering: tip {tip_z(measure5()) * 1000:+.2f} mm at {np.round(measure5()[:2] * 1000, 2)} mm",
                   flush=True)
-        if tip_z(measure5()) < -args.engage and not (args.centering_bound > 0 and np.linalg.norm(measure5()[:2])
-                                                     > args.centering_bound):  # in the hole: push to the bottom
+        if not any(c["tilt"]) and tip_z(measure5()) < -args.engage and not (
+                args.centering_bound > 0 and np.linalg.norm(measure5()[:2]) > args.centering_bound):  # in the hole: push to the bottom
             c["t_engage"] = c["t_contact"] = state["t"]
             depth_hist, retries, anchor, yaw_tries = [], 0, None, 0
             xy_push0, t_push0 = measure5()[:2], state["t"]
@@ -923,7 +975,10 @@ elif args.strategy == "probe":
             c["phase"], c["t_done"] = "done", state["t"]
             c.setdefault("phases", []).append(("push", c["t_engage"], state["t"]))
             break
-        target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
+        if tilting:  # the low point on the belief's uncertain edge
+            target, _ = belief.next_probe_edge(lo, belief.g.R, exclude=probes, current=low_point(x)[:2])
+        else:
+            target, _ = belief.next_probe(exclude=probes, current=x[:2], min_spacing=0.0015)
         if args.stuck_dither > 0:
             c.setdefault("recent", []).append(x[:2].copy())
             last = c["recent"][-3:]
