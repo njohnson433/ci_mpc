@@ -170,6 +170,11 @@ Read this before starting work (and before re-investigating something "new").
   2.0 mm when the profile frame is used against the sim's fr3_hand_tcp controller (as intended). Command gaps up to
   120 ms in sim are wall time vs a slower-than-real-time sim; on the robot the controller logs gaps > 50 ms ("no MPC
   command"), the session counts them.
+- Both real scripts (`mpc_free_space_real.py` raw.npz `wrench*`, `c3_breakaway_real.py` raw.npz cols `obs_*`, `o*`) now
+  log the controller's external-wrench observer and Franka's O_F_ext_hat_K side by side: src-35 found the observer
+  over-reads the hand force in Isaac probe holds (5.35 vs 2.5 N F/T: stiction stretch counted as contact), and the v3
+  likelihood was trained on it; the real arm's bias needs measuring (free space first). Sim smoke test OK (Franka
+  source absent in sim).
 
 ### 2026-10-27 (20:30): C3 overnight result: feedforward MF3 fixes the stiction stall, the handover estimate is now the limit; plain still wins (`~/ci_mpc_runs/c3_isaac/night`)
 - 18 D1 queue runs (`night/run_night.sh`, 3 workers, 16:38–20:14, no tracebacks), pooled with the earlier repeats

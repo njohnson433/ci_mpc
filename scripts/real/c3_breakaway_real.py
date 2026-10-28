@@ -127,7 +127,12 @@ node.create_subscription(WrenchStamped, args.controller + "/external_wrench", on
 state["mode"] = None
 if FrankaRobotState is not None:
     node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state",
-                             lambda m: state.__setitem__("mode", m.robot_mode), 10)
+                             lambda m: (state.__setitem__("mode", m.robot_mode),
+                                        state.__setitem__("f_franka", np.array([
+                                            m.o_f_ext_hat_k.wrench.force.x, m.o_f_ext_hat_k.wrench.force.y,
+                                            m.o_f_ext_hat_k.wrench.force.z, m.o_f_ext_hat_k.wrench.torque.x,
+                                            m.o_f_ext_hat_k.wrench.torque.y, m.o_f_ext_hat_k.wrench.torque.z]))), 10)
+state["f_franka"] = np.full(6, np.nan)
 cmd_pub = node.create_publisher(MpcCommand, args.controller + "/mpc_command", qos_profile_sensor_data)
 
 
@@ -215,7 +220,7 @@ def publish():
     if state["q"] is not None:
         x = fk(state["q"])
         raw.append([time.monotonic() - t_start, *x.translation, *pin.log3(x.rotation @ R_start.T), *cmd["p"], *cmd["ff"],
-                    *cmd["K"]])
+                    *cmd["K"], *state["wrench"], *state["f_franka"]])
 
 
 node.create_timer(0.005, publish)
@@ -247,7 +252,9 @@ def finish(code):
         json.dump(out, open(os.path.join(args.out, "breakaway.json"), "w"), indent=1)
         print(f"wrote {os.path.join(args.out, 'breakaway.json')}")
         np.savez_compressed(os.path.join(args.out, "raw.npz"), raw=np.array(raw), x0=x0.translation, R_start=R_start,
-                            cols="t x y z rx ry rz px py pz fx fy fz tx ty tz kx ky kz krx kry krz")
+                            cols="t x y z rx ry rz px py pz fx fy fz tx ty tz kx ky kz krx kry krz "
+                                 "obs_fx obs_fy obs_fz obs_tx obs_ty obs_tz ofx ofy ofz otx oty otz")
+        # obs_*: the controller's external-wrench observer; o*: Franka's O_F_ext_hat_K (both base frame)
     node.destroy_node()
     rclpy.shutdown()
     sys.exit(code)

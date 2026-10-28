@@ -13,7 +13,8 @@
 #   steps    +-x, +-y, +-z by --step from home and back: time to 1 cm / 1 mm, overshoot, final error, line deviation
 #   rotate   +-0.3 rad about world z, +-0.2 rad about world x, and back: orientation error, position drift
 #   circle   ~/path circle, radius --radius in the y-z plane through home: arm vs command and vs the ideal circle
-# Results: <out>/mpc_free_space.json (per test), raw.npz (joint states, EE, commands; monotonic receive time).
+# Results: <out>/mpc_free_space.json (per test), raw.npz (joint states, EE, commands, controller observer wrench and
+# Franka's O_F_ext_hat_K; monotonic receive time).
 #
 # Safety: abort if the robot leaves Move mode, the state freezes / /joint_states stop for 0.3 s (reflex), the TCP
 # moves faster than --abort-speed, is more than --abort-dev from the newest command, or leaves the MPC box by more
@@ -32,7 +33,7 @@ import pinocchio as pin
 import rclpy
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from ci_mpc_msgs.msg import MpcCommand
-from geometry_msgs.msg import Pose, PoseArray
+from geometry_msgs.msg import Pose, PoseArray, WrenchStamped
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
@@ -109,9 +110,22 @@ def on_cmd(m):
 
 node.create_subscription(JointState, "/joint_states", on_js, qos_profile_sensor_data)
 node.create_subscription(MpcCommand, "/cartesian_impedance_controller/mpc_command", on_cmd, qos_profile_sensor_data)
+wrenches = []  # (t, source 0 = controller observer / 1 = Franka O_F_ext_hat_K, wrench 6), base frame
+
+
+def w6(w):
+    return [w.force.x, w.force.y, w.force.z, w.torque.x, w.torque.y, w.torque.z]
+
+
+def on_robot_state(m):
+    state["mode"] = m.robot_mode
+    wrenches.append((time.monotonic(), 1, w6(m.o_f_ext_hat_k.wrench)))
+
+
+node.create_subscription(WrenchStamped, "/cartesian_impedance_controller/external_wrench",
+                         lambda m: wrenches.append((time.monotonic(), 0, w6(m.wrench))), 10)
 if FrankaRobotState is not None:
-    node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state",
-                             lambda m: state.__setitem__("mode", m.robot_mode), 10)
+    node.create_subscription(FrankaRobotState, "/franka_robot_state_broadcaster/robot_state", on_robot_state, 10)
 goal_pub = node.create_publisher(Pose, "/ci_mpc_planner/goal_pose", 10)
 path_pub = node.create_publisher(PoseArray, "/ci_mpc_planner/path", 10)
 active_pub = node.create_publisher(Bool, "/ci_mpc_planner/active", 10)
@@ -144,7 +158,10 @@ def finish(code):
             ct = np.array([c[0] for c in cmds]) if cmds else np.zeros(0)
             np.savez_compressed(os.path.join(args.out, "raw.npz"), t=t, q=q, p=np.array([fk(x)[0] for x in q]),
                                 cmd_t=ct, cmd_p=np.array([c[1] for c in cmds]).reshape(-1, 3),
-                                cmd_quat=np.array([c[2] for c in cmds]).reshape(-1, 4))
+                                cmd_quat=np.array([c[2] for c in cmds]).reshape(-1, 4),
+                                # controller observer (src 0) vs Franka O_F_ext_hat_K (src 1): free-space bias of both
+                                wrench_t=np.array([w[0] for w in wrenches]), wrench_src=np.array([w[1] for w in wrenches]),
+                                wrench=np.array([w[2] for w in wrenches]).reshape(-1, 6))
         print(f"results: {args.out}", flush=True)
     node.destroy_node()
     rclpy.try_shutdown()
