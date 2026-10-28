@@ -123,8 +123,12 @@ Read this before starting work (and before re-investigating something "new").
   stretch counts as contact force). `peak_force_engaged_N` is the observer's |F|, so arms with different feedforward
   could shift its bias without any change in true force. Checked offline on every D1 run against the PhysX contact
   report on the hole block (`hole_contact.csv`, in each run dir; `c3_night_cmp.py` now prints both).
-- **Result: the true engaged peak is equal across arms; the observer under-reads it by 5–8 N, by an amount that
-  depends on the arm.**
+- **Caveat (src-35): the hole contact report is not full truth.** It carries normal impulses only (no friction), and a
+  free peg resting in the hole reads 2x its weight (entry "Ground truth for contact"). In src-35's holds it read 3.56 N
+  vs wrist F/T 2.51 N. Friction-carried load matters most in centering (lateral stick-slip). Recheck pending: D1 plain vs
+  MF3 + gate 3 mm, 2 repeats each, with the wrist F/T (`night/run_ft.sh`, after the integrator queue).
+- **Result (hole contact, pending the wrist F/T recheck): the engaged peak is equal across arms; the observer reads
+  5–8 N below it, by an amount that depends on the arm.**
 
   | Arm (nominal unless noted) | n | Observer peak median | True peak median / mean | Observer − true median |
   |---|---|---|---|---|
