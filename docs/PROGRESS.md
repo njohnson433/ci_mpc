@@ -46,12 +46,13 @@ Read this before starting work (and before re-investigating something "new").
   rotational friction in the model: negative (entry "C3 in Isaac"). Overnight result (entry "C3 overnight result"):
   MF3 (ff 2.9 / 2.7) best, 60 % of C3 phases deep, the 0,0 stall gone. The limit is now the estimate at handover
   (< 1 mm: 86 % deep, ≥ 2 mm: 0 %). MF4 = MF3, so keep MF3. **MF3 + std gate 3 mm: 40/40, 20/20 phases deep, time = plain (25.1 vs 25.0 s), engaged
-  peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. The force gain is C3's (mean −1.46 N vs plain, bootstrap CI
-  0.57–2.33, Mann-Whitney p = 0.001); the "c3-arm path" share was noise (`--c3-std-max 0` runs plain's exact code,
-  2026-10-28 correction). Real-arm match: gated C3 30/30 but 9 s slower than plain, peak −0.6 N, so no gain.
-  Next (after the robot session): real-arm C3 needs a speed fix (its phases are long) before it is worth trying on the
-  robot; the C3 phase runs with the integrator off (`peg_insert_demo.py:629`, every probe command), so test the integrator
-  in the C3 phase as one lever against MF3's feedforward (src-35: without it the arm stalls in the stiction band).
+  observer peak 7.5 vs 10.2 N.** Gate 3 mm beats 2.5 / 3.5. **But the force gain is an observer artifact (2026-10-28):
+  on the true contact force (PhysX contact on the hole block, `hole_contact.csv`) the engaged peak is equal, 14.8 vs
+  14.8 N (mean diff 0.1 N, p = 0.92); see entry "true contact force".** So gated C3 = plain on D1 (success, time, true
+  force). Real-arm match: gated C3 30/30 but 9 s slower than plain, true peak equal (7.6 vs 7.4 N), so no gain.
+  Running 2026-10-28: integrator in the C3 phase (`--c3-integral`, `night/run_integ.sh`), then held-out
+  `queue_cross_task_c3.sh` (H1–H3, `~/ci_mpc_runs/cross_c3`), then H3-100 (`queue_h3_100.sh`, all AutoMate
+  assemblies, `~/ci_mpc_runs/h3_100`, resumable, stops starting jobs at 05:45). Both log the wrist F/T (`WRIST_FT=1`).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
   The 3D C3 handover fails in Isaac because C3's model **underestimates the arm's stiction**: in Isaac nothing moves
   while the model predicts motion, C3 limit-cycles (violation ~1). Offline on a stickier plant (3 / 5 N vs the
@@ -116,6 +117,39 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-28: true contact force: C3's engaged-peak gain was an observer artifact; the true peak is the same in every arm (`scripts/c3_night_cmp.py`)
+- Prompted by src-35: with the wrist F/T in pipeline holds, the observer over-reads by ~2.5 N (stiction: the spring
+  stretch counts as contact force). `peak_force_engaged_N` is the observer's |F|, so arms with different feedforward
+  could shift its bias without any change in true force. Checked offline on every D1 run against the PhysX contact
+  report on the hole block (`hole_contact.csv`, in each run dir; `c3_night_cmp.py` now prints both).
+- **Result: the true engaged peak is equal across arms; the observer under-reads it by 5–8 N, by an amount that
+  depends on the arm.**
+
+  | Arm (nominal unless noted) | n | Observer peak median | True peak median / mean | Observer − true median |
+  |---|---|---|---|---|
+  | plain | 30 | 10.2 N | 14.8 / 13.7 N | −5.0 N |
+  | MF3, never hand over | 40 | 9.1 N | 15.0 / 13.7 N | −5.9 N |
+  | MF3 + gate 3 mm | 40 | 7.5 N | 14.8 / 13.8 N | −6.4 N |
+  | MF3 + gate 2.5 mm | 40 | 7.5 N | 14.9 / 13.7 N | −7.0 N |
+  | MF3 ungated | 40 | 8.3 N | 15.9 / 17.7 N (p90 26.8) | −8.2 N |
+  | real-arm match: plain | 30 | 6.4 N | 7.4 / 8.2 N | −3.5 N |
+  | real-arm match: C3 + gate 3 mm | 30 | 5.8 N | 7.6 / 8.1 N | −2.5 N |
+
+  True peak plain − gated C3: mean −0.11 N (bootstrap 95 % CI −1.85 to +1.58, Mann-Whitney p = 0.92); real-arm
+  match +0.18 N (p = 0.40). The "−1.46 N, p = 0.001" gain (entry above, observer) does not survive.
+- Where the true peak sits: in the **centering phase** in 27/30 plain, 34/40 never-hand-over and 32/40 gated runs.
+  Centering runs before any C3 handover and is the same code in every arm, so the C3 phase cannot change the run's peak.
+  Per-phase true peak medians: centering 11.4–14.5 N, push to the bottom 4.8–5.5 N, C3 phase 10.2 N. So C3's own
+  phase presses about twice as hard as plain's push over the same depth. The observer under-reads centering (lateral wedge
+  contact during a slow stick-slip move), which is why it ranked the arms wrongly.
+- Mechanism of the artifact: the observer bias depends on the motion and the feedforward (stiction holds the spring
+  stretch; src-35 step 4c), so it differs by arm. Don't compare arms on `peak_force_engaged_N`; use the true peak
+  (hole contact on the peg scene, wrist F/T where logged).
+- Consequence: on D1, gated C3 (MF3 + 3 mm) = plain on success (40/40 vs 30/30), time (25.1 vs 25.0 s) and true
+  force. MF3 ungated is worse on true force (mean 17.7 N, p90 26.8 N). Gated C3 is safe, not better. The held-out
+  check (`queue_cross_task_c3.sh`, H3-100) now logs the wrist F/T (`WRIST_FT=1`); gear / AutoMate scenes have no
+  hole contact report.
 
 ### 2026-10-28: free-space MPC session for the real FR3 (`scripts/real/mpc_free_space_session.sh`; Isaac check `~/ci_mpc_runs/real_prep/sim_mpc_free*`)
 - **Frame fix:** mpc_node planned in URDF `fr3_hand_tcp`, but on the robot the controller (model_source franka) tracks

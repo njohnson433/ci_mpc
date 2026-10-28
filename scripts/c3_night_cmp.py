@@ -1,6 +1,16 @@
 # Pool C3 / plain D1 queue runs per arm (2026-10-27 overnight, PROGRESS "C3 overnight result"). -v: per offset.
 import json, glob, os, sys, numpy as np
 R = os.path.expanduser("~/ci_mpc_runs/c3_isaac"); N = R + "/night"
+
+
+def true_peak(r, d):  # true engaged peak: PhysX contact force on the hole block (hole_contact.csv) in the engaged phases
+    f = d + "/hole_contact.csv"
+    h = np.loadtxt(f, delimiter=",", skiprows=1, ndmin=2) if os.path.exists(f) else np.zeros((0, 4))
+    m = np.zeros(len(h), bool)
+    for ph in r.get("phases", []):
+        m |= (h[:, 0] >= ph[1]) & (h[:, 0] <= ph[2])
+    return float(np.linalg.norm(h[m, 1:4], axis=1).max()) if m.any() else np.nan
+
 groups = {
  "M (meas, no ff)": ["d1_meas/c3"],
  "MF (ff 1.5/1.3)": ["d1_meas_ff/c3", "d1_meas_ff_r2/c3"],
@@ -8,6 +18,10 @@ groups = {
  "MF3 (ff 2.9/2.7)": [f"night/mf3_r{i}/c3" for i in range(1, 5)],
  "MF4 (ff 3.6/3.4)": [f"night/mf4_r{i}/c3" for i in range(1, 5)],
  "MF3 + std<3mm": [f"night/mf3g3_r{i}/c3" for i in range(1, 5)],
+ "MF3 + std<3mm + integral": [f"night/mf3g3i_r{i}/c3" for i in range(1, 5)],
+ "M + std<3mm": [f"night/mg3_r{i}/c3" for i in range(1, 4)],
+ "M + std<3mm + integral": [f"night/mg3i_r{i}/c3" for i in range(1, 4)],
+ "real C3 + std<3mm + integral": [f"night/real_c3g3i_r{i}/c3" for i in range(1, 4)],
  "MF3 + std<2.5mm": [f"night/mf3g25_r{i}/c3" for i in range(1, 5)],
  "MF3 + std<3.5mm": [f"night/mf3g35_r{i}/c3" for i in range(1, 5)],
  "MF3 never hand over": [f"night/mf3g0_r{i}/c3" for i in range(1, 5)],
@@ -22,14 +36,17 @@ for name, ds in groups.items():
     rs = []
     for d in ds:
         for f in sorted(glob.glob(f"{R}/{d}/rep1/probe_*/res.json")):
-            r = json.load(open(f)); r["off"] = os.path.basename(os.path.dirname(f))[6:]; r["src"] = d; rs.append(r)
+            r = json.load(open(f)); r["off"] = os.path.basename(os.path.dirname(f))[6:]; r["src"] = d
+            r["true_peak"] = true_peak(r, os.path.dirname(f)); rs.append(r)
     if not rs: continue
     ho = [h for r in rs for h in r.get("c3_handovers", [])]
     cs = np.array([r["contact_phase_s"] for r in rs]); pk = np.array([r.get("peak_force_engaged_N", np.nan) for r in rs])
+    tp = np.array([r["true_peak"] for r in rs])
     tot = np.array([r["total_s"] for r in rs])
     ins = sum(r["success"] for r in rs)
     deep = sum(h[2] >= 21.9 for h in ho)
-    print(f"{name:18s} reps {len(ds)} n {len(rs):2d} ins {ins:2d} | contact mean/med {cs.mean():5.1f}/{np.median(cs):5.1f} s | engaged peak med/p90 {np.nanmedian(pk):5.2f}/{np.nanpercentile(pk,90):5.2f} N | "
+    print(f"{name:18s} reps {len(ds)} n {len(rs):2d} ins {ins:2d} | contact mean/med {cs.mean():5.1f}/{np.median(cs):5.1f} s | observer peak med/p90 {np.nanmedian(pk):5.2f}/{np.nanpercentile(pk,90):5.2f} N | "
+          f"TRUE peak med/mean {np.nanmedian(tp):5.2f}/{np.nanmean(tp):5.2f} N | "
           + (f"C3 phases {len(ho):2d} >=21.9mm {deep:2d} ({deep/len(ho):.0%}) depth med {np.median([h[2] for h in ho]):5.1f}" if ho else ""))
     per[name] = rs
 if "-v" in sys.argv:

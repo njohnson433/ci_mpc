@@ -8,6 +8,7 @@
 # H4 (offline GPU sampling MPC) does not exercise C3. Waits for the C3 integrator queue (night/integ.log).
 #   setsid nohup scripts/queue_cross_task_c3.sh ~/ci_mpc_runs/cross_c3 > ~/ci_mpc_runs/cross_c3.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
+export WRIST_FT=1  # true contact force (wrist_ft.csv): the observer peak is stiction-biased (PROGRESS 2026-10-28)
 OUT=$1
 mkdir -p "$OUT"
 MODEL=$HERE/../ci_mpc_planner/models/probe_likelihood_v3_both.npz
