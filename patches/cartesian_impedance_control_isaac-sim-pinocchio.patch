@@ -1,7 +1,7 @@
 From 8b4a7e26233de0ecf96989198f05eead07b242a0 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 11:27:20 +0200
-Subject: [PATCH 1/8] Pinocchio model source so the controller runs in Isaac
+Subject: [PATCH 1/9] Pinocchio model source so the controller runs in Isaac
  Sim
 
 model_source param (franka | pinocchio), optional input server, rate-independent
@@ -686,7 +686,7 @@ index 0000000..54b211a
 From ad90645480042edc63650cfd4afca5cdd261bf7e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 12:34:36 +0200
-Subject: [PATCH 2/8] Optional nullspace damping; Isaac config documents it as
+Subject: [PATCH 2/9] Optional nullspace damping; Isaac config documents it as
  off
 
 - New parameter nullspace_damping [Nms/rad], default 0 (unchanged behavior):
@@ -770,7 +770,7 @@ index 2b2ee40..a97308b 100644
 From 0fe0271f4e82d4e5ebedbf35a5be34478d56a83a Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 14:37:06 +0200
-Subject: [PATCH 3/8] Friction compensation and integrator as parameters
+Subject: [PATCH 3/9] Friction compensation and integrator as parameters
  (defaults unchanged)
 
 - integrator_weights / integrator_limits replace the hard-coded integral
@@ -956,7 +956,7 @@ index a97308b..1c6d626 100644
 From acc11b205e5d2750350b03179055f5ea90e1a846 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:04:02 +0200
-Subject: [PATCH 4/8] Conditional integration (anti-windup) as parameters;
+Subject: [PATCH 4/9] Conditional integration (anti-windup) as parameters;
  Isaac config uses it
 
 - integrator_windows, integrator_velocity_window, integrator_freeze_on_saturation,
@@ -1100,7 +1100,7 @@ index 1c6d626..639f311 100644
 From e6d5f8de57c0f76457c60dd36a908dd26270758d Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:23:21 +0200
-Subject: [PATCH 5/8] MPC tracking interface (ci_mpc_msgs/MpcCommand)
+Subject: [PATCH 5/9] MPC tracking interface (ci_mpc_msgs/MpcCommand)
 
 - Subscribes /cartesian_impedance_controller/mpc_command through a realtime
   buffer. The newest command sets the pose directly (no reference filter),
@@ -1343,7 +1343,7 @@ index 639f311..5768c51 100644
 From 916e4dba2e1e5e7afff8853cd9c5c0be8011d3b5 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Thu, 22 Oct 2026 15:46:37 +0200
-Subject: [PATCH 6/8] Optional joint armature in the Pinocchio model
+Subject: [PATCH 6/9] Optional joint armature in the Pinocchio model
 
 Parameter `armature` (7 values, default none): rotor inertia added to the
 mass matrix (Lambda, critical damping). Tested with the stage-1 MPC in sim:
@@ -1443,7 +1443,7 @@ index 8839acf..aa79ffd 100644
 From 153c12b96b8765e2c432e72beb2353e5765f234e Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Fri, 23 Oct 2026 13:42:28 +0200
-Subject: [PATCH 7/8] External wrench estimate: momentum observer on measured
+Subject: [PATCH 7/9] External wrench estimate: momentum observer on measured
  link torques (or commanded), ~/external_wrench
 
 Franka sign convention, fed into F_ext. Optional gravity (real FR3), observer-only armature, sim torque sensor
@@ -1763,7 +1763,7 @@ index aa79ffd..fe89454 100644
 From e56a1c5afbb27b498e0bc8c33e42fe81a7f699c3 Mon Sep 17 00:00:00 2001
 From: Nils Johnson <njohnson@ethz.ch>
 Date: Tue, 27 Oct 2026 15:14:12 +0100
-Subject: [PATCH 8/8] real_robot_controllers.yaml: full parameter set for the
+Subject: [PATCH 8/9] real_robot_controllers.yaml: full parameter set for the
  real FR3 (franka model, no friction compensation, input server off, Isaac
  integral settings)
 
@@ -1806,6 +1806,113 @@ index fd766c0..148007c 100644
 +    integrator_leak: 2.0
 +    integrator_reset_on_target: false
 +    mpc_timeout: 0.05
+-- 
+2.34.1
+
+
+From d09356ac33c96ac785e4edb0a4333111e4faeb64 Mon Sep 17 00:00:00 2001
+From: Nils Johnson <njohnson@ethz.ch>
+Date: Wed, 28 Oct 2026 17:01:01 +0100
+Subject: [PATCH 9/9] Parameters: per-joint friction values, joint torque
+ offset, rotational damping scale / z floor; real config: half rotational
+ damping
+
+Real FR3 (2026-10-28): the wrist rang at 30-40 Hz with 1.3 x critical rotational damping and the z floor; identified
+joint friction differs from the header (another FR3). Defaults unchanged (Isaac).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ config/real_robot_controllers.yaml            |  4 +++
+ .../cartesian_impedance_controller.hpp        |  3 ++
+ src/cartesian_impedance_controller.cpp        | 28 +++++++++++++++++--
+ 3 files changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/config/real_robot_controllers.yaml b/config/real_robot_controllers.yaml
+index 148007c..ea2f4db 100644
+--- a/config/real_robot_controllers.yaml
++++ b/config/real_robot_controllers.yaml
+@@ -28,3 +28,7 @@ cartesian_impedance_controller:
+     integrator_leak: 2.0
+     integrator_reset_on_target: false
+     mpc_timeout: 0.05
++    # half the default rotational damping (1.3 x critical, z floor 2 sqrt(K)): with the defaults the wrist rang at
++    # 30-40 Hz after MPC moves (ci_mpc PROGRESS 2026-10-28); mpc_real.yaml commands the same D while the MPC runs
++    rotational_damping_scale: 0.65
++    rz_damping_floor: 0.5
+diff --git a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+index 213b123..6971338 100644
+--- a/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
++++ b/include/cartesian_impedance_control/cartesian_impedance_controller.hpp
+@@ -182,6 +182,9 @@ public:
+     double friction_scale_{1.0};           // coulomb: scale on the identified friction
+     double friction_tau_eps_{0.3};         // coulomb: tanh width on the impedance torque [Nm]
+     double friction_vel_eps_{0.02};        // velocity: tanh width on the joint velocity [rad/s]
++    Eigen::Matrix<double, 7, 1> joint_torque_offset_ = Eigen::Matrix<double, 7, 1>::Zero();  // added to tau_d [Nm]
++    double rotational_damping_scale_{1.3};  // D_rot = scale * 2 sqrt(K Lambda)
++    double rz_damping_floor_{1.0};          // D_rz >= floor * 2 sqrt(K_rz)
+     std::unique_ptr<PinocchioModel> pinocchio_model_;
+     bool usePinocchio() const { return model_source_ == "pinocchio"; }
+     const double delta_tau_max_{1.0};  // per 1 ms step, scaled with dt_
+diff --git a/src/cartesian_impedance_controller.cpp b/src/cartesian_impedance_controller.cpp
+index f0a1e3a..b5fbc20 100644
+--- a/src/cartesian_impedance_controller.cpp
++++ b/src/cartesian_impedance_controller.cpp
+@@ -255,6 +255,14 @@ CallbackReturn CartesianImpedanceController::on_init() {
+      auto_declare<double>("friction_scale", 1.0);
+      auto_declare<double>("friction_tau_eps", 0.3);
+      auto_declare<double>("friction_vel_eps", 0.02);
++     // per-joint identified values (7 each; empty = the header values): coulomb / velocity modes
++     auto_declare<std::vector<double>>("friction_coulomb", std::vector<double>{});
++     auto_declare<std::vector<double>>("friction_viscous", std::vector<double>{});
++     // constant joint torque added to the command in every mode (e.g. a gravity-model shortfall; empty = none)
++     auto_declare<std::vector<double>>("joint_torque_offset", std::vector<double>{});
++     // rotational damping: D_rot = rotational_damping_scale * 2 sqrt(K Lambda), D_rz >= rz_damping_floor * 2 sqrt(K_rz)
++     auto_declare<double>("rotational_damping_scale", 1.3);
++     auto_declare<double>("rz_damping_floor", 1.0);
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s", e.what());
+      return CallbackReturn::ERROR;
+@@ -332,6 +340,18 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
+     friction_scale_ = get_node()->get_parameter("friction_scale").as_double();
+     friction_tau_eps_ = get_node()->get_parameter("friction_tau_eps").as_double();
+     friction_vel_eps_ = get_node()->get_parameter("friction_vel_eps").as_double();
++    for (const auto& [name, target] : {std::pair<std::string, Eigen::Matrix<double, 7, 1>*>{"friction_coulomb", &coulomb_friction},
++                                       {"friction_viscous", &beta}, {"joint_torque_offset", &joint_torque_offset_}}) {
++      const auto v = get_node()->get_parameter(name).as_double_array();
++      if (v.size() == 7) {
++        *target = Eigen::Map<const Eigen::Matrix<double, 7, 1>>(v.data());
++      } else if (!v.empty()) {
++        RCLCPP_ERROR(get_node()->get_logger(), "%s needs 7 entries", name.c_str());
++        return CallbackReturn::ERROR;
++      }
++    }
++    rotational_damping_scale_ = get_node()->get_parameter("rotational_damping_scale").as_double();
++    rz_damping_floor_ = get_node()->get_parameter("rz_damping_floor").as_double();
+     if (friction_compensation_ != "none" && friction_compensation_ != "lugre" && friction_compensation_ != "coulomb" &&
+         friction_compensation_ != "velocity") {
+       RCLCPP_ERROR(get_node()->get_logger(), "friction_compensation must be none, lugre, coulomb or velocity");
+@@ -631,8 +651,10 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+ 
+   // correcting D to be critically damped
+   D =  2.0 * K.cwiseMax(0.0).cwiseSqrt() * Lambda.cwiseMax(0.0).diagonal().cwiseSqrt().asDiagonal();
+-  D.bottomRightCorner(3,3) *= 1.3; //increase rotational damping a bit
+-  D(5,5) = std::max(D(5,5), 2*std::sqrt(K(5,5))); //minimal rotational damping in z-direction to avoid instabilities
++  D.bottomRightCorner(3,3) *= rotational_damping_scale_; //increase rotational damping a bit (default 1.3)
++  // minimal rotational damping in z-direction to avoid instabilities (default floor 2 sqrt(K); real FR3: the 1.3 x and
++  // the floor made the wrist ring at 30-40 Hz, 2026-10-28)
++  D(5,5) = std::max(D(5,5), rz_damping_floor_ * 2 * std::sqrt(K(5,5)));
+   //D(4,4) = std::max(D(4,4), 2*std::sqrt(K(4,4))); //minimal rotational damping in z-direction to avoid instabilities
+   //D(3,3) = std::max(D(3,3), 2*std::sqrt(K(3,3))); //minimal rotational damping in z-direction to avoid instabilities
+   D.topRightCorner(3,3).setZero();
+@@ -698,7 +720,7 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
+     }
+   }
+   // friction compensation goes through the torque-rate limit too (upstream added it after the limit)
+-  tau_d << tau_impedance + tau_nullspace + coriolis + tau_friction; //add nullspace and coriolis components to desired torque
++  tau_d << tau_impedance + tau_nullspace + coriolis + tau_friction + joint_torque_offset_; //add nullspace and coriolis components to desired torque
+   tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
+   tau_J_d_M = tau_d;
+ 
 -- 
 2.34.1
 

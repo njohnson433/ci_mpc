@@ -29,7 +29,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROBOT_IP=${ROBOT_IP:-192.168.1.200}
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-61}
 EE_PROFILE=${EE_PROFILE:-$HERE/desk_ee_hand_camera_mount_v0.1.endeffector-profile.json}
-PARAMS=~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml
+PARAMS=${PARAMS:-~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml}  # friction_session.sh sets it
 LOG=~/ci_mpc_runs/real/session_$(date +%Y%m%d_%H%M%S); mkdir -p "$LOG"
 
 source /opt/ros/humble/setup.bash
