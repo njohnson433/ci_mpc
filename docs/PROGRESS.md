@@ -60,7 +60,8 @@ Read this before starting work (and before re-investigating something "new").
   on the true contact force (PhysX contact on the hole block, `hole_contact.csv`) the engaged peak is equal, 14.8 vs
   14.8 N (mean diff 0.1 N, p = 0.92); see entry "true contact force".** So gated C3 = plain on D1 (success, time, true
   force). Real-arm match: gated C3 30/30 but 9 s slower than plain, true peak equal (7.6 vs 7.4 N), so no gain.
-  Running 2026-10-28: integrator in the C3 phase (`--c3-integral`, `night/run_integ.sh`), then held-out
+  Integrator in the C3 phase (`--c3-integral`): replaces part of the feedforward (no ff: 0/13 → 7/11 deep) but adds
+  nothing on top of MF3, so off. Running 2026-10-28: D1 wrist F/T recheck (`night/run_ft.sh`), held-out
   `queue_cross_task_c3.sh` (H1–H3, `~/ci_mpc_runs/cross_c3`), then H3-100 (`queue_h3_100.sh`, all AutoMate
   assemblies, `~/ci_mpc_runs/h3_100`, resumable, stops starting jobs at 05:45). Both log the wrist F/T (`WRIST_FT=1`).
 - **2026-10-27 (C3, before the workstation move):** goal = contact-implicit MPC, so C3 gets fixed, not dropped.
@@ -199,6 +200,30 @@ Read this before starting work (and before re-investigating something "new").
   likelihood assume one geometry); `CI_TASK=nist:<id>` / `automate:<id>` filled from the same `info()`; the
   `ep_override` randomization carries over, plus socket yaw. AutoMate-100: one assembly per run, H3-100's offsets
   (seed 1000 + id) for a paired comparison with src-f1's pipeline runs.
+
+### 2026-10-28 (12:20): integrator in the C3 phase: it partly replaces the stiction feedforward but adds nothing on top of MF3 (`night/run_integ.sh`)
+- One lever: `--c3-integral` turns the controller integrator on during the C3 phase only (the probe commands keep it
+  off; `peg_insert_demo.py`). The controller's integral only acts near the target (|e| < 3 mm, slow), so it can push
+  through the stiction band, where the spring force equals the stiction (src-35, vectorized step 4c). D1, 10 offsets
+  per repeat, gate 3 mm in every arm. Force: true peak from the hole contact report (normal only; wrist F/T recheck running).
+
+  | Arm | Reps | Inserted | Contact mean / median | C3 phases deep (≥ 21.9 mm) | True peak median / mean |
+  |---|---|---|---|---|---|
+  | MF3 + gate (baseline) | 4 | 40/40 | 30.9 / 25.1 s | 20/20 | 14.8 / 13.8 N |
+  | MF3 + gate + integral | 4 | 39/40 | 32.1 / 28.9 s | 17/17 | 15.0 / 14.2 N |
+  | no feedforward + gate | 3 | 30/30 | 36.8 / 32.3 s | **0/13** (median depth 12.8 mm) | 14.5 / 12.8 N |
+  | no feedforward + gate + integral | 3 | 29/30 | 34.7 / 30.8 s | **7/11** | 14.8 / 13.9 N |
+  | real-arm match: C3 + gate | 3 | 30/30 | 24.1 / 24.9 s | 9/10 | 7.6 / 8.1 N |
+  | real-arm match: C3 + gate + integral | 3 | 30/30 | 26.2 / 20.2 s | 9/9 | 9.4 / 9.5 N |
+  | real-arm match: plain | 3 | 30/30 | 20.7 / 16.0 s | – | 7.4 / 8.2 N |
+
+- **The stall is the stiction band, confirmed.** Without feedforward, no C3 phase reaches depth (0/13); the integrator
+  alone brings 7/11 down. So src-35's mechanism holds for C3: integral off + a spring that only reaches stiction.
+- **On top of MF3 the integrator adds nothing:** MF3 already takes 100 % of phases deep; with the integral, the median
+  is 3.8 s slower (within repeat noise) and there is one failure (-4,2: ran out of time without a C3 phase, so it is not C3's).
+  The no-feedforward + integral failure (-5,0) is also a run without a C3 phase. Keep MF3, integral off.
+- Real-arm match: the integrator speeds the median up (20.2 vs 24.9 s) but not the mean, and the true peak is higher
+  (9.4 vs 7.6 N); plain (16.0 s, 7.4 N) still wins. No reason to try C3 on the robot.
 
 ### 2026-10-28: true contact force: C3's engaged-peak gain was an observer artifact; the true peak is the same in every arm (`scripts/c3_night_cmp.py`)
 - Prompted by src-35: with the wrist F/T in pipeline holds, the observer over-reads by ~2.5 N (stiction: the spring
