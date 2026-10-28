@@ -801,9 +801,14 @@ elif args.strategy == "probe":
             print(f"  grasp height offset {c['z_bias'] * 1000:+.2f} mm (calibrated on the top face)", flush=True)
         if tilting:
             # flat reference = the highest of the last 4 raw low-point heights: each press slips the peg up in the
-            # fingers, so readings only sink (dev round 8: flats -0.1 -> -0.7 mm over 20 probes, as deep as real drops)
-            c.setdefault("tilt_raw", [c["z_bias"]]).append(low_point(x)[2] + c["z_bias"])
-            c["z_bias"] = max(c["tilt_raw"][-4:])
+            # fingers, so readings only sink (dev round 8: flats -0.1 -> -0.7 mm over 20 probes, as deep as real drops).
+            # Only probes the belief expects flat (< 0.1 mm drop) count: 4 drops in a row made a drop the reference and
+            # every later drop read 0.35 mm short (dev round 8 (1.41, 1.41), offline replay: model within 0.05 mm before)
+            z_flat_ = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]
+            c.setdefault("tilt_raw", [c["z_bias"]])
+            if belief.predicted_drop(np.array([x[0], x[1], z_flat_, *c["tilt"]])) < 1e-4:
+                c["tilt_raw"].append(low_point(x)[2] + c["z_bias"])
+                c["z_bias"] = max(c["tilt_raw"][-4:])
             x = measure5()
         belief.update(x, F)
         est, std = belief.estimate()

@@ -149,6 +149,19 @@ class HoleBelief:
         i = np.flatnonzero(near)[np.argmin(np.linalg.norm(cands[near] - cur, axis=1))]
         return cands[i], sc[i]
 
+    def predicted_drop(self, pose, cap=0.0015, n_hyp=400):
+        """Tilt probe: expected drop [m] of the peg at `pose` (TCP at the flat-face height) over the bulk of the belief:
+        the smallest peg-hole gap per hypothesis, capped, weighted (as next_probe_info's prediction)."""
+        w = self.weights()
+        idx = np.argsort(w)[::-1][:n_hyp]
+        h_all = self.h
+        self.h = h_all[idx]
+        try:
+            d, _ = self.gaps(pose)
+        finally:
+            self.h = h_all
+        return float(w[idx] @ np.clip(d.min(axis=1), 0.0, cap) / w[idx].sum())
+
     def next_probe_info(self, pose_at, exclude=(), current=None, min_spacing=0.0015, cap=0.0015, n_hyp=400):
         """Tilt probe: the candidate (low-point position) whose predicted measurement varies most over the belief.
         pose_at(c) = the TCP pose that puts the low point at c on the flat face; the prediction per hypothesis is the
