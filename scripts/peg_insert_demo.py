@@ -691,6 +691,7 @@ elif args.strategy == "probe":
         cmd(measure5()[:2] if np.linalg.norm(target - measure5()[:2]) > 2e-4 else target, z_hover)
         spin_sim(0.3)
         c["tare"] = force3(0.25, raw=True)
+        c.setdefault("t_hover0", state["t"])  # first hover, peg in free air: wrist F/T tare window (last 0.25 s)
         x = measure5()
         uz = x[2]
         for _ in range(40):  # press (stiction feedforward), until contact or in the hole
@@ -1058,6 +1059,16 @@ if c.get("phases"):  # engaged phases with the peak of the observer's force esti
                                                     .max()) if ((W_[:, 0] >= a) & (W_[:, 0] <= b)).any() else 0.0)
                      for n, a, b in c["phases"]]
     res["peak_force_engaged_N"] = max(ph[3] for ph in res["phases"])
+    if os.path.exists(sync("wrist_ft.csv")) and c.get("t_hover0"):
+        # true force (WRIST_FT=1): wrist F/T |F - tare| in the engaged phases, tared once at the first free-air hover;
+        # the observer peak above is stiction-biased by 5-8 N, arm-dependent (PROGRESS 2026-10-28)
+        ft = np.loadtxt(sync("wrist_ft.csv"), delimiter=",", skiprows=1, ndmin=2)
+        tw = (ft[:, 0] >= c["t_hover0"] - 0.25) & (ft[:, 0] <= c["t_hover0"])
+        if tw.any():
+            fm = np.linalg.norm(ft[:, 1:4] - np.median(ft[tw, 1:4], axis=0), axis=1)
+            res["phases_wrist_N"] = [float(fm[(ft[:, 0] >= a) & (ft[:, 0] <= b)].max())
+                                     if ((ft[:, 0] >= a) & (ft[:, 0] <= b)).any() else 0.0 for _, a, b in c["phases"]]
+            res["peak_force_wrist_engaged_N"] = max(res["phases_wrist_N"])
 if c.get("c3_trace"):  # per C3 handover: estimate error, belief std [mm], depth reached [mm]
     res["c3_handovers"] = [(float(np.linalg.norm(np.array(t["est"]) - np.array(t["true"])) * 1000),
                             t["std"] * 1000, t.get("depth_end", float("nan")) * 1000) for t in c["c3_trace"]]
