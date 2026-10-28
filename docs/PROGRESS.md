@@ -615,6 +615,25 @@ Read this before starting work (and before re-investigating something "new").
       Plain probe on the same hole: 0/2 at 2 mm. Force: the max is often a 1-sample spike at the drop into the bore
       or at seating (up to 25 N); `--tilt-engage` pushes from 0.5 mm deep, so the drop is fast. Open lever: a slower
       final descent.
+  11. **H5 (held out), once, flags frozen** (`~/ci_mpc_runs/h5/tilt_r1`; same starts as H5 round 1 + smoke; 21:00–22:40,
+      1 instance next to H3-100 and the held-out real-arm queue):
+
+      | task (diametral clearance) | 0 mm | 1 mm | 2 mm (1.41, 1.41) | 3 mm (−2.12, 2.12) |
+      |---|---|---|---|---|
+      | round 4 (0.095) | ✓ 53.7 s (plain ✓ 11.4) | – | ✗ (plain ✗) | – |
+      | round 8 (0.144) | ✓ 42.3 s (plain ✓ 12.6) | ✓ 17.0 s (plain ✓ 14.0) | **✓ 22.9 s** (plain ✗ ✗) | **✓ 24.2 s** (plain ✗) |
+      | round 12 (0.261) | ✓ 32.1 s (plain ✓ 15.8) | – | **✓ 92.9 s** (plain ✗) | – |
+
+      **7/8 vs plain 4/8; at ≥ 2 mm 3/4 vs 0/4.** At ≤ 1 mm both are 4/4, but the tilt search is 2–5× slower: it always
+      runs the tilted search first, even when an upright probe at the estimate would hit. Round 4 failure: belief std
+      5.11 → 5.18 mm after 12 tilted probes (no information). A 4 mm peg (radius 2 mm, tip 40 mm below the TCP) drops at
+      most ~0.1–0.2 mm into a 4.1 mm sharp hole (probe 11, low point 1.8 mm from the centre: −0.12 mm), inside the
+      flat-reading noise; the thin peg also turned 0.98° and moved 0.7 mm in the fingers. Wrist (lag-corrected) max
+      6–22 N, pre-seat 4–22 N (round 4 at 2 mm: 22.5 N during the failed search). Round 12 at 2 mm localized after 11
+      tilted probes (std 0.38 mm) but took 21 probes in all.
+      Mechanisms for the next design round (dev set, not H5): an upright probe at the estimate first (a hit at ≤ 1 mm
+      costs one probe; the tilt search only after a flat read), and a larger tilt or a shorter grasp for thin pegs
+      (bigger drop per mm).
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
