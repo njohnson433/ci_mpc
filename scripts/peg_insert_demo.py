@@ -180,6 +180,8 @@ p.add_argument("--tilt-thin-auto", type=float, default=0.0,
                help="--tilt-probe: for a peg half width (--geo a) below this [m], switch to the thin-peg set: tilt 20 deg, "
                     "--tilt-upright-spiral 0.00017, --tilt-slide 0.003 (dev round 4: 3/3 vs 1/3; on round 8 / 10 the same "
                     "set lost 3 of 8 to in-grasp rotation, so it is gated by size; e.g. 0.003)")
+p.add_argument("--tilt-slide-refresh", action="store_true",
+               help="--tilt-slide: slide samples the belief predicts flat also update the flat reference (as presses do)")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -862,6 +864,14 @@ elif args.strategy == "probe":
             spin_sim(dt)
             x, F = measure5(), force3(0.1)
             if i % 3 == 2 and F[2] > 1.0:
+                if args.tilt_slide_refresh:
+                    # flat reference from the slide too: sliding friction pushes the peg up the fingers (H5 round 4:
+                    # -0.34 mm by the handover), so the press-only reference went stale and flats read as drops
+                    zf = tip_below_tcp - low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[2]
+                    if belief.predicted_drop(np.array([x[0], x[1], zf, *c["tilt"]])) < 1e-4:
+                        c["tilt_raw"].append(low_point(x)[2] + c["z_bias"])
+                        c["z_bias"] = max(c["tilt_raw"][-4:])
+                        x = measure5()
                 belief.update(x, F)
                 n_up += 1
             if low_point(x)[2] < -3e-4 or np.linalg.norm(F[:2]) > 4.0:
