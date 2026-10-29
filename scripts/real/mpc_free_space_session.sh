@@ -12,8 +12,11 @@
 #   test    home + 10 s MPC hold (first run: frame check, solve times, command gaps)          ~1 min
 #   all     hold, home, steps (+-5 cm in x / y / z and back), rotate (+-0.3 rad z, +-0.2 rad x), circle (r 4 cm)  ~4 min
 #   steps | rotate | circle   hold + that test only
+#   armid   no MPC: arm_id_real.py arm: known set-points (steps + sines, x y z rx ry rz) for the stage-B arm model ~5 min
+#   approach  no MPC: arm_id_real.py approach: stage A smooth-approach descents in free air, false contact triggers ~3 min
 #   e.g. mpc_free_space_session.sh all --step 0.08 --path-speed 0.08
-# Env: ROBOT_IP (192.168.1.200), ROS_DOMAIN_ID (61).
+#        mpc_free_space_session.sh armid --axes x,z --freqs 0.5,2
+# Env: ROBOT_IP (192.168.1.200), ROS_DOMAIN_ID (61), GRIPPER=1 (load the Franka Hand gripper node).
 # Results: ~/ci_mpc_runs/real/mpc_free/<preset>_<HHMM>/ (mpc_free_space.json, raw.npz, mpc_node.log), session logs next
 # to them.
 PRESET=$1; shift
@@ -21,6 +24,8 @@ case "$PRESET" in
   test) TESTS=hold ;;
   all) TESTS=hold,home,steps,rotate,circle ;;
   steps|rotate|circle) TESTS=hold,home,$PRESET ;;
+  armid) DRIVER=arm ;;
+  approach) DRIVER=approach ;;
   *) sed -n 2,20p "$0"; exit 1 ;;
 esac
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -66,7 +71,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "--- 1. franka_hardware on $ROBOT_IP (ROS_DOMAIN_ID $ROS_DOMAIN_ID), log $LOG/launch.log"
-setsid ros2 launch franka_bringup franka.launch.py robot_type:=fr3 robot_ip:="$ROBOT_IP" load_gripper:=false \
+setsid ros2 launch franka_bringup franka.launch.py robot_type:=fr3 robot_ip:="$ROBOT_IP" load_gripper:=$([ "${GRIPPER:-0}" = 1 ] && echo true || echo false) \
   joint_state_rate:=200 use_rviz:=false > "$LOG/launch.log" 2>&1 &
 LAUNCH_PID=$!
 for i in $(seq 60); do
@@ -110,5 +115,10 @@ echo "--- 3. cartesian_impedance_controller active: the arm holds its pose"
 ros2 control list_controllers | grep -E "cartesian_impedance_controller.*active" > /dev/null \
   || { echo "cartesian_impedance_controller is not active"; exit 1; }
 
+if [ -n "$DRIVER" ]; then
+  echo "--- 4. arm_id_real.py $DRIVER (set-points straight to the controller, no MPC) -> $D"
+  python3 -u "$HERE/arm_id_real.py" "$DRIVER" --out "$D" "$@" 2>&1 | tee -i "$LOG/arm_id.out"
+  exit
+fi
 echo "--- 4. MPC tests ($TESTS) -> $D"
 python3 -u "$HERE/mpc_free_space_real.py" --tests "$TESTS" --out "$D" "$@" 2>&1 | tee -i "$LOG/mpc_free_space.out"  # tee -i: Ctrl-C must not cut the results output

@@ -5,6 +5,33 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **Next real FR3 session, re-planned around stages A / B (2026-10-29, src-5e for the user).** Announce it to
+  src-f1 / src-35 / src-5e first; all sim jobs stop, check the PC is quiet. Every session records robot_state.npz
+  (200 Hz). Order:
+  1. Safety, hybrid default for the first time: `mpc_free_space_session.sh test`, then `c3_breakaway_session.sh hold`
+     + nudge (2-5 mm pushes; a 1 cm push at K 2500 trips cartesian_reflex).
+  2. Arm model data for B2 (src-f1): `mpc_free_space_session.sh armid` (~5 min; `scripts/real/arm_id_real.py arm`:
+     set-points straight to the controller, no MPC; per axis x y z rx ry rz steps +-1 cm / +-0.05 rad and sines
+     0.3-5 Hz capped at 0.08 m/s / 0.4 rad/s; K / D of mpc_real.yaml, integral off; raw.npz has every command +
+     robot_state at full rate + the controller observer).
+  3. False-trigger test of stage A's contact detection (src-35): `mpc_free_space_session.sh approach` (~3 min;
+     descents of 4 cm in free air with the --smooth-approach law at caps 20 / 10 / 5 mm/s, 5 each; the sim detector
+     (0.25 s tare, 50 ms mean Fz > 1 N) counted for O_F_ext_hat_K and the controller observer). Smoke-tested offline
+     against a fake robot only.
+  4. Camera hole accuracy (stage A top priority), user: with a calibration board. 4a hand-eye + intrinsics, then the
+     board pose from several arm poses / distances (spread in the base frame = geometric error); 4b the hole part at a
+     known offset on the board, detector vs board truth over the same viewpoints; report xy mean / std per distance,
+     4a and 4b separately. **Blocked (checked 2026-10-29): no camera on USB, no camera driver for the assumed Gemini
+     305 (no OrbbecSDK_ROS2; realsense2_camera installed, ZED SDK broken: libsl_zed.so missing), no hand-eye
+     calibration or board files anywhere, no real hole detector (ci_mpc_perception has only the sim box detector).
+     OpenCV 4.12 has aruco + calibrateHandEye.** Needs from the user: which camera is on the mount, a board, then the
+     software (driver, capture + hand-eye script, hole detector).
+  5. Grasp check: in-hand pose repeatable (V-block / fixture or one measurement after the grasp; sim 0.2-0.4 mm off
+     centre) + slip under ~3 N presses. Needs the gripper (`GRIPPER=1` loads it in mpc_free_space_session.sh;
+     untested), a peg and a flat surface.
+  6. Only with a peg-hole fixture (none exists; the NIST board is sim-only): stage A contact runs, v5-clamp likelihood
+     (not v3), first-touch + seating peaks logged. Needs the stage A pipeline ported to the robot (not done).
+  Dropped: phase-dependent compensation tuning, the real C3 values, search tuning on the robot.
 - **2026-10-29: real-robot default = hybrid friction compensation** (user decision; controller 6bcebfa,
   `real_robot_controllers.yaml`: hybrid, 0.75 / rest 0.5, identified Coulomb / viscous, joint torque offsets; Isaac
   default unchanged). Never run on the robot yet: next session starts with `mpc_free_space_session.sh test` + a
@@ -21,8 +48,6 @@ Read this before starting work (and before re-investigating something "new").
   9 N. User (2026-10-29, via src-5e): "the 15N should be acceptable and we can add the safety after we have done some
   tests on the real robot." -> keep hybrid; log seating + first-touch peaks in the first contact runs, add extra
   safety (e.g. slower final approach) only after those tests.
-  If time allows (for stage C, src-5e 2026-10-29): log the real camera's hole-position estimate against the touched /
-  seated position, i.e. its accuracy (sim stage A assumes 2 mm).
   For src-35 (force-estimate fidelity), all sessions now record robot_state.npz (27700c9): (a)
   `c3_breakaway_session.sh probe` (per-axis ramps, static held friction), (b) one press against a scale / a known load
   at a held pose (held vs contact per joint). src-35 from the move logs: tau_J - tau_J_d along sign(dq) while moving
