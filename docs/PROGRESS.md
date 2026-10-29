@@ -13,6 +13,10 @@ Read this before starting work (and before re-investigating something "new").
   Open caveat: nominal Isaac H2 gear hybrid 5/15 vs velocity 7/15 (+1/-3), so the Isaac default stays velocity; the
   real default stands on realfric (3 reps): H2 10/15 vs no-comp 6/15, H1 -4.9 s, H3 23/36 vs 15/36. The two scenes
   disagree on the gear, so watch the gear task on the robot.
+  First touch (top-face grasp-height calibration) with hybrid (src-5e from src-f1's sim logs): nominal scene, the wrist
+  has 5.5 N before the observer reads 3.0 N (velocity: 0.06 N wrist / 1.4 N observer), and the height reference ends
+  ~0.65 mm higher; on realfric small (+0.66-0.70 vs +0.61-0.97 mm). On the robot: log the first-touch force in the
+  first contact runs (robot_state.npz has O_F_ext_hat_K) against the 4 N gate; fallback a slower approach for it.
   For src-35 (force-estimate fidelity), all sessions now record robot_state.npz (27700c9): (a)
   `c3_breakaway_session.sh probe` (per-axis ramps, static held friction), (b) one press against a scale / a known load
   at a held pose (held vs contact per joint). src-35 from the move logs: tau_J - tau_J_d along sign(dq) while moving
