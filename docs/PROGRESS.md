@@ -788,6 +788,10 @@ Read this before starting work (and before re-investigating something "new").
       **The chamferless design is done** (src-5e). Held-out verdict: at ≥ 2 mm it turns a 0/4 plain result into 3/4,
       and near the hole it is now as fast as plain. Known limits: thin pegs (slide false drops; grasp slip of the order
       of the clearance) and rect / square (no validated model).
+  17. **D1 no-regression** (`~/ci_mpc_runs/d1_noreg`, plain D1 arm, defaults, 10 offsets, 2026-10-29 05:00): **10/10**,
+      median contact 30.7 s (10-28 plain batches: 10/10 at 27.3 s and 10/10 at 30.3 s). The default path is unchanged
+      (all chamferless flags off; it only gained diagnostics). H1–H3 run the same default path; their 10-28 numbers
+      (cross-task / held-out real-arm base arms) stand.
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
