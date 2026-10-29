@@ -210,6 +210,10 @@ Read this before starting work (and before re-investigating something "new").
   50 s). **Negative for v5 on contact time** (success equal). With D1 (slower at 3,3 / -3,0) the closed-loop picture
   matches the offline one with the correction on (v5 3.1-3.6 vs v3 1.8-2.3 mm). Running: table-swap arm (v5 network +
   v3's table) at D1 3,3 / -3,0, 2 repeats (`~/ci_mpc_runs/vec/v5_r/swap`).
+- **Table swap (v5 network + v3's distance-prior table), D1:** -3,0 26.0 / 25.8 s (v5 102 / 62, v3 29 / 27); 3,3
+  30.4 / 51.0 s (v5 115 / 62, v3 17 / 11). **v5's slowdown is mostly its own table, not the network.** Running on R
+  (1 repeat each, `queue2.sh`): v5 own table clamped beyond 9 mm (no batched probes there; keeps v5 sim-only) and
+  v5 + v3's table.
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
