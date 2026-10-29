@@ -191,6 +191,31 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-29 16:00: stage A pipeline (opt-in flags) + D1 baseline, v3 vs v5-clamp (peg, `~/ci_mpc_runs/stageA`)
+- **Flags (probe strategy, default path unchanged):** `--known-grasp` (truth part bottom from the bounding box after the
+  grasp: tip height + xy offset shift the model frame; no calibration touch; the first flat contact still sets the
+  surface height = the camera z error), detector `--pos-noise 0.002 --pos-noise-z 0.0005 --seed N` (camera estimate;
+  z from a top-face plane fit is better than edge xy), `--prior-sigma 0.002` (N(estimate, 2 mm) belief prior instead
+  of uniform), `--smooth-approach 0.02` (decelerating ramp gap / 0.15 s, 2-20 mm/s, to the hover height; observer
+  Fz > 1 N stops it). res.json: `hole_est_err_mm` (estimate - truth), `approach` (peak speed, speed at the first
+  observer contact, peak jerk; the jerk is triple-differentiated and noisy: comparative only). `peg_truth.npz`: 20 Hz
+  truth part / TCP pose (for B1). `peg_benchmark.sh` SEEDS env; `scripts/queue_stage_a.sh` for H1 / H2 / H3 / H5.
+- **D1 (camera seeds 1-20; true estimate errors 0.9-3.2 mm), plain push after the search, v3 vs v5-clamp (one lever):**
+
+  | likelihood | inserted | contact median / mean / p90 | wrist peak median / p90 | speed at contact (median) |
+  |---|---|---|---|---|
+  | v3 | 19 / 20 | 16.1 / 29.7 / 73.9 s | 9.0 / 21.5 N | 0.1 mm/s |
+  | v5-clamp | 19 / 20 | 30.4 / 30.0 / 53.2 s | 8.4 / 19.9 N | 0.1 mm/s |
+
+  Paired: v5-clamp faster on 6 / 20 (sign test p 0.12), means equal (+0.3 s). **Equal; v3 kept for the baseline**
+  (established default; v5-clamp is not validated on H). Both fail seed 3 only: the camera error on the peg detection
+  put the grasp 3.9 mm off-centre in x; three probes sat 2.6-3.0 mm deep in the chamfer ~1 mm off the axis and the
+  push stalled (mechanism open; a 3.5 mm grasp offset at seed 8 inserted). Camera noise on the peg detection gives
+  grasp offsets up to ~4 mm along the pads (known to the controller with --known-grasp).
+- **Running:** `queue_stage_a.sh` -> `~/ci_mpc_runs/stageA/heldout` (H1 15, H2 5, H3 12, H5 10 runs; one instance).
+- Video: `headless_impedance_sim.py --record-video` (`VIDEO=path.mp4`), first run
+  `~/ci_mpc_runs/video/peg_probe_2_0/peg_probe_2_0.mp4` (current pipeline, 2 mm offset, inserted).
+
 ### 2026-10-29 12:00: real-arm force estimate (O_F_ext_hat_K) reads joint friction: two-regime model (src-54's logs, offline)
 - **Static (breakaway ramps, per-ramp tare, samples until 0.1 mm motion), slope of O vs the friction-held commanded
   force S = K(p - x) + F_ff:** `probe_1550` (no compensation) x 0.13-0.15, y 0.23-0.29, z 0.37; `probe_1714`
