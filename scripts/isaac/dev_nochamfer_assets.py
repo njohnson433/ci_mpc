@@ -5,7 +5,8 @@ demo_automate.sh with AUTOMATE_ASSETS=~/ci_mpc_assets/dev_nochamfer AUTOMATE=<id
   dev_round_10mm   peg 10.00 mm, hole 10.15 mm
   dev_square_10mm  square peg 10.00 mm, square hole 10.15 mm (yaw matters)
   dev_round_4mm    thin peg 4.00 mm, hole 4.09 mm (a tilted thin peg drops only ~0.1-0.2 mm: H5 round 4 failure)
-  dev_rect_12x8mm  rectangular peg 12 x 8 mm (gripped across the 8 mm side), hole 12.15 x 8.15 mm
+  dev_rect_12x8mm  rectangular peg 12 (x) x 8 (y) mm, hole 12.15 x 8.15 mm (the fingers close along x: gripped across 12)
+  dev_rect_8x12mm  the same rotated 90 deg: gripped across the 8 mm side, as NIST rect 12 (fingers 8.0 mm)
 Pegs 40 mm long with a 0.5 mm end chamfer; sockets 30 x 30 x 15 mm blocks with a through-hole (NIST: 25 x 25 x 9, 50 mm
 pegs: deliberately different). Plug and socket share the seated frame (peg bottom at z 0 = block bottom = the table).
 Per <id>: plug.usd / socket.usd (body a_<id>_{plug,socket}, SDF collision: socket 512, plug 256) + .obj (vertices for
@@ -25,7 +26,8 @@ GRASP_BELOW_TOP = 0.010
 L, CH, BLOCK, DEPTH, SEG = 0.040, 0.0005, 0.030, 0.015, 256
 TASKS = {"dev_round_8mm": ("round", 0.0080, 0.0081), "dev_round_10mm": ("round", 0.0100, 0.01015),
          "dev_square_10mm": ("square", 0.0100, 0.01015), "dev_round_4mm": ("round", 0.0040, 0.00409),
-         "dev_rect_12x8mm": ("rect", (0.0120, 0.0080), (0.01215, 0.00815))}  # id: (shape, peg width, hole width)
+         "dev_rect_12x8mm": ("rect", (0.0120, 0.0080), (0.01215, 0.00815)),
+         "dev_rect_8x12mm": ("rect", (0.0080, 0.0120), (0.00815, 0.01215))}  # id: (shape, peg width, hole width)
 
 
 def plug_mesh(shape, w):

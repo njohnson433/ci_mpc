@@ -953,6 +953,24 @@ Read this before starting work (and before re-investigating something "new").
       (+0 / −1; 8.1 vs 5.2 s). All: 21/24 vs 15/24 (p = 0.07). **Held-out verdict:** the chamferless search solves
       2–3 mm errors on the NIST board where the probe as built mostly fails. It costs ~3 s near the hole and one round
       4 run (the thin-peg slide false drops).
+  18. **Square / rect (dev only, after the design freeze; src-5e item).**
+      - **Rect 12 failure at 0 offset on H5 (diagnosis, no H5 runs):**
+        - The NIST rect assets are consistent offline: plug tip and hole are centred and axis-aligned, with
+          0.08–0.11 mm clearance per side.
+        - In-grasp yaw (new `peg_yaw_hand_deg`) stays within 0.07° on the dev square and dev rect.
+        - src-35's asset variants all insert rect 12 at 0 (15.7 / 6.2 / 9.5 s). The cause is a systematic in-hand
+          y offset of the peg bottom, −0.21 to −0.38 mm in every scene. The hand arrives ~1.45 mm off-centre, and the
+          first finger tips the standing peg ~0.4° before the second clamps (src-35). Probe 0 then lands on the rim,
+          and plain probing variance does the rest.
+      - **New dev assets:** `dev_rect_12x8mm` (gripped across 12 mm: the fingers close along x) and
+        `dev_rect_8x12mm` (gripped across 8 mm, as NIST rect 12).
+      - **Plain probe on dev_rect_12x8mm:** (0, 0) ✓ 11.5 s, (1, 0) ✗, (0, −1) ✗. **Dev square:** (0, 0) ✓ 2.9 s,
+        (1, 0) ✗, (0, −1) ✓ 4.7 s.
+      - **Tilt search on dev_rect_12x8mm, round vs rect model** (`--tilt-rect 0.006,0.004`, frozen flags, 3 starts):
+        round 2/3 (55, 85 s) vs rect model 2/3 (137, 16 s). The same start, (1.78, −1.35), fails in both with no
+        information (std 4.8 mm after 12 tilted probes). **The rect model gives no gain here, not adopted.**
+      - Next: the `--grasp-settle 0.0003` check (one lever, the approach tolerance before closing), then the
+        8 × 12 rect (NIST grip) with plain at 0 and the tilt search.
   17. **D1 no-regression** (`~/ci_mpc_runs/d1_noreg`, plain D1 arm, defaults, 10 offsets, 2026-10-29 05:00): **10/10**,
       median contact 30.7 s (10-28 plain batches: 10/10 at 27.3 s and 10/10 at 30.3 s). The default path is unchanged
       (all chamferless flags off; it only gained diagnostics). H1–H3 run the same default path; their 10-28 numbers
