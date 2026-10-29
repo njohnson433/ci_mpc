@@ -36,7 +36,8 @@ class HoleSpec:
     half_widths: tuple = None         # (hx, hy) for a box bore
     depth: float = 0.025
     chamfer: float = 0.001
-    rho: float = 0.0002               # edge rounding [m]
+    rho: float = 2e-5                 # edge rounding [m], smooth-max temperature (free space grows by <= rho ln 2 at a rim):
+                                      # 0.2 mm was wider than a sharp hole's clearance (dev round 8: 0.025 mm radial, B2a)
     block_half: float = 0.02
 
 

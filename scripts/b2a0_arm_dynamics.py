@@ -25,6 +25,7 @@ p.add_argument("--score", nargs="+", required=True)
 p.add_argument("--horizon", type=float, default=0.1)
 p.add_argument("--integrator", type=int, default=1, help="include the reconstructed controller integrator (1) or not (0)")
 p.add_argument("--fc", type=int, default=1, help="include the controller's velocity-mode friction compensation (1) or not (0)")
+p.add_argument("--lam", type=int, default=0, help="coupled 3D model with Lambda(q) and the controller's D (1)")
 p.add_argument("--scene-fric", default="cart", choices=["cart", "joint"], help="scene friction: Cartesian tanh (F_s) or "
                "the joint-space form of the compensation scaled by F_s")
 args = p.parse_args()
@@ -58,7 +59,11 @@ def segments(ep):
         I[k] = np.clip(np.where(acc, I[k - 1] + w * e * dt, I[k - 1] * decay), -lim, lim)
     starts = [i for i in range(5, len(t) - n - 1, max(1, n // 2)) if free[i:i + n + 1].all()]
     Ffc = tr["F_fc"][:, :3] if (args.fc and "F_fc" in tr.files) else np.zeros_like(tr["x"])
-    return {"t": t, "x": tr["x"], "v": v, "u": tr["cmd"], "ud": tr["twist_d"][:, :3], "I": I if args.integrator else 0 * I, "Ffc": Ffc, "ff": tr["ff"], "K": tr["K"][:, :3],
+    Lam = tr["Lambda_t"] if "Lambda_t" in tr.files else None
+    # the controller's damping when the command does not set one: D_ii = 2 sqrt(K_ii) sqrt(Lambda_ctrl_ii)
+    Dc = 2.0 * np.sqrt(np.maximum(tr["K"][:, :3], 0)) * np.sqrt(np.maximum(tr["lambda_ctrl_diag"][:, :3], 0)) if Lam is not None else None
+    return {"t": t, "x": tr["x"], "v": v, "u": tr["cmd"], "ud": tr["twist_d"][:, :3], "I": I if args.integrator else 0 * I, "Ffc": Ffc,
+            "Lam": Lam, "Dc": Dc, "ff": tr["ff"], "K": tr["K"][:, :3],
             "D": tr["D"][:, :3], "dt": dt, "n": n, "starts": starts}
 
 
@@ -82,10 +87,34 @@ def errors(Ss, theta, ax):
     return np.array([(simulate(S, i, ax, M, D, Fs, b) - S["x"][i + S["n"], ax]) * 1000 for S in Ss for i in S["starts"]])
 
 
+def simulate3(S, i, Fs, b):
+    """Coupled 3D: Lambda(q) x'' = clip(K (u - x) - D (v - v_d) - I + ff, 18 N) + F_fc + b - F_s tanh(v / v_eps)."""
+    x, v, dt = S["x"][i].copy(), S["v"][i].copy(), S["dt"]
+    for k in range(i, i + S["n"]):
+        D = np.where(S["D"][k] > 0, S["D"][k], S["Dc"][k])
+        F = np.clip(S["K"][k] * (S["u"][k] - x) - D * (v - S["ud"][k]) - S["I"][k] + S["ff"][k], -18.0, 18.0)
+        F = F + S["Ffc"][k] + b - Fs * np.tanh(v / V_EPS)
+        v = v + np.linalg.solve(S["Lam"][k], F) * dt
+        x = x + v * dt
+    return x
+
+
+def errors3(Ss, theta):
+    Fs, b = np.abs(theta[:3]), theta[3:6]
+    return np.concatenate([(simulate3(S, i, Fs, b) - S["x"][i + S["n"]]) * 1000 for S in Ss for i in S["starts"]])
+
+
 fit = [segments(ep) for ep in args.fit]
 score = [segments(ep) for ep in args.score]
 print(f"free-space windows: fit {sum(len(S['starts']) for S in fit)}, score {sum(len(S['starts']) for S in score)}; "
       f"horizon {args.horizon * 1000:.0f} ms")
+if args.lam:
+    sol = least_squares(lambda th: errors3(fit, th), np.r_[1.0, 1.0, 1.0, 0, 0, 0], bounds=([0, 0, 0, -10, -10, -10], [20, 20, 20, 10, 10, 10]))
+    ef = sol.fun.reshape(-1, 3)
+    es = errors3(score, sol.x).reshape(-1, 3)
+    print(f"coupled Lambda(q) model: F_s {np.round(np.abs(sol.x[:3]), 2)} N, bias {np.round(sol.x[3:], 2)} N | one-step RMS per axis "
+          f"fit {np.round(np.sqrt((ef ** 2).mean(0)), 3)} mm, score {np.round(np.sqrt((es ** 2).mean(0)), 3)} mm")
+    sys.exit(0)
 for ax, name in enumerate("xyz"):
     sol = least_squares(lambda th: errors(fit, th, ax), [3.0, 80.0, 1.0, 0.0], bounds=([0.05, 0, 0, -10], [200, 4000, 20, 10]))
     e_fit, e_sc = sol.fun, errors(score, sol.x, ax)
