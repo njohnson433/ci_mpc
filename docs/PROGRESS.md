@@ -224,6 +224,19 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-29 17:00: real-arm approach false trigger: tare after >= 10 mm of descent (src-54's approach_1649, offline)
+- src-54 (real FR3, 4 cm free-air descents at 5 / 10 / 20 mm/s x 5, tare at the top after an upward move): the stage-A
+  contact detector (50 ms mean of -O_F_ext_z - tare > 1 N) false-triggers 15 / 15. Cause: a +-~1.7 N joint-friction
+  state set by the last motion direction (a descent swings the estimate +3.1-3.6 N, flat, survives the stop).
+- Offline (raw.npz, TCP z by FK at 200 Hz): **90 % of the plateau only after 5-9 mm of descent** (all speeds). Emulated
+  tare after d0 mm of descent, worst max |50 ms mean - tare| over the rest of the descent (15 descents): **5 mm 1.52 N,
+  8 mm 0.68, 10 mm 0.59, 12 mm 0.61, 15 mm 0.46 N.** Tare after >= 10 mm + a 1.5 N threshold: ~2.5x margin; 1 N needs
+  >= 15 mm.
+- Consequence: stage A's first approach (from 10 mm above, after a descending move) is fine with a >= 10 mm descent
+  before the tare; every probe press (1 mm hover, lateral move, press) would false-trigger on the real arm: needs a
+  lift-and-descend before each tare (~2 s / probe) or a sign(last dq) x friction correction. The sim's wrist observer
+  has no direction state (CI_TAU_SOURCE=franka only partly). Asked src-54 for a closed-loop confirmation next session.
+
 ### 2026-10-29 16:00: stage A pipeline (opt-in flags) + D1 baseline, v3 vs v5-clamp (peg, `~/ci_mpc_runs/stageA`)
 - **Flags (probe strategy, default path unchanged):** `--known-grasp` (truth part bottom from the bounding box after the
   grasp: tip height + xy offset shift the model frame; no calibration touch; the first flat contact still sets the
