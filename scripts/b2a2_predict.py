@@ -24,6 +24,8 @@ from ci_mpc_planner.sdf_mpc import HoleSpec, PlantParams, hole_sdf  # noqa: E402
 p = argparse.ArgumentParser()
 p.add_argument("--fit", nargs="+", required=True)
 p.add_argument("--score", nargs="+", required=True)
+p.add_argument("--implicit", type=int, default=1, help="linearly implicit contact / spring / damper step (1; B2a v2 as "
+               "registered used explicit = 0, unstable for stiff multi-point contact)")
 args = p.parse_args()
 V_EPS, STEP, H = 2e-3, 0.1, 6
 HOLES = {"factory": HoleSpec(R=0.0045, depth=0.025, chamfer=0.001),
@@ -92,9 +94,22 @@ def simulate(E, i, steps, Fs, b, contacts=True, dxh=0.0):
     for k in range(i, i + steps * E["n"]):
         F = np.clip(E["K"][k] * (E["u"][k] - x) - E["D"][k] * (v - E["vd"][k]) - E["I"][k] + E["ff"][k], -18.0, 18.0)
         F = F + E["Ffc"][k] + b - Fs * np.tanh(v / V_EPS)
+        if not args.implicit:  # explicit (B2a v2 as registered: unstable for stiff multi-point contact)
+            if contacts:
+                F = F + contact(E, x, g, dxh)[0]
+            v = v + np.linalg.solve(E["Lam"][k], F) * dt
+            x = x + v * dt
+            continue
+        # linearly implicit Euler on the stiff terms: (Lam - dt Jv - dt^2 Jx) dv = dt (F + dt Jx v)
+        Jx = -np.diag(E["K"][k])
+        Jv = -np.diag(E["D"][k])
         if contacts:
-            F = F + contact(E, x, g, dxh)[0]
-        v = v + np.linalg.solve(E["Lam"][k], F) * dt
+            Fc = contact(E, x, g, dxh)[0]
+            F = F + Fc
+            h = 1e-6
+            Jx = Jx + np.stack([(contact(E, x + e, g, dxh)[0] - Fc) / h for e in np.eye(3) * h], 1)
+        A = E["Lam"][k] - dt * Jv - dt * dt * Jx
+        v = v + np.linalg.solve(A, dt * (F + dt * Jx @ v))
         x = x + v * dt
     return x, i + steps * E["n"]
 

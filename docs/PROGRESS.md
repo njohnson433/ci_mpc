@@ -458,6 +458,28 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (17:10): CI-MPC stage B2a v3, pre-registered (before any v3 data): implicit contact step, decision metrics, proceed rule
+- **Change vs v2 (correctness fix):** linearly implicit Euler on the stiff terms, per sub-step
+  (Λ − dt J_v − dt² J_x) Δv = dt (F + dt J_x v), with J_x = −K + ∂F_contact/∂x (finite differences) and J_v = −D.
+  `scripts/b2a2_predict.py --implicit 1`. Development check, before any fresh data: on the old B2a episodes the
+  flat-face SDF error must be ≤ the no-contact error (no blow-up).
+- **Data:** 6 fresh insertions (4 D1, 2 dev, new offsets; `~/ci_mpc_runs/b2a3/`), same fit episodes (b1v2
+  factory_7001 / 7002, free space).
+- **Metric 1, unchanged from B2a / v2:** transitional set, SDF 1-step and 6-step position error ≤ 0.7 × no-contact
+  and ≤ 0.7 × wrong 0.5 mm; 6-step contact force error ≤ 0.7 × wrong 0.5 mm; n ≥ 50.
+- **Metric 2, decision level** (what the MPC uses; transitional samples):
+  - **DM1 depth outcome over the 6-step horizon:** "deeper" if the peg tip sinks > 0.1 mm, else "stall". Balanced
+    accuracy of each model's predicted class vs the logged one. **Target: SDF ≥ 0.75, and SDF ≥ no-contact + 0.10.**
+  - **DM2 lateral correction sign:** on samples where the logged lateral TCP displacement over the horizon is
+    > 0.05 mm, does the predicted displacement point within 90° of the logged one? Agreement rate. **Target:
+    SDF ≥ 0.75, and SDF ≥ no-contact + 0.10.**
+  - Wrong 0.5 / 2 mm are reported against both.
+- **Proceed rule (src-5e):**
+  - Go on to B2b / B3 if, on both sets, the SDF plant beats no-contact *and* the 2 mm guard (≤ 0.7×) at 1 and 6
+    steps, and the flat-face SDF error ≤ the no-contact error, even if the 0.5 mm guard fails. That limitation is
+    then recorded, and the decisive test is closed-loop B3 vs the clean stage-A plain push in Isaac.
+  - If no-contact or the 2 mm guard fails, the model is not ready.
+
 ### 2026-10-29 (16:45): CI-MPC stage B2a v2, pre-registered: the same forward-prediction test with the dynamic arm model, on fresh insertions
 - **Changes vs B2a**, development on the b1v2 fit episodes and the B2a episodes (now development data):
   - **Arm:** coupled Cartesian dynamics with the operational-space inertia Λ(q) from pinocchio (with the scene's
