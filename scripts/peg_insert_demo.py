@@ -500,7 +500,17 @@ def peg_tilt_hand():
     return float(np.degrees(np.arccos(np.clip(abs(pz @ fk(state["q"]).rotation[:, 2]), -1, 1))))
 
 
-c_in_hand0, c_tilt0 = peg_in_hand(), peg_tilt_hand()
+def peg_yaw_hand():
+    """Plug yaw minus hand yaw about the world z [deg] (truth, diagnostic: a rectangular plug turned in the grasp)."""
+    tp = truth().get("peg", {})
+    if "quat_wxyz" not in tp:
+        return float("nan")
+    Rh = fk(state["q"]).rotation
+    d = np.degrees(yaw_of(tp["quat_wxyz"]) - np.arctan2(Rh[1, 0], Rh[0, 0]))
+    return float((d + 90.0) % 180.0 - 90.0)  # mod 180: the hand x axis is defined up to a half turn here
+
+
+c_in_hand0, c_tilt0, c_yaw0 = peg_in_hand(), peg_tilt_hand(), peg_yaw_hand()
 above = np.array([*hole_est[:2], hole_est[2] + tip_below_tcp + 0.010])
 segment("B lift -> above the hole", [(np.array([*peg_c[:2], Z_SAFE]), R), (np.array([*hole_est[:2], Z_SAFE]), R), (above, R)])
 spin_sim(0.3)
@@ -1270,7 +1280,7 @@ xy_err = np.linalg.norm(peg_o[:2] - hole_o[:2])
 slip_end = peg_in_hand() - c_in_hand0  # truth diagnostic: peg moved in the hand frame since the grasp
 
 
-tilt_end = peg_tilt_hand()
+tilt_end, yaw_end = peg_tilt_hand(), peg_yaw_hand()
 gripper(max(0.03, args.open_width), settle=0.5)  # 0.03 did not release the gear (grasped 30.1 mm) / AutoMate 00388
 node.destroy_timer(timer)
 active_pub.publish(Bool(data=True))
@@ -1288,7 +1298,8 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "search_s": float(t_search), "insert_s": float(t_insert),
        "contact_phase_s": float((c["t_done"] or state["t"]) - c["t0"]), "peak_force_est_N": c["peak_f"],
        "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000],
-       "peg_tilt_hand_deg": tilt_end, "peg_tilt_hand_deg_grasp": c_tilt0}
+       "peg_tilt_hand_deg": tilt_end, "peg_tilt_hand_deg_grasp": c_tilt0,
+       "peg_yaw_hand_deg": yaw_end, "peg_yaw_hand_deg_grasp": c_yaw0}
 if c.get("phases"):  # engaged phases with the peak of the observer's force estimate (|F|, untared) in each
     W_ = np.array(wrench_log)
     res["phases"] = [(n, float(a), float(b), float(np.linalg.norm(W_[(W_[:, 0] >= a) & (W_[:, 0] <= b), 1:4], axis=1)
