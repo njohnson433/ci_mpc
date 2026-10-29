@@ -29,7 +29,7 @@ from ci_mpc_planner.peg_hole import PegHoleGeometry  # noqa: E402
 p = argparse.ArgumentParser()
 p.add_argument("episodes", nargs="*", default=sorted(glob.glob(os.path.expanduser("~/ci_mpc_runs/b1v2/*"))))
 p.add_argument("--perturb", action="store_true")
-args = p.parse_args()
+args = p.parse_args() if __name__ == "__main__" else None
 GAP, L, N_RING, N_FRIC, HAND_TO_TCP = 2e-4, 0.004, 24, 8, 0.1034
 GEO = {"factory": PegHoleGeometry(),  # Factory 8 mm peg / hole (asset spec)
        "dev": PegHoleGeometry(R=0.00405, c=1e-5, depth=0.015, a=0.004, pc=0.0005, top_half_width=0.015, mu=0.75)}
@@ -115,32 +115,33 @@ def metrics(rows):
     return m1, (np.median(rs) if len(rs) else np.nan), (np.percentile(rs, 90) if len(rs) else np.nan), len(rs)
 
 
-sets = {}
-for ep in args.episodes:
-    if not (os.path.exists(os.path.join(ep, "trace.npz")) and os.path.exists(os.path.join(ep, "peg_truth.npz"))):
-        print(f"skip {ep}: trace.npz / peg_truth.npz missing")
-        continue
-    kind = "dev" if os.path.basename(ep).startswith("dev") else "factory"
-    hole = np.array([float(v) for v in re.search(r"HOLE opening at \[([^\]]*)\]",
-                                                 open(os.path.join(ep, "run.out")).read()).group(1).split()])
-    sets.setdefault(kind, []).append((holds(ep), hole))
-for kind, eps in sets.items():
-    g = GEO[kind]
-    rows = sum((evaluate(hs, g, hole) for hs, hole in eps), [])
-    wrong = sum((evaluate(hs, g, hole, (0.002, 0.0)) for hs, hole in eps), [])
-    m1, med, p90, n = metrics(rows)
-    _, wmed, _, wn = metrics(wrong)
-    ok = m1 >= 0.90 and med <= 0.20 and p90 <= 0.45 and med <= 0.5 * wmed
-    print(f"{kind}: holds {len(rows)} | M1 {m1 * 100:.1f} % | M2v2 median {med:.3f} p90 {p90:.3f} (n {n}) | "
-          f"M4 wrong-model median {wmed:.3f} (n {wn}), ratio {med / wmed if wmed else np.nan:.2f} -> B1 v2 {'PASS' if ok else 'FAIL'}")
-    if args.perturb:
-        for name in ("R", "a", "c"):
-            for dv in (-1e-3, -3e-4, -1e-4, 1e-4, 3e-4, 1e-3):
-                gp = dataclasses.replace(g, **{name: getattr(g, name) + dv})
-                if gp.c <= 0 or gp.a <= gp.pc or gp.a >= gp.R + 1e-3:
-                    continue
-                m1p, medp, p90p, np_ = metrics(sum((evaluate(hs, gp, hole) for hs, hole in eps), []))
-                print(f"   {name} {dv * 1000:+.1f} mm: M1 {m1p * 100:5.1f} %, M2v2 median {medp:.3f} p90 {p90p:.3f} (n {np_})")
-        for d in (1e-4, 3e-4, 1e-3):
-            m1p, medp, p90p, np_ = metrics(sum((evaluate(hs, g, hole, (d, 0.0)) for hs, hole in eps), []))
-            print(f"   hole x +{d * 1000:.1f} mm: M1 {m1p * 100:5.1f} %, M2v2 median {medp:.3f} p90 {p90p:.3f} (n {np_})")
+if __name__ == "__main__":
+    sets = {}
+    for ep in args.episodes:
+        if not (os.path.exists(os.path.join(ep, "trace.npz")) and os.path.exists(os.path.join(ep, "peg_truth.npz"))):
+            print(f"skip {ep}: trace.npz / peg_truth.npz missing")
+            continue
+        kind = "dev" if os.path.basename(ep).startswith("dev") else "factory"
+        hole = np.array([float(v) for v in re.search(r"HOLE opening at \[([^\]]*)\]",
+                                                     open(os.path.join(ep, "run.out")).read()).group(1).split()])
+        sets.setdefault(kind, []).append((holds(ep), hole))
+    for kind, eps in sets.items():
+        g = GEO[kind]
+        rows = sum((evaluate(hs, g, hole) for hs, hole in eps), [])
+        wrong = sum((evaluate(hs, g, hole, (0.002, 0.0)) for hs, hole in eps), [])
+        m1, med, p90, n = metrics(rows)
+        _, wmed, _, wn = metrics(wrong)
+        ok = m1 >= 0.90 and med <= 0.20 and p90 <= 0.45 and med <= 0.5 * wmed
+        print(f"{kind}: holds {len(rows)} | M1 {m1 * 100:.1f} % | M2v2 median {med:.3f} p90 {p90:.3f} (n {n}) | "
+              f"M4 wrong-model median {wmed:.3f} (n {wn}), ratio {med / wmed if wmed else np.nan:.2f} -> B1 v2 {'PASS' if ok else 'FAIL'}")
+        if args.perturb:
+            for name in ("R", "a", "c"):
+                for dv in (-1e-3, -3e-4, -1e-4, 1e-4, 3e-4, 1e-3):
+                    gp = dataclasses.replace(g, **{name: getattr(g, name) + dv})
+                    if gp.c <= 0 or gp.a <= gp.pc or gp.a >= gp.R + 1e-3:
+                        continue
+                    m1p, medp, p90p, np_ = metrics(sum((evaluate(hs, gp, hole) for hs, hole in eps), []))
+                    print(f"   {name} {dv * 1000:+.1f} mm: M1 {m1p * 100:5.1f} %, M2v2 median {medp:.3f} p90 {p90p:.3f} (n {np_})")
+            for d in (1e-4, 3e-4, 1e-3):
+                m1p, medp, p90p, np_ = metrics(sum((evaluate(hs, g, hole, (d, 0.0)) for hs, hole in eps), []))
+                print(f"   hole x +{d * 1000:.1f} mm: M1 {m1p * 100:5.1f} %, M2v2 median {medp:.3f} p90 {p90p:.3f} (n {np_})")
