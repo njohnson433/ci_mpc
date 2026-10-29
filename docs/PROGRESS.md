@@ -490,6 +490,21 @@ Read this before starting work (and before re-investigating something "new").
   11.5 N; 50 ms 12.8 vs 8.6 N). **The rule fails (5 < 6): the Isaac default stays velocity.** No config changed; all
   H numbers stay on velocity. On the gear the rest-part compensation seems to cost meshing in the nominal scene.
   On realfric hyb05 was +2 / −0 on H2 rep 1, so the real-arm and nominal-scene results differ on this task.
+- **Realfric H2 reps 2–3, no comp vs hyb05** (the real-robot default check, `~/ci_mpc_runs/heldout_realarm_rep{2,3}`;
+  rule set in advance by src-5e: back to the user if pooled hybrid < no-comp − 1 of 15):
+
+  | realfric H2 rep | no comp | hybrid |
+  |---|---|---|
+  | 1 | 1/5 | 3/5 |
+  | 2 | 3/5 | 3/5 |
+  | 3 | 2/5 | 4/5 |
+  | **pooled** | **6/15** | **10/15** (+5 / −1) |
+
+  Contact median 36.8 → 20.4 s, pre-seat 9.9 → 10.1 N, 50 ms 7.4 → 8.8 N. **The robot default (hybrid) stands.** On the
+  real-arm match scene hybrid is now better on all three tasks over 3 reps: H1 time −4.9 s, H2 10/15 vs 6/15, H3
+  23/36 vs 15/36. On the nominal scene the gear goes the other way (5/15 vs 7/15). The two scenes disagree on H2: the
+  nominal scene's full header friction with the rest compensation seems to cost the gear mesh, the halved realfric
+  friction does not.
 
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
