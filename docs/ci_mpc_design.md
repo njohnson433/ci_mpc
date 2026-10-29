@@ -60,7 +60,7 @@ transitions and is built from dimensions, not CAD, and a plant model matched to 
 rotation. It has to solve in ~10 ms, and its cost has to be about the insertion (force, alignment, progress), not a
 waypoint.
 
-## 2. Proposed CI-MPC (stage A)
+## 2. Proposed CI-MPC (stage B; stage A = src-35's search + plain push baseline)
 
 **Handover from the search.**
 - *Why the old C3 handover did not help:*
@@ -131,23 +131,23 @@ h so that:
 1. the measured pose has φ ≈ 0 at the touching points;
 2. the measured wrench direction matches −Σ λ_i n_i(h).
 
-The camera prior (σ 2 mm) regularizes it. This replaces the parked belief search in stage A, and it is what C3 lacked:
+The belief handed over by the search (mean and covariance) regularizes it: the contact estimate refines that belief. This is what C3 lacked:
 the goal moves with what the contacts say.
 
 **Validation plan (one step at a time, D1 / dev first, H1–H3 once with a frozen design).**
-- A1: the model alone, offline against Isaac logs (wrist F/T + pose; we have hundreds of runs). The predicted
+- B1: the model alone, offline against Isaac logs (wrist F/T + pose; we have hundreds of runs). The predicted
   contact force at the logged poses must match the wrist within an error target, set before the run, for peg and
   rect.
-- A2: the MPC in the offline smooth plant with the 2 mm camera error, against the stage-A plain push in the same
+- B2: the MPC in the offline smooth plant with the 2 mm camera error, against the stage-A plain push in the same
   plant.
-- A3: Isaac, D1 + dev holes, against src-35's stage-A plain push: success, contact time, true force (pre-seat,
+- B3: Isaac, D1 + dev holes, against src-35's stage-A plain push: success, contact time, true force (pre-seat,
   50 ms, max), and slip.
-- A4: H1–H3 (+ H4 offline) once, paired against the plain push. Nothing becomes a default before that.
+- B4: H1–H3 (+ H4 offline) once, paired against the plain push. Nothing becomes a default before that.
 
 **Risks.**
 - Smooth contact stiffness vs solver conditioning (anneal ε, LM damping).
 - The plant gap at stiction (identify both the real and the Isaac arms, and test the MPC under each).
 - Observer bias in contact (−0.06 ± 0.20 N per src-35, fine).
 - The 10 ms budget in Python (JAX jit or a C++ port if needed).
-- Thin pegs stay grasp-limited (in-hand slip of the order of the clearance), so the stage A assumption of a known
+- Thin pegs stay grasp-limited (in-hand slip of the order of the clearance), so the assumption (stages A and B) of a known
   in-hand pose matters most for them.
