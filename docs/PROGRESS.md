@@ -212,8 +212,22 @@ Read this before starting work (and before re-investigating something "new").
   0.25** vs real (no compensation) x 0.13-0.15, y 0.23-0.29, z 0.37: y matches, z a bit low, x asymmetric. Breakaway
   forces differ between the two runs by up to 0.8 N (y 1.27 vs 2.04) although the observer does not enter the control
   law: run-to-run variation of the stiction state. Sliding regime not checked in sim yet.
-- **Running:** `batched_collect.py --envs 256 --seed 1 --sff 5.0` with `CI_TAU_SOURCE=franka` (one lever vs v5's
-  data) -> a "real-arm observer" likelihood candidate; only real-arm data can validate it.
+- **franka-observer data** (`collect_franka_s1.npz`, 10201 probes, 256 envs, sff 5.0, seed 1; stopped at 10201 /
+  10240): vs v5's data (k < 20) Fz +0.3-0.6 N, lateral +0.2 N, engagement unchanged (49 vs 46 % at r < 4 mm).
+  v5f = trained on it (v4 recipe, `--rcorr-clamp`: table held at -1.74 beyond 9.5 mm). Offline search replay, the
+  correction ON, median error / P(2 mm), sensor errors x0 / x1 / x2:
+
+  | model | held-out pipeline sweeps2 (31 runs) | franka-observer batched (41 runs, 20 % split) |
+  |---|---|---|
+  | hand | 1.79 / 2.00 / 2.00 mm | 2.25 / 2.10 / 2.09 mm |
+  | v3 | 1.83 / 1.80 / 2.30 mm | 3.16 / 2.96 / 3.32 mm, P 0.24 |
+  | **v5-clamp** | **1.58 / 1.49 / 1.57 mm**, P 0.43-0.46 | **1.31 / 1.26 / 1.17 mm**, P 0.42 |
+  | v5f | 1.86 / 1.53 / 1.40 mm | 1.38 / 1.70 / 1.55 mm (in-sample: v5f trained on all franka runs) |
+
+- **v5-clamp is robust to the friction-reading observer** (beats v5f even on v5f's own training runs); training on
+  the franka observer adds nothing. **v3 is brittle to it** (worse than the hand model there; v3 also never saw
+  batched probes, so partly a sim-domain shift). For real-arm probing v5-clamp is the better-placed candidate; the
+  alpha model itself waits for real per-joint data (src-54's recorder). v5f not saved as a model.
 
 ### 2026-10-29 11:30: NIST H5 asset fidelity (item 4) + the systematic -0.3 mm in-hand y offset (`~/ci_mpc_runs/h5/assetcheck`)
 - **Resolution vs clearance:** every NIST plug is 50 mm at SDF 256 (0.195 mm voxels) vs per-side clearance 0.048
