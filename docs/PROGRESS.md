@@ -980,6 +980,23 @@ Read this before starting work (and before re-investigating something "new").
       (+0 / −1; 8.1 vs 5.2 s). All: 21/24 vs 15/24 (p = 0.07). **Held-out verdict:** the chamferless search solves
       2–3 mm errors on the NIST board where the probe as built mostly fails. It costs ~3 s near the hole and one round
       4 run (the thin-peg slide false drops).
+  19. **Thin-peg slide false drops: `--tilt-slide-refresh`** (one lever: slide samples the belief predicts flat also
+      update the flat reference; dev round 4, the frozen thin set, 4 starts each,
+      `~/ci_mpc_runs/nochamfer/thin_refresh{_base,}`): **2/4 vs 1/4**.
+
+      | start | base | + refresh |
+      |---|---|---|
+      | (1.41, 1.41) | ✓ (localized) | ✗ localized, push stalled at −4.65 mm |
+      | (2, 1) | ✗ localized, push stalled at −4.10 mm | ✓ |
+      | (−2.5, −1) | ✗ no information (std 5.25 mm, 10 slides) | ✗ no information (std 5.48) |
+      | (0, 3) | ✗ no information (std 4.69) | ✓ 113 s (std 1.95) |
+
+      Of the 6 failures, 3 are push jams after a good localization and 3 are searches with no information (10 slides
+      over the area, no drop). Neither is what the refresh addresses. **Not adopted** (+1 of 4 is not separable from
+      noise), no H5 re-measurement. **Round 4 is recorded as grasp-limited:** in-hand slip 0.3–1.1 mm and peg tilt
+      0.4–1° over a run, for 0.045 mm radial clearance. The pushes wedge after good localizations, and the search
+      signal of a thin tilted peg (≤ 0.2–0.6 mm drops over a few mm²) is small against that slip. Fixing it needs a
+      grasp change (e.g. a deeper grasp or a centring touch), not more search tuning.
   18. **Square / rect (dev only, after the design freeze; src-5e item).**
       - **Rect 12 failure at 0 offset on H5 (diagnosis, no H5 runs):**
         - The NIST rect assets are consistent offline: plug tip and hole are centred and axis-aligned, with
