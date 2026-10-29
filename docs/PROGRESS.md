@@ -181,7 +181,10 @@ Read this before starting work (and before re-investigating something "new").
   `~/ci_mpc_assets/nist_var/{base,plug1024,plughull,densesock}`), insertion check at offset 0 with the H5 round-1
   plain command (asset check, not an H5 result).
 - **rect 12 at 0 inserts with every variant:** base 15.7 s (depth err 0.08 mm), plug1024 6.2 s, plughull 9.5 s
-  (densesock, round 4: see below). H5 r1's failure at 0 was the search path, not the asset: in both runs the peg sits
+  densesock 6.5 s. round 4 at 0: base 5.9 s, plug1024 5.9 s, **plughull FAILED** (depth err 2.87 mm, 27.3 s: PhysX's
+  default 64-vertex hull limit coarsens the 154-vertex cylinder vs 0.048 mm per side; inferred). **Verdict: no asset
+  change (base inserts at 0 on both tight parts; the hull variant is a regression for round parts), no H5
+  re-measurement for this.** H5 r1's failure at 0 was the search path, not the asset: in both runs the peg sits
   ~0.3 mm off the TCP in hand y (> rect 12's 0.078 / 0.113 mm per side), probe 0 lands on the rim; r1's next probes
   went 1.6-4.3 mm away (belief std stuck 5.1 mm), the base check's went 0.15 mm off and dropped in.
 - **The -0.21..-0.38 mm in-hand y offset (all scenes, src-f1) is a grasp-induced tilt, realistic:** static geometry is
