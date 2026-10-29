@@ -449,6 +449,26 @@ Read this before starting work (and before re-investigating something "new").
 - **B1b, dimension sensitivity (user):** perturb R, a, c and the hole xy by ±0.1 / 0.3 / 1 mm, one at a time, and report
   M1–M3 per perturbation. Yaw (±1–3°) only applies to rect parts: deferred to a rect dataset (the dev rect logs have
   probe poses but no bag trace).
+- **Result (15:10, `scripts/b1_contact_model.py`): B1 FAILS as registered.**
+
+  | run | M1 contact agreement | M2 median / p90 | M3 median | verdict |
+  |---|---|---|---|---|
+  | as registered (main, 245 holds) | **50.2 %** (115 missed, 7 phantom) | 0.000 / 0.000 | 0.0° | FAIL (M1) |
+  | tilted e002 / e003 (80) | 83.8 % | 0.000 / 0.000 | 0.0° | – |
+  | diagnostic: + per-episode axial in-hand offset (the demo's height calibration) | **95.5 %** (4 / 7) | 0.000 / 0.000 | 0.0° | (would pass) |
+  | diagnostic: + support set only (gap < min + 0.05 mm) | 95.5 % | 0.000 / 0.232 | 0.0° | – |
+
+  - **M1:** the missed contacts sit at a predicted gap of 0.70 mm median, constant over the episode (first / second
+    half 0.73 / 0.68 mm), so it is not slip drift. These logs know the in-hand offset only in xy. The axial offset
+    (0.06–1.48 mm across the 8 episodes, the demo's calibration) is missing. With it, M1 = 95.5 %, so the primitive
+    geometry is right. **Stage B's "known in-hand pose" must include the axial component.**
+  - **M2 / M3 are degenerate, a flaw of the registered metric:** with free contact forces on a ring of contacts, the
+    friction cones span all of R³, so every measured force fits exactly (residual 0, angle 0°), even on the support
+    set. A force-only fit cannot test the geometry.
+- **Proposed B1 v2 (to pre-register before running):** (1) data with the true 6D peg pose in the hand logged per step
+  (sim truth), one short logging run on D1 + dev; (2) a 6D wrench metric: NNLS of the measured force *and* moment
+  (wrist torque, about the tip) on generators (f, r × f) of the predicted contacts. The moment fixes where the
+  contact is, which a force-only fit cannot. Targets to be fixed before that run.
 
 ### 2026-10-29 (03:00): held-out check of the real-robot items: hybrid friction compensation helps H1 time and H2, H3 within noise; the real C3 values gain nothing (`~/ci_mpc_runs/heldout_realarm`)
 - **Setup** (`scripts/queue_heldout_realarm.sh`, src-54's controller 347044f): all arms on the real-arm-match scene
