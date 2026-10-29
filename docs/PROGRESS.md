@@ -478,6 +478,35 @@ Read this before starting work (and before re-investigating something "new").
   - Absolute errors are reported, no absolute target (the quasi-static step ignores the controller dynamics: this
     is a relative test of what the contact model adds).
   - B2a passes per set if all targets hold. Flat-face samples are reported, not scored.
+- **Result (16:05, `scripts/b2a_predict.py`; 6 insertions, all inserted): B2a FAILS as registered**, on the
+  wrong-geometry baseline.
+
+  | transitional samples | SDF plant 1-step / 6-step | vs no-contact (ratio) | vs wrong 0.5 mm (ratio) | vs wrong 2 mm (1-step) |
+  |---|---|---|---|---|
+  | Factory (n 205) | 0.222 / 1.186 mm, F6 1.45 N | **0.38 / 0.40 ✓** | 0.84 / 1.02, F6 0.89 ✗ | 0.58 mm (the SDF wins) |
+  | dev round 8 (n 203) | 0.243 / 0.886 mm, F6 2.08 N | **0.42 / 0.41 ✓** | 1.41 / 1.08, F6 1.29 ✗ | 0.17 mm (the wrong model wins) |
+
+  Flat-face (reported): Factory 0.144 / 0.479 mm vs no-contact 0.580 / 2.335; dev 0.249 / 1.206 vs 0.755 / 1.801.
+  - **The contact model clearly adds to the plant:** 2.5× lower one-step and 6-step errors than no contact, and on
+    Factory it separates a 2 mm geometry error.
+  - **It cannot separate a 0.5 mm geometry error:** the quasi-static arm model's own error swamps it. The arm
+    friction fitted on free space came out at F_s 9.7 / 5.8 / 3.1 N vs the 1.4 N breakaway, with 0.6 mm one-step
+    RMS: the friction absorbs the unmodelled dynamics.
+  - **Anomaly to investigate before v2:** on dev the 2 mm-wrong hole predicts *better* (0.17 vs 0.24 mm). That
+    suggests a systematic 1–2 mm offset in how the dev peg / hole frames are placed (AutoMate truth frames), i.e. a
+    frame bug rather than physics.
+- **B2a-0 development (arm dynamics alone, free space; fit b1v2 factory_7001, score factory_7002; `scripts/b2a0_arm_dynamics.py`):**
+  - Model per translation axis: M x'' = clip(K (u − x) − D (v − v_d) − I + ff, ±18 N) − F_s tanh(v / v_ε) + b.
+  - The logged desired twist v_d (the demo sends one during moves) and the controller's integrator, reconstructed
+    from the trace, are included.
+  - One-step (0.1 s) RMS: **x 0.126, y 0.144, z 0.178 mm** (quasi-static 0.6 mm; hold-still 1.2–2.6 mm).
+  - y / z look physical: M ≈ 20 kg, D 234–274 Ns/m (≈ critical 2√(KΛ)), F_s 1.5 / 0.8 N. x does not (M 154 kg,
+    F_s 4.9 N); the velocity-mode joint friction compensation is the likely missing piece.
+  - Correction: I first suspected the controller's 0.5 s setpoint filter. MPC commands bypass it
+    (`mpc_command_callback` sets position_d_ and its target alike), so it plays no role, for C3 either.
+- **Next (B2a v2, src-5e's ordering):** first finish and pre-register the arm model on free space (target < 0.1 mm
+  one-step RMS on the scored episodes' free segments). Fix the dev frame anomaly. Then rescore contact vs no-contact
+  vs wrong geometry with that arm model.
 
 ### 2026-10-29 (15:35): CI-MPC stage B1 v3, pre-registered: the contact model on transitional contacts (centering / push phases)
 - **Why v3:** v2 showed the probe holds are flat-face contacts that every model explains (M4 failed). The CI-MPC acts
