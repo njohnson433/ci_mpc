@@ -388,6 +388,20 @@ Read this before starting work (and before re-investigating something "new").
   H1 15/15 both, 6.6 → 4.8 s (p 0.59); H2 3/5 vs 3/5; H3 4/12 → 9/12 (+5 / −0). The real comparison, hyb05 on the
   nominal scene vs the cross_c3 plain arm (= the Isaac default, same starts), is queued
   (`~/ci_mpc_runs/heldout_hybnom`, arm `hyb05nom`, header friction values).
+- **Isaac default check: hybrid 0.75 / 0.5 on the nominal scene vs the current Isaac default (velocity), paired with
+  the cross_c3 plain arm** (`~/ci_mpc_runs/heldout_hybnom`, 09:30; the user approved hybrid "if it seems to be
+  better"; rule from src-5e: switch only if success is ≥ on every task and H1 is not slower):
+
+  | task | velocity (default) | hybrid | paired | contact, both inserted | pre-seat / 50 ms force |
+  |---|---|---|---|---|---|
+  | H1 | 15/15 | 15/15 | +0 / −0 | **12.7 → 4.9 s** (paired −7.5 s, p < 0.001) | 7.3 → 7.6 / 10.5 → 9.5 N |
+  | H2 | 2/5 | **1/5** | +0 / **−1** | 5.3 → 3.1 s (n 1) | 17.9 → 13.6 / 8.1 → 13.7 N |
+  | H3 (11 paired; 01041 missing in cross_c3) | 5/11 | 5/11 | +2 / −2 | 36.0 → 6.9 s | 10.5 → 13.9 / 8.7 → 12.9 N |
+
+  **The condition fails on H2 (−1 of 5), so the Isaac default stays velocity.** Hybrid is much faster on every task
+  and equal on H1 / H3 success. The H2 loss is one gear run, likely within noise but a strict loss under the rule.
+  Force in H3 is ~3–4 N higher with hybrid. The real-robot default (src-54) rests on the realfric data (H3 23/36 vs
+  15/36 there) and is a separate decision. If wanted: H2 reps (2 × 5 per arm) would resolve the gear task.
 
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
