@@ -173,6 +173,10 @@ p.add_argument("--tilt-slide", type=float, default=0.0,
                help="--tilt-probe: move between tilted probes in light contact at this speed [m/s] (e.g. 0.003), the "
                     "belief updated along the way, instead of lift / move / press (thin pegs: the drop area is ~8x "
                     "smaller than an 8 mm peg's, discrete presses rarely hit it)")
+p.add_argument("--tilt-thin-auto", type=float, default=0.0,
+               help="--tilt-probe: for a peg half width (--geo a) below this [m], switch to the thin-peg set: tilt 20 deg, "
+                    "--tilt-upright-spiral 0.00017, --tilt-slide 0.003 (dev round 4: 3/3 vs 1/3; on round 8 / 10 the same "
+                    "set lost 3 of 8 to in-grasp rotation, so it is gated by size; e.g. 0.003)")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -428,6 +432,10 @@ if not spin_until(lambda: "start pose" in open(mpc_log.name).read() and state["d
 
 # --- peg-in-hole
 GEO = dict(zip(("R", "c", "depth", "a", "pc"), map(float, args.geo.split(",")))) if args.geo else {}
+if args.tilt_probe > 0 and args.tilt_thin_auto > 0 and GEO.get("a", 1.0) < args.tilt_thin_auto:
+    args.tilt_probe, args.tilt_upright_spiral, args.tilt_slide = 20.0, 0.00017, 0.003
+    print(f"  thin peg (half width {GEO['a'] * 1000:.2f} mm < {args.tilt_thin_auto * 1000:.1f}): tilt 20 deg, upright "
+          f"spiral, sliding scan", flush=True)
 
 
 def parse(d):
