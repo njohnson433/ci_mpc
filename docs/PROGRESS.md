@@ -488,8 +488,9 @@ Read this before starting work (and before re-investigating something "new").
   | M4, hole 2 mm off | n 1446; the wrong model fits as well | ✗ |
 
   (The printed ratios are huge because the wrong-model median is ~1e-15.) **Even on transitional contacts where the
-  wrong model predicts a different contact set, it explains the measured 6D wrench as well or better.** Dev: the 3
-  insertions are still running, but they cannot change the conclusion below.
+  wrong model predicts a different contact set, it explains the measured 6D wrench as well or better.**
+  Dev (3 insertions, 443 samples): M1 97.1 % ✓, M2v2 median 0.000 / p90 0.336 ✓, M4 0.5 mm n 86: true 0.228 vs wrong
+  0.000 ✗ (2 mm n 191 ✗). FAIL, the same pattern.
 - **Conclusion on B1 (v1–v3):** an explanatory wrench test ("can this geometry's friction cones produce the measured
   wrench?") cannot discriminate geometry. With ~10+ candidate contacts, each with a cone (μ 0.5–0.9), non-negative
   combinations span almost any 6D wrench. This holds force-only or 6D, probe holds or insertions. What B1 does
