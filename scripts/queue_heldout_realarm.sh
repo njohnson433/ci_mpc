@@ -17,6 +17,7 @@ export SCENE=$HOME/ci_mpc_assets/fr3_scene_realfric.usd
 OUT=$1; mkdir -p "$OUT"
 PAR=${PAR:-2}; CORES=${CORES:-0-15}; DOM0=${DOM0:-120}
 ARMS=${ARMS:-"base hyb0 hyb05 c3nofc c3hyb05"}
+TASKS=${TASKS:-"H1 H2 H3"}  # e.g. TASKS=H3 for repeats into another OUT (rep 2, 3)
 CFG=$HERE/../ci_mpc_sim_gripper/config
 MODEL=$HERE/../ci_mpc_planner/models/probe_likelihood_v3_both.npz
 COMMON=(--timeout-contact 150 --max-probes 25 --track-height 5 --centering-bound 0.008 --stuck-dither 0.0008)
@@ -54,6 +55,7 @@ log "held-out real-arm queue: arms $ARMS, ${#JOBS[@]} jobs per arm, PAR $PAR"
 for arm in $ARMS; do
   for j in "${JOBS[@]}"; do
     IFS='|' read -r task name off demo envs fl <<< "$j"
+    [[ " $TASKS " == *" $task "* ]] || continue
     d="$OUT/$arm/$task/$name/${off/,/_}"
     [ -f "$d/res.json" ] && continue
     while [ "$(awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo)" -lt 8 ]; do sleep 20; done
