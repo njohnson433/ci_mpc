@@ -8,6 +8,7 @@ Classes, first match wins:
     jammed         engaged, xy < 1.5 mm, but > 1 mm short of seated
     off_axis       at depth but xy >= 1.5 mm (beside the hole / on a feature of the socket)
     not_kept       seated with xy < 1.5 mm, but did not stay on release
+    timeout        no res.json, the run got past the grasp and was killed (queue wall-clock timeout on a loaded machine)
     running        no res.json yet, no error
     python3 scripts/h3_100_classify.py ~/ci_mpc_runs/h3_100 [--list]
 """
@@ -26,6 +27,8 @@ def classify(d):
     if not os.path.exists(f):
         if "FAIL: grasp" in out:
             return "no_grasp"
+        if "grasped:" in out and "ExternalShutdownException" in out:
+            return "timeout"
         if "error: argument" in out or "Traceback" in out or "[Error]" in out:
             return "asset_error"
         return "running"
