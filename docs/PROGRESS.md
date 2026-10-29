@@ -340,6 +340,22 @@ Read this before starting work (and before re-investigating something "new").
   - **The real C3 values gain nothing:** with no compensation ±0 everywhere (H3 +1 / −2), and on top of hyb05 they cost
     4 H3 insertions. C3 stays out, consistent with the 10-28 cross-task verdict.
   - Nothing becomes a default from this (the user / src-54 decide). Next for hyb05: H3 reps 2–3 (24 runs) and D1.
+- **H3 reps 2–3, base vs hyb05** (`~/ci_mpc_runs/heldout_realarm_rep2`, `_rep3`, same 12 starts, 07:00):
+
+  | H3 rep | base | hyb05 |
+  |---|---|---|
+  | 1 | 6/12 | 9/12 |
+  | 2 | 5/12 | 6/12 |
+  | 3 | 4/12 | 8/12 |
+  | **pooled** | **15/36 (42 %)** | **23/36 (64 %)** |
+
+  Paired: 12 gains / 4 losses, sign test p = 0.077. Where both inserted (n 11): contact median 40.4 → 16.3 s (p 0.12),
+  pre-seat force 9.4 → 11.3 N (paired +2.2 N, p 0.37), 50 ms 7.8 → 10.2 N (p 0.15), slip 0.41 → 0.49 mm (p 0.70).
+  Per start (out of 3): hyb05 better on 7, worse on 4 (00388, 00638, 00700, 01041: −1 each), and 00301 never inserts.
+- **Verdict:** hybrid friction compensation (0.75 velocity / 0.5 rest) is **the first controller change that is
+  positive on every held-out task**: H1 −4.9 s (p 0.015), H2 +2 / −0, H3 +8 net of 36 (64 vs 42 %, p 0.077), with
+  contact force not significantly different. Not significant at 0.05 on H3, and the force trend is up by ~2 N. **For
+  the user to decide** whether it becomes the sim (and real-arm) contact default. D1 with hyb05 has not been run.
 
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
