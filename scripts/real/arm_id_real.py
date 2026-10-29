@@ -58,6 +58,9 @@ p.add_argument("--caps", default="0.02,0.01,0.005", help="approach: speed caps [
 p.add_argument("--reps", type=int, default=5, help="approach: descents per cap")
 p.add_argument("--depth", type=float, default=0.04, help="approach: descent [m]")
 p.add_argument("--threshold", type=float, default=1.0, help="approach: detector threshold [N] (stage A: 1 N)")
+p.add_argument("--tare-after", type=float, default=0.0,
+               help="approach: tare in motion (50 ms mean) once the set-point has descended this far [m], and run the\n"
+                    "detector live: a trigger stops the descent there (0 = tare before the descent, offline only)")
 p.add_argument("--integral", type=int, default=-1, help="integral_enabled (default: 0 for arm, 1 for approach)")
 p.add_argument("--rate", type=float, default=500.0, help="command rate [Hz]")
 p.add_argument("--abort-speed", type=float, default=0.2, help="[m/s]")
@@ -326,35 +329,65 @@ res = out["approach"] = []
 for cap in caps:
     for rep in range(args.reps):
         hold(0.6, f"tare_{cap:g}_{rep}")  # the detector tares over the last 0.25 s of this
-        zc = {"z": z_top, "t": None}
+        zc = {"z": z_top, "t": None, "tare": None, "stop": None}
 
         def descend(t):
             if zc["t"] is None:
                 zc["t"] = t
             dt = t - zc["t"]
             zc["t"] = t
-            v = min(cap, max(0.002, (zc["z"] - z_bot) / 0.15)) if zc["z"] > z_bot else 0.0
+            v = min(cap, max(0.002, (zc["z"] - z_bot) / 0.15)) if zc["z"] > z_bot and zc["stop"] is None else 0.0
             zc["z"] = max(z_bot, zc["z"] - v * dt)
+            if args.tare_after > 0 and zc["stop"] is None and z_top - zc["z"] >= args.tare_after:
+                now = time.monotonic()
+                f50 = [-row[33] for row in rs[-80:] if row[0] > now - 0.05]  # -Fz of O_F_ext_hat_K, last 50 ms
+                if f50:
+                    m50 = float(np.mean(f50))
+                    if zc["tare"] is None:
+                        zc["tare"] = m50
+                    elif m50 - zc["tare"] > args.threshold:  # live trigger: stop the set-point where it is
+                        zc["stop"] = {"z_stop": zc["z"], "fz50_N": round(m50 - zc["tare"], 3),
+                                      "descended_mm": round((z_top - zc["z"]) * 1000, 2)}
+                        v = 0.0
             return np.array([P_HOME[0], P_HOME[1], zc["z"]]), R_HOME, np.array([0.0, 0.0, -v]), np.zeros(3)
 
         T = args.depth / cap + 1.5
         run(f"descent_{cap:g}_{rep}", T, descend, cap=cap, rep=rep)
-        hold(1.0, f"bottom_{cap:g}_{rep}", pos=np.array([P_HOME[0], P_HOME[1], z_bot]))  # (was P_HOME: a 4 cm jump)
+        if args.tare_after > 0:
+            out.setdefault("live", []).append({"cap": cap, "rep": rep, "tare_N": zc["tare"], "stop": zc["stop"]})
+            print(f"  {cap:g} m/s rep {rep}: live tare {zc['tare'] if zc['tare'] is None else round(zc['tare'], 2)} N, "
+                  + (f"TRIGGER after {zc['stop']['descended_mm']} mm" if zc["stop"] else "no trigger"), flush=True)
+        z_end = zc["z"]  # the bottom, or where a live trigger stopped it
+        hold(1.0, f"bottom_{cap:g}_{rep}", pos=np.array([P_HOME[0], P_HOME[1], z_end]))  # (was P_HOME: a 4 cm jump)
         # back up at the cap speed (a smooth ramp; the detector is only evaluated on the way down)
-        t_up = args.depth / cap
+        rise = z_top - z_end
+        t_up = max(rise / cap, 0.2)
 
         def up(t):
             s = min(t / t_up, 1.0)
             a = 0.5 - 0.5 * np.cos(np.pi * s)
             da = 0.5 * np.pi / t_up * np.sin(np.pi * s) if s < 1 else 0.0
-            return (np.array([P_HOME[0], P_HOME[1], z_bot + a * args.depth]), R_HOME,
-                    np.array([0.0, 0.0, da * args.depth]), np.zeros(3))
+            return (np.array([P_HOME[0], P_HOME[1], z_end + a * rise]), R_HOME,
+                    np.array([0.0, 0.0, da * rise]), np.zeros(3))
         run(f"up_{cap:g}_{rep}", t_up + 0.5, up)
 
 
+cmd_arr = np.array(sent)
+
+
 def detect(t, F, tare_win, win):
-    """stage A detector on one descent: tare (mean -F z over the last 0.25 s before), 50 ms means > threshold."""
-    tt = (t >= tare_win[1] - 0.25) & (t <= tare_win[1])
+    """stage A detector on one descent: tare (mean -F z over the last 0.25 s before, or with --tare-after the 50 ms
+    mean when the set-point has descended that far), then 50 ms means > threshold."""
+    if args.tare_after > 0:
+        cm = (cmd_arr[:, 0] >= win[0]) & (cmd_arr[:, 0] <= win[1])
+        k = np.flatnonzero(cmd_arr[cm, 3] <= z_top - args.tare_after)
+        if not len(k):
+            return None
+        t_tare = cmd_arr[cm, 0][k[0]]
+        tt = (t > t_tare - 0.05) & (t <= t_tare)
+        win = (t_tare, win[1])
+    else:
+        tt = (t >= tare_win[1] - 0.25) & (t <= tare_win[1])
     if not tt.any():
         return None
     tare = -F[tt, 2].mean()
