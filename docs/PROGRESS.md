@@ -659,6 +659,23 @@ Read this before starting work (and before re-investigating something "new").
       (3 of 6 direct hits in 6.3–6.7 s; the baseline took 15–95 s there), at 1–4 mm 32.3 vs 36.1 s (a missed upright
       probe costs about one probe; the per-run spread is ±20 s). Pre-seat force median 9.1 vs 11.8 N. **Adopted** into the
       chamferless flag set: `--tilt-probe 10 --tilt-axis x --push-wiggle 0.5 --tilt-engage 0.0005 --tilt-first-upright`.
+  13. **Thin peg** (dev set: new `dev_round_4mm`, 4.00 / 4.09 mm, as H5 round 4's 0.095 mm; adopted flags +
+      `--tilt-first-upright`; 3 starts at 2–2.2 mm, `~/ci_mpc_runs/nochamfer/thin_t10`, `thin_t20`, `thin_t20s`).
+      Offline first (model, low point grid ±4 mm): the area where a tilted press drops > 0.2 mm is 1.6 mm² for round 4
+      vs 13 mm² for round 8 at 10°, and 3.9 / 5.0 mm² at 20° / 30°. A thin peg is a ~8× smaller target, so tilt alone
+      cannot close the gap.
+
+      | arm | inserted | localized (std < 0.4 mm) | failures |
+      |---|---|---|---|
+      | tilt 10 | 2/3 (one: upright centering luck at offset ≈ peg radius) | 0/3 | no information (std 5.1 → 5.3 mm) |
+      | tilt 20 | 2/3 (one: same luck) | 2/3 | localized 0.25 mm off, then upright `next_probe` jumped ≥ 1.5 mm away |
+      | tilt 20 + `--tilt-upright-spiral 0.00017` | 1/3 | 1/3 (+1 at 0.48 mm) | push jammed at −5.3 mm (peg pivoted 0.6 mm in the fingers; wiggle did not free it); push stalled at −0.13 mm; one start got no information (std 5.2) |
+
+      **Not solved, nothing adopted.** Tilt 20 makes the search informative for thin pegs (as predicted offline). The
+      spiral (new flag, default off) fixes the upright phase when the estimate is good. But a 4 mm peg in a 0.09 mm hole
+      then jams on insertion, and the slip in a 4 mm grasp is the same order as the clearance. Three starts per arm is
+      too few to rank the arms. Next ideas: a sliding tilted scan (continuous contact covers area much faster than
+      discrete presses), and a compliant / lower-force push for thin pegs. H5 round 4 stays a known failure.
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
