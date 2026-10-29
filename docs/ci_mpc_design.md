@@ -1,8 +1,10 @@
 # CI-MPC: why C3 brought no gain, and a design for the new controller (2026-10-29)
 
-Status: **proposal for review, nothing implemented.** Stage A as decided by the user: known in-hand pose (no
-grasp-height calibration), camera hole estimate with ~2 mm error, no CAD models in the controller, likelihood / search
-parked. The CI-MPC has to beat the stage-A plain push (src-35's baseline).
+Status: **proposal for review, nothing implemented.** Stage A as decided by the user (update 10-29): known in-hand
+pose (no grasp-height calibration), camera prior N(detection, 2 mm), then the likelihood probe search (v5-clamp / v3,
+src-35), then the push. **The CI-MPC replaces the plain push after the search handover; it does not replace the
+search.** No CAD models in the controller. The CI-MPC has to beat the stage-A plain push (src-35's baseline). A later
+option, not now: a CI-MPC that probes on purpose, merging search and insertion.
 
 ## 1. What C3 was, and why it did not help
 
@@ -52,15 +54,36 @@ C3 was never better on success, time or force, on any set. The reasons, by compo
    - So it behaved like the plain push, slower and with a wrong goal. The "lower force" seen early was an observer
      artifact: on the wrist F/T it is equal (paired p 0.2–0.8).
 
-**Lesson for the redesign:** it has to start at first contact with its own contact-based estimate of the hole axis
-(not a fixed goal from a search). It needs a contact model that is smooth through the chamfer / bore / face
+**Lesson for the redesign:** it has to take over once the peg is captured and keep updating the hole axis from the
+contacts (not a fixed goal from the search). It needs a contact model that is smooth through the chamfer / bore / face
 transitions and is built from dimensions, not CAD, and a plant model matched to the real arm's stiction and
 rotation. It has to solve in ~10 ms, and its cost has to be about the insertion (force, alignment, progress), not a
 waypoint.
 
 ## 2. Proposed CI-MPC (stage A)
 
-**Scope.** It runs from first contact to seated. Inputs: TCP pose, the observer wrench (and the wrist F/T in sim for
+**Handover from the search.**
+- *Why the old C3 handover did not help:*
+  - It started on a 0.3 mm tip sink, i.e. on the first chamfer touch, before the peg was captured. The belief then
+    still had std 2.5–5.7 mm (12/14 handovers) and mean errors up to 4 mm.
+  - C3 took the mean as a fixed goal (one belief update per phase) and drove to it. Errors > 1.1 mm (2× the clearance)
+    all stalled at the entry.
+  - The 3 mm std gate mostly kept it from starting at all, so it ran too early or not at all.
+- *When to take over:* where the plain push takes over today, i.e. engaged with the tip in the bore (`--engage`
+  3 mm on chamfered holes, `--tilt-engage` 0.5 mm on sharp ones), plus a confidence gate: belief std below ~2× the
+  radial clearance. From there the bore has captured the peg. The job is alignment, force regulation and a smooth
+  seat, where the plain push is weakest: the wedging, the 15 s stalls, the seating spike. An earlier handover (first
+  sink, std < 0.5 mm) is a second experiment, after the late one works.
+- *How it uses the belief:*
+  - The mean is the initial hole position h₀ of the SDF.
+  - The covariance Σ replaces the camera σ as the prior of the moving-horizon hole estimate, and weights the
+    alignment residual.
+  - The contacts then update h at every tick (the bore wall contacts pin the axis to within the clearance), so a
+    wrong mean is corrected instead of driven into.
+  - If the estimate leaves the 2σ ellipse or the contacts become inconsistent (φ residual high), the CI-MPC hands back
+    to the search, an explicit fallback.
+
+**Scope.** It runs from the handover to seated. Inputs: TCP pose, the observer wrench (and the wrist F/T in sim for
 evaluation only), the known in-hand peg pose, and the camera hole estimate (σ ≈ 2 mm) as a prior. Output: the
 impedance setpoint (6D pose) at 20–50 Hz, plus an optional force feedforward.
 
