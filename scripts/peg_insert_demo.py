@@ -514,7 +514,13 @@ def _rec_truth():
 node.create_timer(0.05, _rec_truth)
 grasp_xy_off = np.zeros(2)  # part bottom - TCP in xy (world), known to the controller only with --known-grasp
 if args.known_grasp:
-    d_ = np.array(tr["peg"]["origin"]) - fk(state["q"]).translation
+    # part bottom = truth bounding-box centre - R (0, 0, height / 2): the peg's origin is its bottom, but an AutoMate /
+    # gear part's origin is the assembly frame (for the peg both agree to < 0.01 mm)
+    tp_ = tr["peg"]
+    w_, x_, y_, z_ = tp_.get("quat_wxyz", [1.0, 0.0, 0.0, 0.0])
+    Rp = pin.Quaternion(w_, x_, y_, z_).normalized().toRotationMatrix()
+    bottom = np.array(tp_["cube"]) - Rp @ np.array([0.0, 0.0, tp_["size"][2] / 2.0])
+    d_ = bottom - fk(state["q"]).translation
     print(f"  known grasp (stage A): tip {-d_[2] * 1000:.2f} mm below the TCP (nominal {tip_below_tcp * 1000:.2f}), "
           f"xy offset {np.round(d_[:2] * 1000, 2)} mm", flush=True)
     tip_below_tcp, grasp_xy_off = -d_[2], d_[:2]
