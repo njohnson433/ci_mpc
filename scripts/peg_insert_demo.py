@@ -1384,6 +1384,9 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000],
        "peg_tilt_hand_deg": tilt_end, "peg_tilt_hand_deg_grasp": c_tilt0,
        "peg_yaw_hand_deg": yaw_end, "peg_yaw_hand_deg_grasp": c_yaw0}
+# hole estimate error (camera noise + --hole-offset): estimate - truth, opening xy [mm]
+res["hole_est_err_mm"] = [float(v) for v in (hole_est[:2] - np.array(tr0["hole"]["cube"])[:2]) * 1000] \
+    if "hole" in tr0 and "cube" in tr0["hole"] else None
 if c.get("approach"):  # --smooth-approach metrics (stage A)
     res["approach"] = {k: (float(v) if isinstance(v, (float, np.floating)) else v) for k, v in c["approach"].items()
                        if k not in ("t0", "t1")}
