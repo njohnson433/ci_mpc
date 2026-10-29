@@ -17,6 +17,10 @@ Read this before starting work (and before re-investigating something "new").
   has 5.5 N before the observer reads 3.0 N (velocity: 0.06 N wrist / 1.4 N observer), and the height reference ends
   ~0.65 mm higher; on realfric small (+0.66-0.70 vs +0.61-0.97 mm). On the robot: log the first-touch force in the
   first contact runs (robot_state.npz has O_F_ext_hat_K) against the 4 N gate; fallback a slower approach for it.
+  Seating force with hybrid (realfric): pre-seat unchanged, 50 ms peak +1-4 N, single-sample seating impact ~16 vs
+  9 N. User (2026-10-29, via src-5e): "the 15N should be acceptable and we can add the safety after we have done some
+  tests on the real robot." -> keep hybrid; log seating + first-touch peaks in the first contact runs, add extra
+  safety (e.g. slower final approach) only after those tests.
   For src-35 (force-estimate fidelity), all sessions now record robot_state.npz (27700c9): (a)
   `c3_breakaway_session.sh probe` (per-axis ramps, static held friction), (b) one press against a scale / a known load
   at a held pose (held vs contact per joint). src-35 from the move logs: tau_J - tau_J_d along sign(dq) while moving
