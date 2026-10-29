@@ -296,6 +296,46 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (03:00): held-out check of the real-robot items: hybrid friction compensation helps H1 time and H2, H3 within noise; the real C3 values gain nothing (`~/ci_mpc_runs/heldout_realarm`)
+- **Setup** (`scripts/queue_heldout_realarm.sh`, src-54's controller 347044f): all arms on the real-arm-match scene
+  `fr3_scene_realfric.usd` (src-5e: not `fr3_scene_real1028.usd`, which is 1.4–2× stickier). Same tasks / offsets as
+  the C3 cross-task check (H1 5 conditions × 3, H2 5, H3 12), one run per start, plain probe unless C3, nothing tuned.
+  Arms:
+  - **base**: `friction_compensation none`, as the real robot today.
+  - **hyb0**: hybrid, velocity part 0.75, rest 0.
+  - **hyb05**: hybrid 0.75 / rest 0.5. Coulomb / viscous = the realfric scene's joint values.
+  - **c3nofc**: base + C3 with the real warm values `1.37,0.86,1.15,1.24,0.68`, ff `1.4,1.25`, gate 3 mm.
+  - **c3hyb05**: hyb05 + C3 with `0.84,0.66,0.61,0.67,0.39`, ff `0.50,0.31`.
+  `heldout_summary.py`; force is the lag-corrected wrist max / 50 ms / pre-seat.
+
+  | task | base | hyb0 | hyb05 | c3nofc | c3hyb05 |
+  |---|---|---|---|---|---|
+  | H1 | 15/15, 10.7 s | 15/15, 6.6 s | 15/15, **4.8 s** | 15/15, 11.3 s | 15/15, 11.1 s |
+  | H2 | 1/5 | 3/5 | 3/5 | 2/5 | 4/5 |
+  | H3 | 6/12 | 4/12 | **9/12** | 5/12 | 5/12 |
+  | pre-seat force median (H1 / H2 / H3) | 5.5 / 10.4 / 9.2 N | 4.3 / 9.9 / 14.8 | 5.0 / 8.0 / 8.4 | 5.4 / 12.6 / 9.9 | 5.3 / 6.8 / 7.6 |
+  | in-hand slip median (H1) | 0.10 mm | 0.41 | 0.32 | 0.11 | 0.33 |
+
+- **Paired** (same start; gains / losses in success; Wilcoxon on time and pre-seat force where both inserted):
+
+  | comparison | H1 | H2 | H3 |
+  |---|---|---|---|
+  | base → hyb0 | time −4.7 s (p 0.010), force −1.2 N (p 0.39) | +2 / −0 | +0 / −2 |
+  | base → hyb05 | time **−4.9 s (p 0.015)**, force −0.1 N (p 0.68) | **+2 / −0** | +4 / −1 (sign test p ≈ 0.38) |
+  | base → c3nofc | time ±0 (p 0.21), force +0.6 N (p 0.11) | +1 / −0 | +1 / −2 |
+  | hyb05 → c3hyb05 | ±0 | +1 / −0 | **+0 / −4** |
+
+- **Verdict:**
+  - **hyb05 (hybrid 0.75 / rest 0.5) is the one positive candidate.** H1 is faster (significant) at the same pre-seat
+    force, H2 +2, H3 +3 net. That H3 gain is within its run-to-run noise (7/36 flips with identical code), so it needs
+    H3 repeats before it counts. Costs: the peg slips ~3× more in the fingers (0.32 vs 0.10 mm on H1, with the
+    compensated arm pressing harder at contact) and the seating spike is higher (max 16.5 vs 8.9 N on H1).
+  - hyb0 (velocity only) is as fast on H1 but −2 on H3, so the rest part matters, against src-54's "rest 0 for
+    contact" prior.
+  - **The real C3 values gain nothing:** with no compensation ±0 everywhere (H3 +1 / −2), and on top of hyb05 they cost
+    4 H3 insertions. C3 stays out, consistent with the 10-28 cross-task verdict.
+  - Nothing becomes a default from this (the user / src-54 decide). Next for hyb05: H3 reps 2–3 (24 runs) and D1.
+
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
   phase windows, so every wrist peak from 10-28 is taken from shifted windows: the D1 true-force recheck, the C3
