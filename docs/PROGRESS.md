@@ -423,6 +423,27 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (16:40): H3-100 stopped (project restructure), partial results: C3 = plain over 77 assemblies; slip does not predict failure (`~/ci_mpc_runs/h3_100`)
+- Stopped by PID at 14:00 (src-5e / user restructure: CI-MPC focus). Stage 1 (plain) is complete, stage 2 (c3) has 87
+  of ~90 assemblies, stage 3 repeat 2 covers 29 assemblies; rep 3 was not run. Old pipeline (velocity default, C3
+  old formulation, probe as of 10-28). `scripts/h3_100_classify.py`.
+
+  | arm / rep | runs | inserted | search failed | off axis | jammed | lost plug | asset error | no grasp | timeout | not kept |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | plain rep 1 | 100 | 29 | 31 | 10 | 6 | 6 | 7 | 6 | 4 | 1 |
+  | c3 rep 1 | 87 | 27 | 32 | 10 | 5 | 6 | 3 | – | 4 | – |
+  | plain rep 2 | 29 | 10 | 10 | 4 | 3 | 1 | – | – | – | 1 |
+  | c3 rep 2 | 29 | 10 | 14 | 3 | 1 | 1 | – | – | – | – |
+
+- **Paired rep 1 (77 assemblies with both arms): plain 28 vs C3 27,** +11 / −12, sign test p = 1.0. No C3 gain at
+  n ≈ 100 either, consistent with the 12-assembly H3 result.
+- The plain arm inserts 29 of the 83 runs that loaded and grasped (35 %). The largest failure class is the search
+  (31), then off axis (10, at depth but beside the hole on a socket feature) and jammed (6).
+- **Slip does not predict failure:** plain rep 1 in-hand slip |xyz| median 0.44 mm on successes (n 29) vs 0.49 mm on
+  failures (n 48, plugs lost > 10 mm excluded), Mann-Whitney p = 0.63.
+- Asset errors (7): the plug mesh has no vertices within 5 mm of the grasp height, so `automate_scene.info()` finds no
+  grasp band. Timeouts (4): the 1800 s wall clock on the loaded machine.
+
 ### 2026-10-29 (16:30): push stop tolerance (`--push-stop`) selected on D1 + dev: no effect there, frozen at 0.5 mm for H1–H3
 - **Why:** the push stopped once the estimated remaining depth was < 1.0 mm, the same as the 1.0 mm success
   threshold, so a run passed only if the part settled the last mm by itself (H2 near-misses 1.03 / 1.09 mm,

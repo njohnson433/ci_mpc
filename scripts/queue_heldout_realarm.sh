@@ -25,10 +25,12 @@ log() { echo "$(date '+%F %T') $*"; }
 arm_cfg() { case $1 in base|c3nofc) echo "$CFG/isaac_pick_place_nofc.yaml" ;; hyb0) echo "$CFG/isaac_pick_place_hybrid_rest00.yaml" ;;
   hyb05|c3hyb05) echo "$CFG/isaac_pick_place_hybrid_rest05.yaml" ;;
   hyb05nom) echo "$CFG/isaac_pick_place_hybrid_nominal.yaml" ;;
-  velnom) echo "$CFG/isaac_pick_place_velocity.yaml" ;; esac; }
+  velnom|velnom_ps05) echo "$CFG/isaac_pick_place_velocity.yaml" ;;
+  hyb05_ps05) echo "$CFG/isaac_pick_place_hybrid_rest05.yaml" ;; esac; }
 arm_extra() { case $1 in
   c3nofc)  echo "--entry c3 --c3-arm-friction 1.37,0.86,1.15,1.24,0.68 --c3-stiction-ff 1.4,1.25 --c3-std-max 0.003" ;;
   c3hyb05) echo "--entry c3 --c3-arm-friction 0.84,0.66,0.61,0.67,0.39 --c3-stiction-ff 0.50,0.31 --c3-std-max 0.003" ;;
+  velnom_ps05|hyb05_ps05) echo "--push-stop 0.0005" ;;
   esac; }
 offsets() {  # seed n -> n offsets "dx,dy" [mm], r 1-4 mm (as queue_cross_task_c3.sh)
   python3 -c "
@@ -64,7 +66,7 @@ for arm in $ARMS; do
     while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do sleep 5; done
     mkdir -p "$d"; log "$arm $task $name $off"
     # shellcheck disable=SC2086
-    sc=$SCENE; [ $arm = hyb05nom ] || [ $arm = velnom ] && sc=""  # hyb05nom: the nominal scene (vs cross_c3 plain = the Isaac default)
+    sc=$SCENE; [ $arm = hyb05nom ] || [ $arm = velnom ] || [ $arm = velnom_ps05 ] && sc=""  # hyb05nom: the nominal scene (vs cross_c3 plain = the Isaac default)
     (env $envs SCENE="$sc" CONTROLLER_CONFIG="$(arm_cfg $arm)" LOG="$d/isaac.log" ROS_DOMAIN_ID=$((DOM0 + i % 10)) taskset -c "$CORES" \
        timeout 2400 "$HERE/$demo" --headless --offset "$off" --strategy probe "${COMMON[@]}" $fl $(arm_extra $arm) \
        --log-dir "$d" --out "$d/res.json" > "$d/run.out" 2>&1; [ -f "$d/res.json" ] || log "no res.json: $d") &
