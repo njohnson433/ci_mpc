@@ -475,6 +475,31 @@ Read this before starting work (and before re-investigating something "new").
   - 6-step contact force error ≤ 0.7 × wrong geometry 0.5 mm.
   - Pass per set (D1, dev). If it fails because the arm model's error swamps the geometry: the 7-DOF replica, timed
     against the MPC's 10 ms budget before committing to it (src-5e).
+- **Result (17:00, fresh insertions, all 6 inserted): B2a v2 FAILS as registered.**
+
+  | fresh, transitional | SDF plant 1-step / 6-step | vs no-contact | vs wrong 0.5 mm |
+  |---|---|---|---|
+  | D1 (n 86) | 0.114 / 0.718 mm | 0.40 / 0.50 ✓ | 0.74 / 0.91 ✗ (F6 0.99) |
+  | dev (n 145) | 0.121 / 0.475 mm | 0.54 / 0.48 ✓ | 0.98 / 1.00 ✗ (F6 0.99) |
+
+- **Root cause, a numerical bug in my plant (not the geometry, not the arm model):** the flat-face samples blow up
+  with the contact model on. D1 flat 1-step 1.89 mm / 6-step 7.6 mm vs 0.24 / 0.98 mm with no contact (2 mm-wrong:
+  10 mm); dev flat 0.73 vs 0.27 mm.
+  - The contact stiffness (2e4 N/m per point, dozens of points on a flat face) against Λ ≈ 10 kg gives
+    ω ≈ √(1e6 / 10) ≈ 300 rad/s.
+  - My explicit sub-step at the trace rate (4.2 ms) has ω·dt ≈ 1.3, beyond explicit Euler's stability limit, so many
+    simultaneous contacts oscillate or diverge.
+  - That also inflates the transitional errors and every force prediction (F6 ratios 0.99). The B2a v2 result
+    therefore does not measure the geometry.
+- Development note: on the old B2a episodes the v2 plant halved the errors (D1 transitional 1-step 0.222 → 0.112 mm),
+  and the dev anomaly persisted with ρ = 20 µm (so it was not the rim rounding either). The flat-face blow-up was
+  visible there too (D1 flat 0.159 vs 0.228 mm) but milder; I missed it.
+- **Fix (correctness, not tuning):** an implicit contact step (Newton per sub-step, as the quasi-static
+  `SdfPlant.step`) or a sub-step below the contact time scale, checked on development data for no blow-up on
+  flat-face samples (SDF error ≤ no-contact error there). Then B2a v3 on fresh insertions, same targets.
+- Design note: the wrong-geometry target may be weak by construction. Over 0.1–0.6 s a peg in contact moves well
+  under a millimetre, so a 0.5 mm geometry error changes the predicted motion in only part of the samples. That is
+  worth discussing before more effort goes into the arm model.
 
 ### 2026-10-29 (16:10): CI-MPC stage B2a, pre-registered: forward prediction of the SDF plant vs Isaac, against two baselines
 - **B1 record (src-5e):** contact presence PASS (M1 92.7–100 %); force direction untestable by inverse fit (v1–v3:
