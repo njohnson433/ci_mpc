@@ -205,8 +205,11 @@ Read this before starting work (and before re-investigating something "new").
   12 s). Consistent in both repeats: v5 slower at 3,3 (115 / 62 vs 17 / 11 s) and -3,0 (102 / 62 vs 29 / 27 s),
   faster at 5,0 / 0,4 / -5,0. **Verdict: v5 = v3 on D1 within noise (no regression, no gain).** v5's table beyond
   10 mm is extrapolation (no batched probes there) and the belief grid (+-6 mm) reaches it.
-- Queued (`~/ci_mpc_runs/vec/v5_r/queue.sh`): held-out R set v3 vs v5 (1 repeat each), then the table-swap arm (v5
-  network + v3's table) at 3,3 and -3,0, 2 repeats.
+- **Held-out R set (1 repeat each, same settings): v3 10 / 10, contact median 23.1 / mean 25.7 s; v5 10 / 10, 43.8 /
+  43.7 s;** paired v5 - v3 median +18.9 s, v5 faster on 2 / 10 (worst: -2.72,-2.08 96 vs 18 s; -1.20,-4.36 84 vs
+  50 s). **Negative for v5 on contact time** (success equal). With D1 (slower at 3,3 / -3,0) the closed-loop picture
+  matches the offline one with the correction on (v5 3.1-3.6 vs v3 1.8-2.3 mm). Running: table-swap arm (v5 network +
+  v3's table) at D1 3,3 / -3,0, 2 repeats (`~/ci_mpc_runs/vec/v5_r/swap`).
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
