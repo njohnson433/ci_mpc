@@ -21,6 +21,8 @@ Read this before starting work (and before re-investigating something "new").
   9 N. User (2026-10-29, via src-5e): "the 15N should be acceptable and we can add the safety after we have done some
   tests on the real robot." -> keep hybrid; log seating + first-touch peaks in the first contact runs, add extra
   safety (e.g. slower final approach) only after those tests.
+  If time allows (for stage C, src-5e 2026-10-29): log the real camera's hole-position estimate against the touched /
+  seated position, i.e. its accuracy (sim stage A assumes 2 mm).
   For src-35 (force-estimate fidelity), all sessions now record robot_state.npz (27700c9): (a)
   `c3_breakaway_session.sh probe` (per-axis ramps, static held friction), (b) one press against a scale / a known load
   at a held pose (held vs contact per joint). src-35 from the move logs: tau_J - tau_J_d along sign(dq) while moving
