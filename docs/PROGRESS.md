@@ -225,6 +225,9 @@ Read this before starting work (and before re-investigating something "new").
   -0.43 deg in the finger plane about its base on the table; 40 mm (grasp to bottom) x tan 0.43 deg = 0.30 mm. Inferred
   cause: the hand is slightly off the peg centre at grasp, the first finger tips the top until the second clamps.
   Kept as part of the task (a real arm grasping a standing peg does the same); a grasp-strategy lever is src-f1's.
+  **Correction (src-f1):** `--grasp-settle 0.0003` cut the TCP error at grasp 1.48 -> 0.30 mm but the offset stayed
+  (round 8 -0.26 -> -0.23, rect -0.21 both): the approach error is not the main driver; the tilt comes from the
+  closing itself (contact order, pad friction or the finger drive). Open, low priority (per-finger contact timing).
 - Pre-grasp the standing pegs also rest tilted (one 1.47 deg about world y at spawn): not investigated.
 
 ### 2026-10-29 03:00: likelihood v5 (trained on batched sim probes only, peg only): equals v3 on held-out pipeline probes
