@@ -13,6 +13,7 @@ mkdir -p "$OUT"
 LIK=${LIK:-$HERE/../ci_mpc_planner/models/probe_likelihood_v3_both.npz}
 SETS=${SETS:-"H1 H2 H3 H5"}
 DOM=${DOMAIN_BASE:-66}
+CORES=${CORES:-0-15}
 STAGEA=(--known-grasp --pos-noise 0.002 --pos-noise-z 0.0005 --prior-sigma 0.002 --smooth-approach 0.02)
 # NOISE_NAMES=hole: the camera error on the hole only (the user's stage A; without it the peg detection noise also moves
 # the grasp, >2 mm in 37 % of seeds = the stage D condition)
@@ -22,7 +23,7 @@ log() { echo "$(date '+%F %T') $*" >> "$OUT/queue.log"; }
 bench() {  # bench OUT SEEDS env... -- options...
   local out=$1 seeds=$2; shift 2
   local envs=(); while [ "$1" != "--" ]; do envs+=("$1"); shift; done; shift
-  env "${envs[@]}" SEEDS="$seeds" PARALLEL=1 DOMAIN_BASE=$DOM WRIST_FT=1 taskset -c 0-15 "$HERE/peg_benchmark.sh" "$out" \
+  env "${envs[@]}" SEEDS="$seeds" PARALLEL=1 DOMAIN_BASE=$DOM WRIST_FT=1 taskset -c "$CORES" "$HERE/peg_benchmark.sh" "$out" \
     probe "${STAGEA[@]}" "${COMMON[@]}" "$@"
 }
 for set in $SETS; do
