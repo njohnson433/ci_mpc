@@ -9,6 +9,9 @@
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; STRATEGY=$2; shift 2
 OFFSETS=${OFFSETS:-"0,0 2,0 3,0 -3,0 5,0 -5,0 0,4 3,3 -4,2 -3,-2"}
+# SEEDS (env, stage A): iterate over camera-noise seeds instead (offset 0,0, --seed s; the noise itself comes from the
+# extra options, e.g. --pos-noise 0.002); run dirs <strategy>_s<seed>
+if [ -n "$SEEDS" ]; then OFFSETS=""; for s in $SEEDS; do OFFSETS="$OFFSETS seed:$s"; done; fi
 PARALLEL=${PARALLEL:-4}
 mkdir -p "$OUT"
 i=0
@@ -16,11 +19,12 @@ for off in $OFFSETS; do
   # each Isaac instance takes ~3-4 GB: never start one below MIN_MEM_GB available (an OOM on 2026-10-23 killed
   # every weekend job at once)
   while [ "$(awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo)" -lt "${MIN_MEM_GB:-7}" ]; do sleep 20; done
-  name="${STRATEGY}_${off/,/_}"
+  name="${STRATEGY}_${off/,/_}"; seedarg=()
+  if [ "${off#seed:}" != "$off" ]; then name="${STRATEGY}_s${off#seed:}"; seedarg=(--seed "${off#seed:}"); off="0,0"; fi
   dom=$((${DOMAIN_BASE:-60} + i % PARALLEL))
   mkdir -p "$OUT/$name"
   (LOG="$OUT/$name/isaac.log" ROS_DOMAIN_ID=$dom timeout 2400 "${DEMO:-$HERE/demo_peg.sh}" --headless --offset "$off" \
-     --strategy "$STRATEGY" --log-dir "$OUT/$name" --out "$OUT/$name/res.json" "$@" > "$OUT/$name/run.out" 2>&1) &
+     --strategy "$STRATEGY" --log-dir "$OUT/$name" --out "$OUT/$name/res.json" "${seedarg[@]}" "$@" > "$OUT/$name/run.out" 2>&1) &
   i=$((i + 1))
   sleep 15
   if [ $((i % PARALLEL)) -eq 0 ]; then wait; fi
