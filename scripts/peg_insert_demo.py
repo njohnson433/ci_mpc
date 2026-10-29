@@ -212,6 +212,7 @@ p.add_argument("--probe", action="store_true", help="after inserting: hold and p
                "(checks the external wrench estimate and the PhysX contact report against each other)")
 p.add_argument("--pos-noise", type=float, default=0.0)
 p.add_argument("--pos-noise-z", type=float, default=-1.0, help="detector z position noise std [m] (default: as --pos-noise)")
+p.add_argument("--noise-names", default="", help="detector: objects that get the estimation error (comma list, default all; e.g. hole)")
 p.add_argument("--prior-sigma", type=float, default=0.0, help="probe: Gaussian prior N(estimate, sigma) [m] on the hole belief\n               (stage A: the camera error, e.g. 0.002); 0 = uniform over the grid as before")
 p.add_argument("--smooth-approach", type=float, default=0.0, help="probe, stage A: first approach from above the hole as a\n               decelerating set-point ramp (speed gap / 0.15 s, capped at this value [m/s], at least 2 mm/s) to the hover\n               height instead of a jump; observer contact (Fz > 1 N) stops it; logs speed at contact and peak jerk")
 p.add_argument("--known-grasp", action="store_true", help="stage A: the controller gets the true in-hand pose of the part after the\n               grasp (sim truth: tip height and xy offset of the part bottom from the TCP) and skips the grasp-height calibration touch")
@@ -434,7 +435,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 det_log = open(os.path.join(args.log_dir, "sim_object_detector.log"), "w")
 procs.append(subprocess.Popen([sys.executable, os.path.join(here, "sim_object_detector.py"), "--sync-dir", args.sync_dir,
                                "--pos-noise", str(args.pos_noise), "--pos-noise-z", str(args.pos_noise_z),
-                               "--size-noise", str(args.size_noise),
+                               "--size-noise", str(args.size_noise), "--noise-names", args.noise_names,
                                "--yaw-noise-deg", str(args.yaw_noise_deg), "--seed", str(args.seed)],
                               stdout=det_log, stderr=subprocess.STDOUT))
 exe = os.path.join(get_package_prefix("ci_mpc_planner"), "lib", "ci_mpc_planner", "mpc_node")

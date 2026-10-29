@@ -21,6 +21,7 @@ p.add_argument("--pos-noise-z", type=float, default=-1.0, help="std of the z pos
 p.add_argument("--size-noise", type=float, default=0.0, help="std of the size error [m]")
 p.add_argument("--yaw-noise-deg", type=float, default=0.0, help="std of the yaw error [deg]")
 p.add_argument("--seed", type=int, default=1)
+p.add_argument("--noise-names", default="", help="comma list of object names that get the estimation error (default: all;\n               stage A / B: \"hole\" = camera error on the hole only, the grasp stays clean; stage D adds the peg)")
 p.add_argument("--rate", type=float, default=10.0, help="publish rate [Hz] (wall time)")
 args, _ = p.parse_known_args()
 
@@ -54,7 +55,10 @@ class Detector(Node):
         msg.header.frame_id = "base"
         msg.header.stamp = self.get_clock().now().to_msg()
         for i, o in enumerate(data.get("objects", [{**data, "name": "box"}])):
-            msg.detections.append(self.detection(o, *error(i), msg.header))
+            err = error(i)
+            if args.noise_names and o.get("name") not in args.noise_names.split(","):
+                err = (np.zeros(3), np.zeros(3), 0.0)  # this object exact (the draw is kept: seeds stay paired)
+            msg.detections.append(self.detection(o, *err, msg.header))
         self.pub.publish(msg)
 
     def detection(self, o, d_pos, d_size, d_yaw, header):
