@@ -48,17 +48,18 @@ Read this before starting work (and before re-investigating something "new").
   artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
   Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
 
-- **2026-10-28 20:00, src-35 (vectorized fidelity -> v5, peg only):** state after the evening (entries "RETRACTION",
-  "Isaac scene with the real FR3's identified joint friction", "vectorized step 5a / 5b"):
-  - No observer over-read (wrist log was 0.235 s off; `scripts/wrist_csv.py` now, benchmark peaks redone by
-    `scripts/recompute_wrist_peaks.py`, dry run sent to src-f1). v3 / v4 force is fine; their tip labels carry the
-    pipeline's in-hand slip (truth: 2.1 mm up / 3.4 mm along the pads over 40 probes).
-  - Press calibration done (entry "step 5c"): batched `--sff 5.0` matches the pipeline (force and engagement).
-  - v5 trained (entry "likelihood v5"): = v3 on held-out pipeline probes and on closed-loop D1 (20/20 each, contact
-    within noise). Running: R set v3 vs v5 + D1 table-swap arm (`~/ci_mpc_runs/vec/v5_r`). H sets only if v5 is to
-    become a default (peg-only model).
-  - Pipeline test of v5 needs `--force-source wrist` (c270baf, lag-corrected 4694b78; untested in a run).
-  - Real-joint-ID scene (`fr3_scene_real1028.usd`, FR3_PARAMS) is opt-in only: 1.4-2x the real Cartesian breakaway.
+- **2026-10-29 13:30, src-35: likelihood work PAUSED (user is restructuring the plan: known grasp + camera estimate +
+  smooth approach + plain push as baseline, then CI-MPC with an analytic SDF contact model; likelihood / search only as
+  a later fallback; src-5e).** Nothing of src-35 running. State (entries 2026-10-28 evening .. 2026-10-29):
+  - No pipeline observer over-read (wrist log 0.235 s lag, `scripts/wrist_csv.py`; benchmark peaks redone offline by
+    `scripts/recompute_wrist_peaks.py`, src-f1 decides --write).
+  - Batched sim calibrated to the pipeline at `--sff 5.0` (force + engagement, class agreement 0.66).
+  - Likelihood v5-clamp (batched sim probes only, peg only, `ci_mpc_planner/models/probe_likelihood_v5_batched_clamp.npz`,
+    opt-in) = v3 on D1 / R; robust to the real-arm observer model; R not clean for it (H1 would be).
+  - Real-arm O_F_ext_hat_K: static 0.13-0.37 of held force, sliding ~full kinetic friction; sim model
+    `CI_TAU_SOURCE=franka` (opt-in); per-joint refit waits for src-54's recorder (27700c9).
+  - NIST H5 assets: no change needed; in-hand -0.3 mm y offset = grasp-induced tilt, cause in the closing (open, low).
+  - Likely next (to be confirmed): the analytic SDF contact model for the CI-MPC.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
   Cartesian breakaway measured at the probe pose (cold): **C3 arm_friction 1.43, 0.80, 1.25 N, 1.56, 0.61 Nm**; offline
   check recommends `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` (entries below). Open, in order:
