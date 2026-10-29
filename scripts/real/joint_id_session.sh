@@ -45,8 +45,10 @@ export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 ros2 daemon stop > /dev/null 2>&1
 
 LAUNCH_PID=
+REC=
 cleanup() {
   trap - EXIT INT TERM
+  [ -n "$REC" ] && kill -INT "$REC" 2>/dev/null && wait "$REC" 2>/dev/null && tail -1 "$LOG/state_recorder.log"
   for c in joint_id_controller cartesian_impedance_controller move_to_start_example_controller; do
     timeout 10 ros2 control set_controller_state $c inactive > /dev/null 2>&1
   done
@@ -76,6 +78,9 @@ for i in $(seq 120); do
 done
 grep -q joint_state_broadcaster "$LOG/controllers.txt" || { echo "controller manager not up"; exit 1; }
 
+# background recorder: robot_state (q, tau_J, tau_J_d, tau_ext, motor position, O_F_ext_hat_K) at 200 Hz -> robot_state.npz
+python3 -u "$HERE/state_recorder.py" --out "$LOG/robot_state.npz" > "$LOG/state_recorder.log" 2>&1 &
+REC=$!
 echo "--- error recovery (clears a reflex from an earlier run; harmless otherwise)"
 timeout 20 ros2 action send_goal /action_server/error_recovery franka_msgs/action/ErrorRecovery "{}" > "$LOG/recovery.txt" 2>&1 \
   || echo "error recovery did not answer (see $LOG/recovery.txt)"

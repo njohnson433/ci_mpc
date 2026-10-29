@@ -45,8 +45,10 @@ ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"
 uptime | grep -q "load average: [0-3][.,]" || echo "WARNING: machine load $(uptime | sed 's/.*load average: //') (Isaac / MPC runs from other sessions?)"
 
 LAUNCH_PID=
+REC=
 cleanup() {
   trap - EXIT INT TERM
+  [ -n "$REC" ] && kill -INT "$REC" 2>/dev/null && wait "$REC" 2>/dev/null && tail -1 "$LOG/state_recorder.log"
   if [ -n "$LAUNCH_PID" ] && kill -0 "$LAUNCH_PID" 2>/dev/null; then
     echo "--- deactivating the controllers, stopping the launch"
     for c in cartesian_impedance_controller move_to_start_example_controller; do
@@ -74,6 +76,9 @@ for i in $(seq 60); do
 done
 grep -q joint_state_broadcaster "$LOG/controllers.txt" || { echo "controller manager not up after 60 s"; exit 1; }
 
+# background recorder: robot_state (q, tau_J, tau_J_d, tau_ext, motor position, O_F_ext_hat_K) at 200 Hz -> robot_state.npz
+python3 -u "$HERE/state_recorder.py" --out "$LOG/robot_state.npz" > "$LOG/state_recorder.log" 2>&1 &
+REC=$!
 echo "--- error recovery (clears a reflex from an earlier run; harmless otherwise)"
 timeout 20 ros2 action send_goal /action_server/error_recovery franka_msgs/action/ErrorRecovery "{}" > "$LOG/recovery.txt" 2>&1 \
   || echo "error recovery did not answer (see $LOG/recovery.txt)"

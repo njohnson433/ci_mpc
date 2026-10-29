@@ -47,8 +47,10 @@ ping -c 1 -W 1 "$ROBOT_IP" > /dev/null || { echo "robot $ROBOT_IP not reachable"
   may stop with communication_constraints_violation. Log out and in again (realtime group), check: ulimit -r -> 99"
 
 LAUNCH_PID=
+REC=
 cleanup() {
   trap - EXIT INT TERM
+  [ -n "$REC" ] && kill -INT "$REC" 2>/dev/null && wait "$REC" 2>/dev/null && tail -1 "$LOG/state_recorder.log"
   if [ -n "$LAUNCH_PID" ] && kill -0 "$LAUNCH_PID" 2>/dev/null; then
     echo "--- deactivating the controller, stopping the launch"
     timeout 10 ros2 control set_controller_state cartesian_impedance_controller inactive > /dev/null 2>&1
@@ -73,6 +75,9 @@ done
 grep -q joint_state_broadcaster "$LOG/controllers.txt" || { echo "controller manager not up after 60 s"; exit 1; }
 cat "$LOG/controllers.txt"
 
+# background recorder: robot_state (q, tau_J, tau_J_d, tau_ext, motor position, O_F_ext_hat_K) at 200 Hz -> robot_state.npz
+python3 -u "$HERE/state_recorder.py" --out "$LOG/robot_state.npz" > "$LOG/state_recorder.log" 2>&1 &
+REC=$!
 echo "--- error recovery (clears a reflex from an earlier run; harmless otherwise)"
 timeout 20 ros2 action send_goal /action_server/error_recovery franka_msgs/action/ErrorRecovery "{}" > "$LOG/recovery.txt" 2>&1 \
   || echo "error recovery did not answer (see $LOG/recovery.txt)"
