@@ -5,13 +5,49 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
-- **2026-10-29 16:30, PAUSED for a robot session (src-54), CI-MPC stage B (src-f1).** Everything stopped by PID.
-  Resume after "robot session ended":
-  1. B2a v3 (pre-registered, PROGRESS "B2a v3"): rerun the implicit-step development check on the old B2a episodes
-     (`b2a2_predict.py --implicit 1 --fit b1v2/factory_700? --score b2a/*`; flat-face SDF error must be ≤ no-contact).
-     Then finish the fresh logging (`scratchpad b2a3_log.sh`; factory_1–3 done, it skips them) and score once.
-  2. H1–H3 push-stop (velocity, 1.0 vs 0.5 mm; `ARMS="velnom velnom_ps05" PAR=1 DOM0=180
-     scripts/queue_heldout_realarm.sh ~/ci_mpc_runs/heldout_pushstop`, resumable): partway into the 0.5 mm arm.
+- **2026-10-29 16:30-17:00 real FR3 session (src-54), PC shut down mid-session.** Logs: ~/ci_mpc_runs/real/mpc_free/
+  {test_1630,test_1633,armid_1639,approach_1646,approach_1649}, session_20261029_* (robot_state.npz each),
+  ~/ci_mpc_runs/real/breakaway/probe_1655, ~/ci_mpc_runs/real/session_20261029_163507 (hold + nudges).
+  1. Hybrid default, first run: hand held (0.24 mm) but the elbow swung at 1.7 Hz, j1/j3 12 mrad p2p (yesterday's
+     10 holds with none / velocity 0.75: 0.0). Mechanism: no nullspace stiffness/damping on the robot, joint friction
+     had held the nullspace; hybrid cancels it moving and at rest. **Fix: nullspace_damping 2.0** (controller 0bdcaf1,
+     real_robot_controllers.yaml): j1/j3 0.02 mrad, hold drift 0.01 mm / 0.03 mrad.
+  2. Hold + nudges (pushes 1-8 cm, force clamp 18 N/axis): returns to 0.1-0.6 mm, no ringing (0.004 rad/s 1 s after
+     release), no reflex; elbow stays where pushed (damping only). Controller observer reads -2.2 N x at rest (side
+     model, first robot run): compare with O_F_ext_hat_K offline.
+  3. B2 arm data (src-f1 fits it): armid_1639, 6 axes steps + sines 0.3-5 Hz. Translation: steps 0.2-0.5 mm short
+     (no integral), t_1mm 0.20-0.33 s; sine gain 1.00 at 0.3 Hz, 0.69/0.77/0.91 (x/y/z) at 5 Hz. Sender GC stalls
+     23-151 ms (mask; fixed 591eacd: gc off).
+  4. Stage A detector false-trigger test (approach_1649; approach_1646 aborted on a script bug, fixed): **15/15 false
+     triggers** in free air, both O_F_ext_hat_K and the observer. -Fz over a top tare: +3.0-3.75 N while descending at
+     5/10/20 mm/s, stays at rest after the stop, flips back going up = held/kinetic joint friction (~+-1.7 N) flipping
+     with the motion direction. src-35: plateau reached after 5-9 mm; tare after >= 10 mm + 1.5 N threshold has ~2.5x
+     margin (worst 0.59 N); later probe presses need a lift-and-descend or a sign(dq) friction correction.
+  5. Breakaway at the probe pose with hybrid (probe_1655): median x 0.90, y 0.74, z 0.64 N, rx 0.63, ry 0.35 Nm
+     (= yesterday's coulomb 0.5: 0.84/0.66/0.61/0.67/0.39; none: 1.37/0.86/1.15/1.24/0.68).
+  **Left (scripts ready, not run):** `mpc_free_space_session.sh approach --tare-after 0.01 --threshold 1.5` (src-35's
+  closed-loop check, live detector stops the descent; 5cc9e9f) and `mpc_free_space_session.sh touch --reps 3` (book /
+  box 3-5 cm under the fingertips: live detection, presses 0/1/2/3/0 N, first-touch peak; 902eaa8). Both smoke-tested
+  on a fake robot only. Then the camera (step 4 below) and grasp items, which need hardware.
+- **2026-10-29 16:40, machine shut down after the robot session; CI-MPC stage B (src-f1). Exact restart, from
+  `~/franka_ros2_ws/src/ci_mpc`, only when no robot session is running:**
+  1. *B2a v3 development check (implicit contact step; pre-registered, PROGRESS "B2a v3"):*
+     `~/IsaacLab/.venv/bin/python scripts/b2a2_predict.py --implicit 1 --fit ~/ci_mpc_runs/b1v2/factory_7001 ~/ci_mpc_runs/b1v2/factory_7002 --score ~/ci_mpc_runs/b2a/*`
+     (old B2a episodes = development data; CPU only, ~1 h). Gate: the flat-face SDF error ≤ the no-contact error.
+     If it fails, fix the step before step 3.
+  2. *B2a v3 fresh logging (3 of 6 done: factory_1–3; it skips finished ones):* `scripts/b2a3_log.sh` (1 Isaac,
+     ROS domain 160, cores 0–15, ~15 min). It runs `scripts/b2_trace.py` per episode (needs the ROS env, which the
+     script sources).
+  3. *B2a v3 scoring, once, after 1 and 2:*
+     `~/IsaacLab/.venv/bin/python scripts/b2a2_predict.py --implicit 1 --fit ~/ci_mpc_runs/b1v2/factory_7001 ~/ci_mpc_runs/b1v2/factory_7002 --score ~/ci_mpc_runs/b2a3/*`
+     Apply metric 1, DM1 / DM2 and the proceed rule as pre-registered. Report to src-5e.
+  4. *H1–H3 push-stop (velocity default, 1.0 vs 0.5 mm; frozen 0.5; resumable, partway into the 0.5 mm arm):*
+     `ARMS="velnom velnom_ps05" PAR=1 DOM0=180 setsid nohup scripts/queue_heldout_realarm.sh ~/ci_mpc_runs/heldout_pushstop > ~/ci_mpc_runs/heldout_pushstop.log 2>&1 < /dev/null &`
+     Then `python3 scripts/heldout_summary.py ~/ci_mpc_runs/heldout_pushstop`, H2 reported separately (src-5e).
+  5. *Real-FR3 arm model (new data from src-54):* `~/ci_mpc_runs/real/mpc_free/armid_1639/raw.npz` + `arm_id.json`.
+     Fit the coupled Λ(q) model with the measured K / D (integral off, hybrid comp 0.75 / 0.5, nullspace damping
+     2.0) on the steps; validate on the sines (gain / phase vs src-54's quick look); mask the six sender-stall
+     windows (cmd gap > 20 ms, ±0.2 s).
 
 - **Next real FR3 session, re-planned around stages A / B (2026-10-29, src-5e for the user).** Announce it to
   src-f1 / src-35 / src-5e first; all sim jobs stop, check the PC is quiet. Every session records robot_state.npz
