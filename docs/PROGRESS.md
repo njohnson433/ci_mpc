@@ -11,7 +11,8 @@ Read this before starting work (and before re-investigating something "new").
   hold nudge test (the default now applies to every real session), then the first contact runs check the 4 N gate
   and in-hand slip (sim: +2 N pre-seat, ~3x slip); over the gate -> friction_scale_rest 0 and report.
   Open caveat: nominal Isaac H2 gear hybrid 5/15 vs velocity 7/15 (+1/-3), so the Isaac default stays velocity; the
-  real default rests on realfric H2 +2/-0 (1 rep), 2 more reps running (src-f1). Gear task on the robot: watch it.
+  real default stands on realfric (3 reps): H2 10/15 vs no-comp 6/15, H1 -4.9 s, H3 23/36 vs 15/36. The two scenes
+  disagree on the gear, so watch the gear task on the robot.
   For src-35 (force-estimate fidelity), all sessions now record robot_state.npz (27700c9): (a)
   `c3_breakaway_session.sh probe` (per-axis ramps, static held friction), (b) one press against a scale / a known load
   at a held pose (held vs contact per joint). src-35 from the move logs: tau_J - tau_J_d along sign(dq) while moving
