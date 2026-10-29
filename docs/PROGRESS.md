@@ -423,6 +423,37 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (16:10): CI-MPC stage B2a, pre-registered: forward prediction of the SDF plant vs Isaac, against two baselines
+- **B1 record (src-5e):** contact presence PASS (M1 92.7–100 %); force direction untestable by inverse fit (v1–v3:
+  friction-cone combinations span almost any wrench); dimension sensitivity 0.1–0.3 mm (chamfered holes).
+- **Plant under test:** `ci_mpc_planner/sdf_mpc.py` `SdfPlant` (commit before this entry). Rounded-primitive SDF from
+  asset dimensions, softplus normal force (k_c 2e4 N/m, ε 0.01 mm), regularized Coulomb friction, smooth arm friction
+  F_s tanh(Δx / d_eps), impedance K from the log; a quasi-static step solved by damped Newton.
+- **Data:**
+  - *Fit episodes (arm friction only):* `~/ci_mpc_runs/b1v2/factory_7001`, `factory_7002` (bags; free-space moves +
+    probe holds). Fit F_s (6) and d_eps by least squares of the one-step pose prediction on their free-space samples
+    (no contact predicted), then frozen.
+  - *Scored episodes (new):* 4 D1 insertions (offsets 1.5, −2, 2.5, 3 mm; plain probe, defaults) and 2 dev round 8
+    insertions (frozen chamferless flags), with bags (`~/ci_mpc_runs/b2a/`). Peg pose = TCP pose × the known in-hand
+    pose (`peg_truth.npz`).
+- **Prediction:** at each sample k (10 Hz), from the logged TCP pose x_k:
+  - one step: x_{k+1} under the logged setpoint u_k, feedforward and K;
+  - multi-step: 6 steps (0.6 s, the MPC horizon) under the logged u_k…u_{k+5}.
+  - Errors: TCP position (mm) vs the logged pose; contact force (N) vs the wrist F/T at the end of the step / horizon.
+- **Scoring sets:** transitional samples (the true geometry has a contact on the chamfer, rim or bore wall: a contact
+  point with |n_z| < 0.9 at gap < 0.2 mm) separately from flat-face samples (contacts only with n_z > 0.9).
+- **Baselines:** (a) the no-contact plant (the same impedance + fitted friction, contacts off); (b) the SDF plant with
+  the hole 0.5 mm and 2 mm off in x.
+- **Targets on the transitional set, fixed now** (medians):
+  - **one-step position error ≤ 0.7 × baseline (a) and ≤ 0.7 × baseline (b, 0.5 mm);**
+  - **6-step position error ≤ 0.7 × (a) and ≤ 0.7 × (b, 0.5 mm);**
+  - **6-step contact force error ≤ 0.7 × (b, 0.5 mm)** (baseline (a) has zero contact force; its error is |F_true|,
+    reported as well).
+  - At least 50 transitional samples per set (D1, dev), else untestable.
+  - Absolute errors are reported, no absolute target (the quasi-static step ignores the controller dynamics: this
+    is a relative test of what the contact model adds).
+  - B2a passes per set if all targets hold. Flat-face samples are reported, not scored.
+
 ### 2026-10-29 (15:35): CI-MPC stage B1 v3, pre-registered: the contact model on transitional contacts (centering / push phases)
 - **Why v3:** v2 showed the probe holds are flat-face contacts that every model explains (M4 failed). The CI-MPC acts
   on the chamfer, rim and bore, so test there (src-5e: v3 before B2).
