@@ -14,6 +14,8 @@
 #   steps | rotate | circle   hold + that test only
 #   armid   no MPC: arm_id_real.py arm: known set-points (steps + sines, x y z rx ry rz) for the stage-B arm model ~5 min
 #   approach  no MPC: arm_id_real.py approach: stage A smooth-approach descents in free air, false contact triggers ~3 min
+#   touch   no MPC: arm_id_real.py touch: descend onto a flat surface 3-5 cm under the fingertips, live contact detection,
+#           presses 0/1/2/3/0 N, back up (--reps N)
 #   e.g. mpc_free_space_session.sh all --step 0.08 --path-speed 0.08
 #        mpc_free_space_session.sh armid --axes x,z --freqs 0.5,2
 # Env: ROBOT_IP (192.168.1.200), ROS_DOMAIN_ID (61), GRIPPER=1 (load the Franka Hand gripper node).
@@ -26,6 +28,7 @@ case "$PRESET" in
   steps|rotate|circle) TESTS=hold,home,$PRESET ;;
   armid) DRIVER=arm ;;
   approach) DRIVER=approach ;;
+  touch) DRIVER=touch ;;
   *) sed -n 2,20p "$0"; exit 1 ;;
 esac
 HERE=$(cd "$(dirname "$0")" && pwd)

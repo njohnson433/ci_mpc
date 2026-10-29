@@ -11,6 +11,13 @@
 #             descent, then 50 ms mean of (-F_ext) z minus the tare > 1 N = "contact". Evaluated offline for both the
 #             controller observer and Franka's O_F_ext_hat_K (src-35: O_F_ext_hat_K reads ~1.7 N along v while moving).
 #             The arm does not stop on a trigger (there is nothing to hit); triggers are counted.
+#   touch     first real contact: a flat surface (book / box / table) 3-5 cm under the fingertips at home. Descend at
+#             --touch-speed with the in-motion tare (--tare-after, default 10 mm) and the live detector (--threshold,
+#             default 1.5 N); stop the set-point at the trigger (no contact within --touch-depth: back up, report).
+#             Then set-point presses relative to the measured surface height: --press-forces N x K_z^-1 below it, 2 s
+#             each with 0.3 s ramps, and back up. Integral off throughout (it would wind up against the surface).
+#             Logged per hold: commanded K dz, -Fz of O_F_ext_hat_K and of the observer (minus the tare), first-touch
+#             peak (50 ms mean, 0.5 s after the trigger). Any 50 ms -Fz above --force-abort: straight to the retract.
 # Needs: franka_hardware + cartesian_impedance_controller active, arm at the libfranka home pose; session script
 # mpc_free_space_session.sh armid | approach.
 # Results: <out>/arm_id.json (segments with start/end times, approach trigger counts) and raw.npz:
@@ -44,7 +51,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 AXES = {"x": 0, "y": 1, "z": 2, "rx": 3, "ry": 4, "rz": 5}
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-p.add_argument("mode", choices=["arm", "approach"])
+p.add_argument("mode", choices=["arm", "approach", "touch"])
 p.add_argument("--axes", default="x,y,z,rx,ry,rz", help="arm: axes to excite")
 p.add_argument("--step", type=float, default=0.01, help="arm: translation step [m]")
 p.add_argument("--rot-step", type=float, default=0.05, help="arm: rotation step [rad]")
@@ -61,6 +68,10 @@ p.add_argument("--threshold", type=float, default=1.0, help="approach: detector 
 p.add_argument("--tare-after", type=float, default=0.0,
                help="approach: tare in motion (50 ms mean) once the set-point has descended this far [m], and run the\n"
                     "detector live: a trigger stops the descent there (0 = tare before the descent, offline only)")
+p.add_argument("--touch-speed", type=float, default=0.01, help="touch: descent speed [m/s]")
+p.add_argument("--touch-depth", type=float, default=0.06, help="touch: give up below this descent [m]")
+p.add_argument("--press-forces", default="0,1,2,3,0", help="touch: set-point presses [N] (K_z dz)")
+p.add_argument("--force-abort", type=float, default=8.0, help="touch: retract above this 50 ms -Fz [N]")
 p.add_argument("--integral", type=int, default=-1, help="integral_enabled (default: 0 for arm, 1 for approach)")
 p.add_argument("--rate", type=float, default=500.0, help="command rate [Hz]")
 p.add_argument("--abort-speed", type=float, default=0.2, help="[m/s]")
@@ -72,6 +83,10 @@ p.add_argument("--urdf", default="/home/njohnson/ci_mpc_assets/fr3.urdf")
 p.add_argument("--out", required=True)
 args = p.parse_args()
 integral = (args.mode == "approach") if args.integral < 0 else bool(args.integral)
+if args.mode == "touch" and args.tare_after <= 0:
+    args.tare_after = 0.01
+if args.mode == "touch" and "--threshold" not in sys.argv:
+    args.threshold = 1.5
 
 # K / D: the same as the MPC sends on the robot (mpc_real.yaml)
 from ament_index_python.packages import get_package_share_directory  # noqa: E402
@@ -207,15 +222,15 @@ def check(x_cmd):
         watch["prev"] = (now, x)
 
 
-def run(name, T, f, **extra):
-    """Stream f(t) -> (pos, R, v, w) for T seconds at --rate; record the segment."""
+def run(name, T, f, until=None, **extra):
+    """Stream f(t) -> (pos, R, v, w) for T seconds at --rate (or until until() is true); record the segment."""
     dt = 1.0 / args.rate
     t0 = time.monotonic()
     t_next = t0
     while True:
         now = time.monotonic()
         t = now - t0
-        if t > T:
+        if t > T or (until is not None and until()):
             break
         if now >= t_next:
             pos, R, v, w = f(min(t, T))
@@ -318,6 +333,106 @@ if args.mode == "arm":
             amp = min(amp_max, vel_max / (2 * np.pi * fr))
             sine(f"{name}_sin{fr:g}", ax, amp, fr)
             hold(1.0, f"{name}_sin{fr:g}_settle")
+    print("RESULT DONE", flush=True)
+    finish(0)
+
+def fz50(src="franka"):
+    """live -Fz (force on the tool, up +) averaged over the last 50 ms"""
+    now = time.monotonic()
+    if src == "franka":
+        v = [-row[33] for row in rs[-80:] if row[0] > now - 0.05]
+    else:
+        v = [-row[3] for row in obs[-80:] if row[0] > now - 0.05]
+    return float(np.mean(v)) if v else float("nan")
+
+
+def ramp_z(name, z_from, z_to, T):
+    def f(t):
+        s = min(t / T, 1.0)
+        a = 0.5 - 0.5 * np.cos(np.pi * s)
+        da = 0.5 * np.pi / T * np.sin(np.pi * s) if s < 1 else 0.0
+        return (np.array([P_HOME[0], P_HOME[1], z_from + a * (z_to - z_from)]), R_HOME,
+                np.array([0.0, 0.0, da * (z_to - z_from)]), np.zeros(3))
+    run(name, T, f)
+
+
+if args.mode == "touch":
+    z_top = P_HOME[2]
+    Kz = K[2]
+    forces = [float(v) for v in args.press_forces.split(",")]
+    out["touch"] = []
+    for rep_ in range(args.reps):
+        st = {"z": z_top, "t": None, "tare": None, "tare_obs": None, "hit": None, "over": False}
+
+        def descend(t):
+            if st["t"] is None:
+                st["t"] = t
+            dt, st["t"] = t - st["t"], t
+            v = 0.0
+            if st["hit"] is None and z_top - st["z"] < args.touch_depth:
+                v = args.touch_speed
+                st["z"] -= v * dt
+            if st["hit"] is None and z_top - st["z"] >= args.tare_after:
+                m50 = fz50()
+                if st["tare"] is None:
+                    st["tare"], st["tare_obs"] = m50, fz50("obs")
+                elif m50 - st["tare"] > args.threshold:
+                    st["hit"] = {"t": time.monotonic(), "z_cmd": st["z"], "fz50_N": round(m50 - st["tare"], 3),
+                                 "descended_mm": round((z_top - st["z"]) * 1000, 2)}
+                    v = 0.0
+            return np.array([P_HOME[0], P_HOME[1], st["z"]]), R_HOME, np.array([0.0, 0.0, -v]), np.zeros(3)
+
+        T = args.touch_depth / args.touch_speed + 1.0
+        run(f"touch_descent_{rep_}", T, descend, until=lambda: st["hit"] is not None, rep=rep_)
+        row = {"rep": rep_, "tare_N": st["tare"], "tare_obs_N": st["tare_obs"], "hit": st["hit"], "holds": []}
+        out["touch"].append(row)
+        if st["hit"] is None:
+            print(f"touch {rep_}: no contact within {args.touch_depth * 1000:.0f} mm: backing up", flush=True)
+            ramp_z(f"touch_up_{rep_}", st["z"], z_top, max((z_top - st["z"]) / args.touch_speed, 0.3))
+            continue
+        # settle at the stop set-point, then measure the surface height (TCP, FK)
+        hold(1.0, f"touch_settle_{rep_}", pos=np.array([P_HOME[0], P_HOME[1], st["z"]]))
+        z_surf = float(fk(state["q"])[0][2])
+        row["z_surface"] = z_surf
+        row["first_touch_peak_N"] = None  # filled offline below
+        print(f"touch {rep_}: contact after {st['hit']['descended_mm']} mm (50 ms -Fz {st['hit']['fz50_N']} N over the "
+              f"tare), surface z {z_surf:.4f}", flush=True)
+        z_prev = st["z"]
+        for F in forces:
+            z_t = z_surf - F / Kz
+            ramp_z(f"touch_ramp_{rep_}_{F:g}", z_prev, z_t, 0.3)
+            t_h = time.monotonic()
+            run(f"touch_press_{rep_}_{F:g}", 2.0,
+                lambda t, z_t=z_t: (np.array([P_HOME[0], P_HOME[1], z_t]), R_HOME, np.zeros(3), np.zeros(3)),
+                until=lambda: fz50() - st["tare"] > args.force_abort, force=F)
+            m_f, m_o = fz50() - st["tare"], fz50("obs") - (st["tare_obs"] if st["tare_obs"] == st["tare_obs"] else 0)
+            row["holds"].append({"F_cmd": F, "z_cmd": z_t, "t0": t_h, "t1": time.monotonic(),
+                                 "franka_N": round(m_f, 3), "observer_N": round(m_o, 3),
+                                 "z_tcp": float(fk(state["q"])[0][2])})
+            print(f"   press {F:g} N (set-point {F / Kz * 1000:.2f} mm below): franka {m_f:+.2f} N, observer {m_o:+.2f} N, "
+                  f"TCP {(fk(state['q'])[0][2] - z_surf) * 1000:+.2f} mm", flush=True)
+            z_prev = z_t
+            if m_f > args.force_abort:
+                print(f"   force {m_f:.1f} N > {args.force_abort} N: retract", flush=True)
+                row["over"] = True
+                break
+        ramp_z(f"touch_up_{rep_}", z_prev, z_top, max((z_top - z_prev) / args.touch_speed, 0.3))
+        hold(1.0, f"touch_top_{rep_}")
+    # first-touch peak: max 50 ms mean of -Fz minus the tare within 0.5 s after the trigger
+    r = np.array(rs)
+    for row in out["touch"]:
+        if row["hit"] is None:
+            continue
+        th = row["hit"]["t"]
+        m = (r[:, 0] > th - 0.05) & (r[:, 0] < th + 0.5)
+        ts, fz = r[m, 0], -r[m, 33] - row["tare_N"]
+        k = np.searchsorted(ts, ts - 0.05)
+        c = np.concatenate([[0.0], np.cumsum(fz)])
+        i = np.arange(len(ts))
+        row["first_touch_peak_N"] = round(float(((c[i + 1] - c[k]) / np.maximum(i + 1 - k, 1)).max()), 3)
+        row["first_touch_peak_1ms_N"] = round(float(fz.max()), 3)
+        print(f"touch {row['rep']}: first-touch peak {row['first_touch_peak_N']} N (50 ms), "
+              f"{row['first_touch_peak_1ms_N']} N (single sample)", flush=True)
     print("RESULT DONE", flush=True)
     finish(0)
 
