@@ -423,6 +423,33 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (14:40): CI-MPC stage B1, pre-registered: the primitive SDF contact model vs Isaac wrist logs (targets fixed before the run)
+- **What B1 tests.** The contact model alone (`docs/ci_mpc_design.md` §2), no controller. In quasi-static contact the
+  force magnitude is set by the impedance (K × deflection), not by the geometry. So B1 tests what the geometry has to
+  get right: where the contacts are, and which wrench directions they can carry.
+- **Data:** src-35's pipeline validation episodes `~/ci_mpc_runs/vec/step4d/w0_e001..008` (Factory 8 mm peg, 40
+  collect-mode probe holds each, friction 0.53–0.87, grasp offsets up to 1 mm). Per hold, the mean over its last
+  0.3 s (as `hold_forces.py`):
+  - TCP position from the bag trace (`trace.npz`), hand orientation from `wrist_ft.csv`;
+  - the true contact force from the wrist F/T, tared, lag-corrected (`wrist_csv.WRIST_LAG`);
+  - the known in-hand peg offset (stage A/B assumption: the grasp line's truth);
+  - the true hole pose from `run.out` ("HOLE opening at").
+  Main set: the 6 untilted episodes; e002 / e003 (hole tilted 0.44 / 0.63° about x) reported separately.
+- **Model:** asset-spec dimensions only (`PegHoleGeometry`: hole R 4.5 mm, chamfer 1 mm, depth 25 mm; peg half width
+  3.993 mm, tip chamfer 0.5 mm), no meshes. Analytic axisymmetric SDF of the hole (`profile_sdf`), peg as surface
+  points (tip ring, chamfer edge ring, side rings up to 10 mm, bottom disk), μ from the episode.
+- **Metrics and targets (fixed now):**
+  - M1, contact detection: predicted contact (min gap < 0.2 mm) vs measured contact (|F_true| > 1.0 N).
+    **Target ≥ 90 % agreement.**
+  - M2, wrench explained: for contact holds, NNLS fit of F_true onto the friction-cone generators of the predicted
+    contacts (gap < 0.2 mm). Relative residual |F − F̂| / |F|: **target median ≤ 0.15, p90 ≤ 0.35.**
+  - M3, lateral direction: for holds with |F_lat,true| > 0.5 N, the angle between the measured lateral force and the
+    fitted F̂_lat: **target median ≤ 20°.**
+  - B1 passes if M1–M3 all meet their targets on the main set.
+- **B1b, dimension sensitivity (user):** perturb R, a, c and the hole xy by ±0.1 / 0.3 / 1 mm, one at a time, and report
+  M1–M3 per perturbation. Yaw (±1–3°) only applies to rect parts: deferred to a rect dataset (the dev rect logs have
+  probe poses but no bag trace).
+
 ### 2026-10-29 (03:00): held-out check of the real-robot items: hybrid friction compensation helps H1 time and H2, H3 within noise; the real C3 values gain nothing (`~/ci_mpc_runs/heldout_realarm`)
 - **Setup** (`scripts/queue_heldout_realarm.sh`, src-54's controller 347044f): all arms on the real-arm-match scene
   `fr3_scene_realfric.usd` (src-5e: not `fr3_scene_real1028.usd`, which is 1.4–2× stickier). Same tasks / offsets as
