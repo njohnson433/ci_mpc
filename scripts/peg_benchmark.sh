@@ -22,6 +22,8 @@ for off in $OFFSETS; do
   name="${STRATEGY}_${off/,/_}"; seedarg=()
   if [ "${off#seed:}" != "$off" ]; then name="${STRATEGY}_s${off#seed:}"; seedarg=(--seed "${off#seed:}"); off="0,0"; fi
   dom=$((${DOMAIN_BASE:-60} + i % PARALLEL))
+  # SKIP_DONE=1: keep finished runs (res.json present), e.g. resuming a queue stopped for a robot session
+  if [ -n "$SKIP_DONE" ] && [ -f "$OUT/$name/res.json" ]; then continue; fi
   mkdir -p "$OUT/$name"
   (LOG="$OUT/$name/isaac.log" ROS_DOMAIN_ID=$dom timeout 2400 "${DEMO:-$HERE/demo_peg.sh}" --headless --offset "$off" \
      --strategy "$STRATEGY" --log-dir "$OUT/$name" --out "$OUT/$name/res.json" "${seedarg[@]}" "$@" > "$OUT/$name/run.out" 2>&1) &

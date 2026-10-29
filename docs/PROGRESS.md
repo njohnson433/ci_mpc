@@ -246,6 +246,9 @@ Read this before starting work (and before re-investigating something "new").
 - **Two baselines (labels; src-5e / user):**
   - **Stage A (official, what stage B must beat): `~/ci_mpc_runs/stageA/clean`**, `NOISE_NAMES=hole` (camera error on
     the hole only), D1 20 seeds (v3) + H1 15 / H2 5 / H3 12 / H5 10, domain 76, cores 16-31. Started 16:20.
+  - **2026-10-29 16:30 STOPPED for a robot session (src-54).** Done: heldout H1 friction 0.5 3/3, friction 1.0 2/3,
+    tilt 2 deg 3/3, grasp offset 3/3; clean D1 partial. Resume (after "robot session ended"): the same two commands with
+    `SKIP_DONE=1` (peg_benchmark.sh keeps runs with res.json; the run that was killed mid-way has none and reruns).
   - **Stage D reference: `~/ci_mpc_runs/stageA/heldout`** (and the D1 table above, `~/ci_mpc_runs/stageA/d1`): the same
     seeds with the error on the peg detection too (grasp > 2 mm off in 37 %); paired by seed with the clean runs.
 - Video: `headless_impedance_sim.py --record-video` (`VIDEO=path.mp4`), first run
