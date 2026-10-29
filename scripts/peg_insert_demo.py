@@ -115,6 +115,9 @@ p.add_argument("--push-wiggle", type=float, default=0.0,
                help="push to the bottom: once it stalls, cone the commanded peg axis at this angle [deg] (--push-wiggle-hz) "
                     "until the bottom; a tight chamferless hole wedges a peg 0.2-0.4 deg off the hole axis (dev set: 2.2 N "
                     "lateral, 0.27 Nm at the wrist, 3 mm short; the observer reads no torque under the rotational stiction)")
+p.add_argument("--push-step", type=float, default=0.006,
+               help="push to the bottom: command this far below the measured pose while the force is below "
+                    "--max-contact-force (else 2 mm); smaller = softer push (thin pegs jam in tight holes)")
 p.add_argument("--push-wiggle-hz", type=float, default=1.0, help="--push-wiggle: cone frequency [Hz]")
 p.add_argument("--jam-lift", type=float, default=0.001, help="jam: lift before pressing again [m]")
 p.add_argument("--jam-force", type=float, default=3.0, help="jam: lateral force (1 s mean) that counts as wedged [N]")
@@ -1010,7 +1013,7 @@ elif args.strategy == "probe":
             for _ in range(150 + 30 * args.jam_recovery + (60 if args.yaw_search > 0 else 0)
                            + (60 if args.push_wiggle > 0 else 0)):
                 x, F = measure5(), force3(0.1)
-                uz = x[2] - (0.006 if F[2] < args.max_contact_force else 0.002)
+                uz = x[2] - (args.push_step if F[2] < args.max_contact_force else min(0.002, args.push_step))
                 if args.push_follow > 0:
                     # follow the lateral contact force (the bore / hole wall pushes the part toward the axis): keeps
                     # the gear centred on its shaft, where its teeth mesh (H2 stalls all sat 0.23-0.30 mm off,
