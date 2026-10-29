@@ -823,13 +823,17 @@ elif args.strategy == "probe":
         0.1 s sample updates the belief (a line of probes per move). Stops early when the low point drops > 0.3 mm
         (the hole under it) or the peg snags (lateral force > 4 N). Returns the last (x, F) for the caller's update."""
         n_up = 0
+        u = measure5()[:2]  # the commanded xy advances on its own (a step past the measured pose, ~0.45 N at 1500
+        # N/m, stayed below the sliding friction of the pressed peg: the first version never moved, 2026-10-29)
         for i in range(int(0.012 / (args.tilt_slide * dt)) + 1):
             x = measure5()
-            d = target - x[:2]
-            if np.linalg.norm(d) < 2e-4:
+            d = target - u
+            if np.linalg.norm(d) < 2e-4 and np.linalg.norm(target - x[:2]) < 3e-4:
                 break
-            step = min(args.tilt_slide * dt, np.linalg.norm(d)) * d / np.linalg.norm(d)
-            cmd(x[:2] + step, x[2] - 0.001, (0.0, 0.0, -args.stiction_ff))
+            u = u + min(args.tilt_slide * dt, np.linalg.norm(d)) * d / max(np.linalg.norm(d), 1e-9)
+            dd = target - x[:2]
+            ff = 2.5 * dd / max(np.linalg.norm(dd), 1e-9)  # lateral stiction feedforward, as touch()'s moves
+            cmd(u, x[2] - 0.001, (*ff, -args.stiction_ff))
             spin_sim(dt)
             x, F = measure5(), force3(0.1)
             if i % 3 == 2 and F[2] > 1.0:
