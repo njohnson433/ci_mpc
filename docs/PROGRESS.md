@@ -962,15 +962,20 @@ Read this before starting work (and before re-investigating something "new").
           y offset of the peg bottom, −0.21 to −0.38 mm in every scene. The hand arrives ~1.45 mm off-centre, and the
           first finger tips the standing peg ~0.4° before the second clamps (src-35). Probe 0 then lands on the rim,
           and plain probing variance does the rest.
-      - **New dev assets:** `dev_rect_12x8mm` (gripped across 12 mm: the fingers close along x) and
-        `dev_rect_8x12mm` (gripped across 8 mm, as NIST rect 12).
+      - **New dev assets:** `dev_rect_12x8mm` (12 along x, 8 along y; gripped across its 8 mm side, fingers
+        8.0 mm in all 9 runs, as NIST rect 12) and `dev_rect_8x12mm` (rotated 90°, gripped across 12: the non-NIST
+        orientation). Correction (13:00): I first misread "fingers 12.0 mm" grasp lines of NIST round 12 runs as the
+        dev rect's and called it "gripped across 12".
       - **Plain probe on dev_rect_12x8mm:** (0, 0) ✓ 11.5 s, (1, 0) ✗, (0, −1) ✗. **Dev square:** (0, 0) ✓ 2.9 s,
         (1, 0) ✗, (0, −1) ✓ 4.7 s.
       - **Tilt search on dev_rect_12x8mm, round vs rect model** (`--tilt-rect 0.006,0.004`, frozen flags, 3 starts):
         round 2/3 (55, 85 s) vs rect model 2/3 (137, 16 s). The same start, (1.78, −1.35), fails in both with no
         information (std 4.8 mm after 12 tilted probes). **The rect model gives no gain here, not adopted.**
-      - Next: the `--grasp-settle 0.0003` check (one lever, the approach tolerance before closing), then the
-        8 × 12 rect (NIST grip) with plain at 0 and the tilt search.
+      - **`--grasp-settle 0.0003`** (one lever: the TCP within 0.3 mm of the grasp pose before closing; plain, 0
+        offset): the TCP error at the grasp drops from 1.48 to 0.30 mm, but the in-hand y offset stays (round 8:
+        −0.26 → −0.23 mm; rect: −0.21 mm both). **The approach error is not the main cause of the offset;** not adopted.
+      - The dev rect is NIST-faithful in grip, and plain inserts it at 0. That matches src-35's diagnosis of the H5 r1
+        rect 12 failure as plain-probing variance (their base asset also inserts at 0).
   17. **D1 no-regression** (`~/ci_mpc_runs/d1_noreg`, plain D1 arm, defaults, 10 offsets, 2026-10-29 05:00): **10/10**,
       median contact 30.7 s (10-28 plain batches: 10/10 at 27.3 s and 10/10 at 30.3 s). The default path is unchanged
       (all chamferless flags off; it only gained diagnostics). H1–H3 run the same default path; their 10-28 numbers
