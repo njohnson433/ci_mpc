@@ -218,7 +218,11 @@ Read this before starting work (and before re-investigating something "new").
   tilt); axial tip height -0.85..+1.38 mm vs nominal. The running held-out queue keeps it (B compares on the same
   seeds, paired). For later stage runs: detector / demo `--noise-names hole` (e78865a) puts the error on the hole only
   (draws kept, so seed N gives the same hole error with or without peg noise).
-- **Running:** `queue_stage_a.sh` -> `~/ci_mpc_runs/stageA/heldout` (H1 15, H2 5, H3 12, H5 10 runs; one instance).
+- **Two baselines (labels; src-5e / user):**
+  - **Stage A (official, what stage B must beat): `~/ci_mpc_runs/stageA/clean`**, `NOISE_NAMES=hole` (camera error on
+    the hole only), D1 20 seeds (v3) + H1 15 / H2 5 / H3 12 / H5 10, domain 76, cores 16-31. Started 16:20.
+  - **Stage D reference: `~/ci_mpc_runs/stageA/heldout`** (and the D1 table above, `~/ci_mpc_runs/stageA/d1`): the same
+    seeds with the error on the peg detection too (grasp > 2 mm off in 37 %); paired by seed with the clean runs.
 - Video: `headless_impedance_sim.py --record-video` (`VIDEO=path.mp4`), first run
   `~/ci_mpc_runs/video/peg_probe_2_0/peg_probe_2_0.mp4` (current pipeline, 2 mm offset, inserted).
 
