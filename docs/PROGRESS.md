@@ -423,6 +423,31 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (15:35): CI-MPC stage B1 v3, pre-registered: the contact model on transitional contacts (centering / push phases)
+- **Why v3:** v2 showed the probe holds are flat-face contacts that every model explains (M4 failed). The CI-MPC acts
+  on the chamfer, rim and bore, so test there (src-5e: v3 before B2).
+- **Data:**
+  - D1 (Factory peg): the 20 D1 insertions of the push-stop selection (`~/ci_mpc_runs/pushstop/d1_0.0003`,
+    `d1_0.0007`). They have `peg_truth.npz` and the wrist F/T. Their outcomes are known, but no contact-model analysis
+    has touched them.
+  - Dev round 8: 3 new insertions with the frozen chamferless flags (`~/ci_mpc_runs/b1v3/dev_*`, offsets 1.5 / −2 /
+    2.5 mm).
+- **Samples:** every 0.1 s inside the `center` and `push` phases (res.json, joint-state time), without the last 0.15 s
+  of the final push (the seating impact).
+  - Peg pose: `peg_truth.npz`, nearest sample.
+  - Wrench on the peg at the tip: wrist F/T (lag-corrected), mean over ±0.05 s, tared over the 0.25 s before
+    `wrist_t_hover0`.
+  - Model unchanged from v2 (asset dimensions, analytic SDF, same generators).
+- **Metrics and targets, fixed now:**
+  - M1 contact detection (all phase samples): ≥ 90 %.
+  - M2v2 6D wrench residual (contact samples): median ≤ 0.20, p90 ≤ 0.45.
+  - **M4 discrimination, only on samples where the wrong model's contact set differs** (contact flag differs, or the
+    Jaccard index of the two contact-point sets < 0.5). Wrong models: hole 0.5 mm off in x (primary, about the radial
+    clearance) and 2 mm off (secondary). Target: true-model median ≤ 0.5 × wrong-model median on those samples.
+  - **Minimum count:** at least 30 differing samples per set for the primary wrong model. Fewer means **untestable**,
+    not a pass.
+  - B1 v3 passes per set (D1, dev) if M1, M2v2 and the primary M4 meet their targets with n ≥ 30.
+
 ### 2026-10-29 (14:50): H3-100 stopped (project restructure), partial results: C3 = plain over 77 assemblies; slip does not predict failure (`~/ci_mpc_runs/h3_100`)
 - Stopped by PID at 14:00 (src-5e / user restructure: CI-MPC focus). Stage 1 (plain) is complete, stage 2 (c3) has 87
   of ~90 assemblies, stage 3 repeat 2 covers 29 assemblies; rep 3 was not run. Old pipeline (velocity default, C3
