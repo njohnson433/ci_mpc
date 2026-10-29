@@ -447,6 +447,31 @@ Read this before starting work (and before re-investigating something "new").
   - **Minimum count:** at least 30 differing samples per set for the primary wrong model. Fewer means **untestable**,
     not a pass.
   - B1 v3 passes per set (D1, dev) if M1, M2v2 and the primary M4 meet their targets with n ≥ 30.
+- **Result, D1 (15:55, `scripts/b1v3_contact_model.py`; 20 insertions, 2757 samples): FAIL on M4.**
+
+  | D1 metric | result | target |
+  |---|---|---|
+  | M1 contact detection | **93.0 %** | ≥ 90 % ✓ |
+  | M2v2 6D wrench residual | median 0.012, p90 0.201 (n 2523) | ≤ 0.20 / 0.45 ✓ |
+  | M4, hole 0.5 mm off, differing contact sets only | n 636 (testable); true 0.008 vs **wrong 0.000** | true ≤ 0.5 × wrong ✗ |
+  | M4, hole 2 mm off | n 1446; the wrong model fits as well | ✗ |
+
+  (The printed ratios are huge because the wrong-model median is ~1e-15.) **Even on transitional contacts where the
+  wrong model predicts a different contact set, it explains the measured 6D wrench as well or better.** Dev: the 3
+  insertions are still running, but they cannot change the conclusion below.
+- **Conclusion on B1 (v1–v3):** an explanatory wrench test ("can this geometry's friction cones produce the measured
+  wrench?") cannot discriminate geometry. With ~10+ candidate contacts, each with a cone (μ 0.5–0.9), non-negative
+  combinations span almost any 6D wrench. This holds force-only or 6D, probe holds or insertions. What B1 does
+  establish:
+  - the asset-dimension SDF predicts contact presence: M1 92.7–100 % (holds) and 93.0 % (insertions), once the full
+    in-hand pose is known;
+  - its dimension sensitivity (B1b): stable at ±0.1 mm, collapsing at 0.3 mm on the clearance-setting dimensions of a
+    chamfered hole.
+- **Proposal: move the force validation into B2 as a predictive test** (the meaningful one for a controller model).
+  Given the logged setpoint, stiffness and feedforward, the quasi-static plant (SDF contacts + impedance + arm
+  friction) predicts the next pose and contact wrench. Compare them with the logged next state (one-step and
+  multi-step error), with the same wrong-model guard (a prediction from a wrong geometry must be clearly worse).
+  Pre-register before running. src-5e / user to decide.
 
 ### 2026-10-29 (14:50): H3-100 stopped (project restructure), partial results: C3 = plain over 77 assemblies; slip does not predict failure (`~/ci_mpc_runs/h3_100`)
 - Stopped by PID at 14:00 (src-5e / user restructure: CI-MPC focus). Stage 1 (plain) is complete, stage 2 (c3) has 87
