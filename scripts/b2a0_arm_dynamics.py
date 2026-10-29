@@ -24,6 +24,9 @@ p.add_argument("--fit", nargs="+", required=True)
 p.add_argument("--score", nargs="+", required=True)
 p.add_argument("--horizon", type=float, default=0.1)
 p.add_argument("--integrator", type=int, default=1, help="include the reconstructed controller integrator (1) or not (0)")
+p.add_argument("--fc", type=int, default=1, help="include the controller's velocity-mode friction compensation (1) or not (0)")
+p.add_argument("--scene-fric", default="cart", choices=["cart", "joint"], help="scene friction: Cartesian tanh (F_s) or "
+               "the joint-space form of the compensation scaled by F_s")
 args = p.parse_args()
 V_EPS = 2e-3  # [m/s]
 
@@ -54,7 +57,8 @@ def segments(ep):
         decay = np.exp(-(2.0 if en else 5.0) * dt)
         I[k] = np.clip(np.where(acc, I[k - 1] + w * e * dt, I[k - 1] * decay), -lim, lim)
     starts = [i for i in range(5, len(t) - n - 1, max(1, n // 2)) if free[i:i + n + 1].all()]
-    return {"t": t, "x": tr["x"], "v": v, "u": tr["cmd"], "ud": tr["twist_d"][:, :3], "I": I if args.integrator else 0 * I, "ff": tr["ff"], "K": tr["K"][:, :3],
+    Ffc = tr["F_fc"][:, :3] if (args.fc and "F_fc" in tr.files) else np.zeros_like(tr["x"])
+    return {"t": t, "x": tr["x"], "v": v, "u": tr["cmd"], "ud": tr["twist_d"][:, :3], "I": I if args.integrator else 0 * I, "Ffc": Ffc, "ff": tr["ff"], "K": tr["K"][:, :3],
             "D": tr["D"][:, :3], "dt": dt, "n": n, "starts": starts}
 
 
@@ -63,7 +67,10 @@ def simulate(S, i, ax, M, D, Fs, b=0.0):
     for k in range(i, i + S["n"]):
         Dk = S["D"][k, ax] if S["D"][k, ax] > 0 else D
         F_imp = np.clip(S["K"][k, ax] * (S["u"][k, ax] - x) - Dk * (v - S["ud"][k, ax]) - S["I"][k, ax] + S["ff"][k, ax], -18.0, 18.0)
-        a = (F_imp + b - Fs * np.tanh(v / V_EPS)) / M
+        if args.scene_fric == "joint":  # the scene's joint friction in the same joint-space form, scale Fs (~1 = cancels the compensation)
+            a = (F_imp + (1.0 - Fs) * S["Ffc"][k, ax] + b) / M
+        else:
+            a = (F_imp + S["Ffc"][k, ax] + b - Fs * np.tanh(v / V_EPS)) / M  # + the controller's friction compensation (known)
         v += a * dt
         x += v * dt
     return x

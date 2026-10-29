@@ -1,7 +1,8 @@
 """CI-MPC B2: full 6D trace from a rosbag2 of /joint_states, the MPC commands and the external wrench (as
 scripts/isaac/bag_trace.py, which keeps only the translational part). Per joint-state stamp (sim time): TCP position +
 rotation (FK), the commanded pose (position + quaternion xyzw), desired twist (6), feedforward wrench (force + torque),
-stiffness (6), damping (6), integral flag (zero-order hold), the observer wrench (force + torque). Run in the ROS environment.
+stiffness (6), damping (6), integral flag (zero-order hold), the observer wrench (force + torque), and the controller's
+velocity-mode friction compensation mapped to the TCP (F_fc, 6). Run in the ROS environment.
     python3 scripts/b2_trace.py BAG_DIR out.npz
 """
 import sys
@@ -18,6 +19,10 @@ ARM = [f"fr3_joint{i}" for i in range(1, 8)]
 model = pin.buildReducedModel(full, [j for j in range(1, full.njoints) if full.names[j] not in ARM], pin.neutral(full))
 data = model.createData()
 ee = model.getFrameId("fr3_hand_tcp")
+# the controller's velocity-mode friction compensation (cartesian_impedance_controller.cpp, Isaac default: scale 1.0,
+# header coulomb / beta, friction_vel_eps 0.02 rad/s): a known joint torque, mapped to the TCP as F = (J^T)^+ tau
+COULOMB = np.array([1.025412896, 1.259913793, 0.8380147058, 0.96, 1.2928, 0.41525, 0.5341655])
+BETA = np.array([1.18, 0, 0.55, 0.87, 0.935, 0.54, 0.45])
 
 r = rosbag2_py.SequentialReader()
 r.open(rosbag2_py.StorageOptions(uri=bag, storage_id="sqlite3"), rosbag2_py.ConverterOptions("", ""))
@@ -30,10 +35,16 @@ while r.has_next():
     if topic == "/joint_states":
         if all(n in m.name for n in ARM):
             q = np.array([m.position[m.name.index(n)] for n in ARM])
+            dq = np.array([m.velocity[m.name.index(n)] for n in ARM]) if len(m.velocity) else np.zeros(7)
+            pin.computeJointJacobians(model, data, q)
             pin.framesForwardKinematics(model, data, q)
             T = data.oMf[ee]
             qt = pin.Quaternion(T.rotation)
-            js.append((t, m.header.stamp.sec + 1e-9 * m.header.stamp.nanosec, *T.translation, qt.x, qt.y, qt.z, qt.w))
+            J = pin.getFrameJacobian(model, data, ee, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)
+            tau_fc = COULOMB * np.tanh(dq / 0.02) + BETA * dq
+            F_fc = np.linalg.pinv(J.T) @ tau_fc
+            js.append((t, m.header.stamp.sec + 1e-9 * m.header.stamp.nanosec, *T.translation, qt.x, qt.y, qt.z, qt.w,
+                       *F_fc))
     elif topic.endswith("mpc_command"):
         p, o, f, tq = m.pose.position, m.pose.orientation, m.wrench.force, m.wrench.torque
         tl, ta = m.twist.linear, m.twist.angular
@@ -48,7 +59,7 @@ wr[:, 0] = np.interp(wr[:, 0], js[:, 0], js[:, 1])
 js = js[:, 1:]
 ic = np.clip(np.searchsorted(cmd[:, 0], js[:, 0], side="right") - 1, 0, None)
 iw = np.clip(np.searchsorted(wr[:, 0], js[:, 0], side="right") - 1, 0, None)
-np.savez(out, t0=js[0, 0], t=js[:, 0] - js[0, 0], x=js[:, 1:4], q_xyzw=js[:, 4:8],
+np.savez(out, t0=js[0, 0], t=js[:, 0] - js[0, 0], x=js[:, 1:4], q_xyzw=js[:, 4:8], F_fc=js[:, 8:14],
          cmd=cmd[ic, 1:4], cmd_q_xyzw=cmd[ic, 4:8], ff=cmd[ic, 8:11], ff_torque=cmd[ic, 11:14],
          K=cmd[ic, 14:20], D=cmd[ic, 20:26], integral=cmd[ic, 26], twist_d=cmd[ic, 27:33], cmd_age=js[:, 0] - cmd[ic, 0],
          wrench=wr[iw, 1:4], wrench_torque=wr[iw, 4:7], n_cmd=len(cmd), cmd_t=cmd[:, 0] - js[0, 0])
