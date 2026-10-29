@@ -17,6 +17,7 @@ from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithP
 p = argparse.ArgumentParser()
 p.add_argument("--sync-dir", required=True)
 p.add_argument("--pos-noise", type=float, default=0.0, help="std of the position error [m]")
+p.add_argument("--pos-noise-z", type=float, default=-1.0, help="std of the z position error [m] (default: --pos-noise; a depth plane fit of a top face is better than edge localization in xy)")
 p.add_argument("--size-noise", type=float, default=0.0, help="std of the size error [m]")
 p.add_argument("--yaw-noise-deg", type=float, default=0.0, help="std of the yaw error [deg]")
 p.add_argument("--seed", type=int, default=1)
@@ -29,7 +30,8 @@ errors = []  # fixed estimation error per object: (position, size, yaw)
 
 def error(i):
     while len(errors) <= i:
-        errors.append((rng.normal(0, args.pos_noise, 3), rng.normal(0, args.size_noise, 3),
+        sz = args.pos_noise if args.pos_noise_z < 0 else args.pos_noise_z
+        errors.append((rng.normal(0, [args.pos_noise, args.pos_noise, sz]), rng.normal(0, args.size_noise, 3),
                        np.radians(rng.normal(0, args.yaw_noise_deg))))
     return errors[i]
 

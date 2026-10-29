@@ -211,6 +211,7 @@ p.add_argument("--plan-period", type=float, default=0.1, help="[s] sim time per 
 p.add_argument("--probe", action="store_true", help="after inserting: hold and push with known feedforward forces "
                "(checks the external wrench estimate and the PhysX contact report against each other)")
 p.add_argument("--pos-noise", type=float, default=0.0)
+p.add_argument("--pos-noise-z", type=float, default=-1.0, help="detector z position noise std [m] (default: as --pos-noise)")
 p.add_argument("--size-noise", type=float, default=0.0)
 p.add_argument("--yaw-noise-deg", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
@@ -427,7 +428,8 @@ T_home = fk(state["q"])
 here = os.path.dirname(os.path.abspath(__file__))
 det_log = open(os.path.join(args.log_dir, "sim_object_detector.log"), "w")
 procs.append(subprocess.Popen([sys.executable, os.path.join(here, "sim_object_detector.py"), "--sync-dir", args.sync_dir,
-                               "--pos-noise", str(args.pos_noise), "--size-noise", str(args.size_noise),
+                               "--pos-noise", str(args.pos_noise), "--pos-noise-z", str(args.pos_noise_z),
+                               "--size-noise", str(args.size_noise),
                                "--yaw-noise-deg", str(args.yaw_noise_deg), "--seed", str(args.seed)],
                               stdout=det_log, stderr=subprocess.STDOUT))
 exe = os.path.join(get_package_prefix("ci_mpc_planner"), "lib", "ci_mpc_planner", "mpc_node")
