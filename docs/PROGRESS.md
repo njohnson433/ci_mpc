@@ -12,7 +12,12 @@ Read this before starting work (and before re-investigating something "new").
   as parameters (d09356a, pushed). Next: (1) send src-35 the breakaway raw.npz paths (observer vs O_F_ext_hat_K;
   the observer topic published nothing on the robot: check why); (2) phase-dependent compensation (velocity for
   motion, coulomb 0.5 halves the breakaway at rest but wobbles in motion) and the C3 values with it, both through the
-  held-out sim set before any default; (2b) next robot session, needs a peg + a flat reference: grasp slip under
+  held-out sim set before any default. **Held-out result (src-f1, "2026-10-29 (03:00)", realfric scene, 160 runs):
+  hybrid 0.75 / rest 0.5 vs none: H1 15/15 both, 4.9 s faster (p 0.015, same pre-seat force); H2 3/5 vs 1/5; H3 9/12
+  vs 6/12 (within H3 noise; 24 more reps pending); cost ~3x in-hand slip (0.32 vs 0.10 mm), higher seating spike.
+  Velocity-only (rest 0) in contact: H1 as fast, H3 +0/-2, so the rest part helps in sim. Real C3 values: no gain,
+  keep C3 out.** Robot plan: velocity-only in contact until the H3 reps confirm; then hybrid rest 0.5 in contact with
+  a force check (seating spike, the 4 N gate); (2b) next robot session, needs a peg + a flat reference: grasp slip under
   ~3 N probe presses (src-35: Isaac slips 2.1 mm up / 3.4 mm along the pads in 40 probes, res.json peg_slip_hand_mm,
   66aa91b): re-touch the reference every N probes, log z (and xy at an edge) drift; no slip on the real hand = sim
   artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
