@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CI-MPC Assembly Pipeline</title>
+<style>
+/* Layout: one reading column; the pipeline is a vertical flow of stage cards with "why" and "status" side notes. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #d6dbe3;
+  --accent: #1f5fae; --accent-soft: #e4edf9;
+  --good: #1d7a46; --good-soft: #e2f3e9; --warn: #9a6400; --warn-soft: #fbf0d9;
+  --bad: #b02a2a; --bad-soft: #f8e3e3; --idle: #6b7280; --idle-soft: #eceef2;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161d; --panel: #1a2029; --fg: #e5e9f0; --muted: #9aa4b5; --line: #2c3442;
+    --accent: #7fb0ec; --accent-soft: #1d2b3e;
+    --good: #6fcf97; --good-soft: #17301f; --warn: #e8b55a; --warn-soft: #33290f;
+    --bad: #ef8a8a; --bad-soft: #3a1b1b; --idle: #a0a7b4; --idle-soft: #242a33;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--sans); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: 1.9rem; }
+h2 { font-size: 1.35rem; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.02rem; }
+p { margin: 0; max-width: 72ch; }
+.lede { color: var(--muted); font-size: 1.02rem; }
+.eyebrow { font: 600 0.72rem/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+section { display: grid; gap: 16px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: 0.88rem; }
+
+/* status pills */
+.pill { display: inline-block; font: 600 0.72rem/1 var(--sans); letter-spacing: 0.03em; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+.s-good { background: var(--good-soft); color: var(--good); }
+.s-warn { background: var(--warn-soft); color: var(--warn); }
+.s-bad  { background: var(--bad-soft);  color: var(--bad); }
+.s-idle { background: var(--idle-soft); color: var(--idle); }
+.s-run  { background: var(--accent-soft); color: var(--accent); }
+
+/* pipeline flow */
+.flow { display: grid; gap: 0; }
+.stage { display: grid; grid-template-columns: 44px 1fr; gap: 0 14px; }
+.rail { display: flex; flex-direction: column; align-items: center; }
+.num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-size: 0.9rem; flex: none; }
+.rail::after { content: ""; flex: 1; width: 2px; background: var(--line); margin: 4px 0; }
+.stage:last-child .rail::after { display: none; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; display: grid; gap: 10px; min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.note { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; min-width: 0; }
+.note .eyebrow { display: block; margin-bottom: 4px; }
+.note.why { border-color: var(--accent); }
+.note.now { border-color: var(--good); }
+.note ul { margin: 0; padding-left: 18px; }
+.note li + li { margin-top: 2px; }
+
+/* layer strip */
+.layers { display: grid; gap: 8px; }
+.layer { display: grid; grid-template-columns: 180px 1fr; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.layer b { display: block; }
+@media (max-width: 640px) { .layer { grid-template-columns: 1fr; } }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.n { white-space: nowrap; }
+
+/* sessions */
+.sessions { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.sess { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+.sess ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+
+/* lessons */
+.lessons { display: grid; gap: 10px; }
+.lesson { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; }
+@media (max-width: 560px) { .lesson { grid-template-columns: 1fr; gap: 4px; } }
+
+footer { color: var(--muted); font-size: 0.85rem; }
+/* development stages */
+.stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.stg { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.stg.cur { border: 2px solid var(--accent); }
+.stg .letter { font-size: 1.5rem; font-weight: 700; color: var(--accent); line-height: 1; }
+.stg p { font-size: 0.9rem; }
+.tag { font-size: 0.78rem; color: var(--muted); }
+.flowline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.9rem; }
+.flowline span.box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.flowline span.box.b { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.flowline span.arr { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header style="display:grid; gap:10px">
+  <span class="eyebrow">ci_mpc · Franka FR3 · status 2026-10-29 14:10</span>
+  <h1>CI-MPC Assembly Pipeline</h1>
+  <p class="lede">How a part gets from the gripper into a hole, built in stages: each stage switches on one part of the pipeline and keeps the rest simplified. The current focus is stage B, making the contact-implicit MPC work. The goal is a controller that generalizes across assembly tasks, not one tuned to the 8 mm peg.</p>
+  <div class="meta">
+    <span><span class="pill s-good">adopted</span> in use</span>
+    <span><span class="pill s-run">in progress</span> being built or run</span>
+    <span><span class="pill s-warn">open</span> partly works / known limit</span>
+    <span><span class="pill s-bad">rejected</span> tested, no gain</span>
+    <span><span class="pill s-idle">later</span> parked or simplified for now</span>
+  </div>
+</header>
+
+<!-- ============ STAGES ============ -->
+<section>
+  <h2>Development stages</h2>
+  <p>Decided 2026-10-29. One part is switched on at a time, and every stage must beat the one before it on D1 and the held-out sets H1–H3 + H5.</p>
+  <div class="stages">
+    <div class="stg"><span class="letter">A</span><h3>Baseline</h3><span class="pill s-run">building (src-35)</span>
+      <p>Known in-hand pose. Camera hole estimate with 2 mm error as the prior. Likelihood probe search, smooth approach, plain push.</p></div>
+    <div class="stg cur"><span class="letter">B</span><h3>CI-MPC in contact</h3><span class="pill s-run">current focus · B1 (src-f1)</span>
+      <p>Replaces the plain push after the search hands over. SDF contact model from primitive dimensions, smoothed complementarity, LM solver.</p></div>
+    <div class="stg"><span class="letter">C</span><h3>Perception realism</h3><span class="pill s-idle">later</span>
+      <p>Hole pose and primitive dimensions estimated from the wrist camera. No given CAD models, so it generalizes.</p></div>
+    <div class="stg"><span class="letter">D</span><h3>Unknown grasp</h3><span class="pill s-idle">later</span>
+      <p>In-hand pose estimated after grasping, plus slip detection.</p></div>
+    <div class="stg"><span class="letter">E</span><h3>Search research</h3><span class="pill s-idle">parked</span>
+      <p>New likelihood work: other shapes, probing on purpose inside the CI-MPC.</p></div>
+  </div>
+  <div class="flowline" aria-label="Stage B control flow">
+    <span class="box">camera estimate (σ 2 mm)</span><span class="arr">→</span>
+    <span class="box">prior N(det, 2 mm)</span><span class="arr">→</span>
+    <span class="box">likelihood probe search</span><span class="arr">→</span>
+    <span class="box">handover: tip in bore + belief std &lt; 2× clearance</span><span class="arr">→</span>
+    <span class="box b">CI-MPC: align, regulate force, seat smoothly</span><span class="arr">→</span>
+    <span class="box">seated</span>
+  </div>
+  <p class="tag">If the CI-MPC's hole estimate drifts beyond 2σ, or its contact readings stop making sense, it hands back to the search.</p>
+</section>
+
+<!-- ============ PIPELINE ============ -->
+<section>
+  <h2>The insertion pipeline, step by step</h2>
+  <p>Contact time covers steps 4 to 6. Almost all of it is the hole search in step 5; the slide into the hole takes under 1 s (median 0.8 s on D1). With a 2 mm camera error, 88 % of starts are more than 1 mm off, so the search is needed. The plain push went in 12/12 at ≤ 1 mm offset on H5, but only 3/12 at ≥ 2 mm.</p>
+
+  <div class="flow">
+
+    <div class="stage"><div class="rail"><div class="num">1</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Grasp the part</h3><span class="pill s-idle">simplified: known pose (stage A)</span></div>
+        <p>The Franka Hand closes on the standing part. For now the controller gets the true in-hand pose from the sim (<code>--known-grasp</code>).</p>
+        <div class="cols">
+          <div class="note why"><span class="eyebrow">Why simplify</span>The grasp tips the part ~0.4°, leaving it 0.2–0.4 mm off centre. That is larger than many clearances. Assuming a known pose lets us work on the contact controller first.</div>
+          <div class="note now"><span class="eyebrow">Later (stage D)</span>Estimate the in-hand pose once after grasping. Gripper width and the parallel-jaw constraint make that a small problem.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">2</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Transport in free space (MPC stage 1)</h3><span class="pill s-good">works on real FR3</span></div>
+        <p>The MPC moves the part above the camera's hole estimate while the impedance controller tracks it.</p>
+        <div class="cols">
+          <div class="note now"><span class="eyebrow">Status</span>Real FR3: steps ≤ 0.4 mm. Circle 1.9 mm RMS without friction compensation, 0.52–0.62 mm with velocity compensation.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">3</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Grasp-height calibration</h3><span class="pill s-idle">dropped in stage A</span></div>
+        <p>It used to touch the top face once to learn how far the part sticks out of the hand. With a known grasp, the tip height comes directly from the in-hand pose.</p>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">4</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Smooth approach and contact detection</h3><span class="pill s-run">building (stage A)</span></div>
+        <p>Decelerate toward the surface height expected from the camera. Detect contact when the force observer reads Fz &gt; 1 N (<code>--smooth-approach</code>).</p>
+        <div class="cols">
+          <div class="note why"><span class="eyebrow">Why it changed</span>The old rule descended at full speed (10 mm/s) and declared contact once the command was 3 mm below the stalled tip (1.5 N spring force). It works, but it hits the surface hard. The observer is now validated to ±0.2 N, so it can detect contact directly.</div>
+          <div class="note now"><span class="eyebrow">New metric</span>Speed at contact and peak jerk are logged, so smoothness counts in the comparison.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">5</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Find the hole: camera prior + likelihood search</h3><span class="pill s-run">integrating (stage A)</span></div>
+        <p>The camera's estimate becomes a Gaussian prior with a 2 mm spread (<code>--prior-sigma 0.002</code>). Each probe presses at a point, reads tip height and force, and updates the belief through the learned likelihood. The next probe goes where it is most informative.</p>
+        <div class="cols">
+          <div class="note why"><span class="eyebrow">What the likelihood is</span>A learned model of how likely each probe reading is if the hole is at a given position. It turns probe readings into a sharper belief about the hole position.</div>
+          <div class="note now"><span class="eyebrow">Which model</span><ul>
+            <li><b>v5-clamp</b>: trained only on batched-sim probes. Ties v3 in closed loop (R: 23.9 vs 23.1 s) and is robust to the real arm's force-estimate error (1.3 vs 3.2 mm for v3). Candidate.</li>
+            <li>Peg only. Other parts use the hand-built model; sharp-edged holes use the chamferless search (H5 21/24 vs 15/24).</li>
+          </ul></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">6</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Insert: plain push (A) → CI-MPC (B)</h3><span class="pill s-good">plain push = baseline</span> <span class="pill s-run">CI-MPC: B1</span></div>
+        <p>Once the tip is in the bore and the belief is tight, the controller drives the part to the bottom. Stage A uses the plain push (push-stop tolerance under test). Stage B replaces it with the new CI-MPC.</p>
+        <div class="cols">
+          <div class="note why"><span class="eyebrow">Why the old C3 failed</span><ul>
+            <li>It took over too early, mid-search, aiming at an estimate up to 4 mm off (clearance 0.51 mm).</li>
+            <li>Hand-built linearized contact model with a frozen contact set.</li>
+            <li>Arm friction model far from Isaac.</li>
+            <li>100–700 ms per decision.</li>
+            <li>It optimized pose-to-goal, so it acted as a slower plain push.</li>
+          </ul></div>
+          <div class="note now"><span class="eyebrow">New CI-MPC (approved design)</span><ul>
+            <li>Analytic SDF of primitives (cylinder/box from dimensions, rounded edges): gap and normal everywhere, no CAD.</li>
+            <li>Smoothed complementarity: softplus normal force, regularized Coulomb friction.</li>
+            <li>LM over 5–10 steps at 20–50 Hz, warm start, ≤ 10 ms.</li>
+            <li>Objective: normal force 3–5 N, lateral and torque caps, axis alignment, steady progress that slows near the bottom, smooth commands.</li>
+            <li>Hole estimate refined from contacts every tick, starting from the search's belief.</li>
+          </ul></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage"><div class="rail"><div class="num">7</div></div>
+      <div class="card">
+        <div class="card-head"><h3>Seat and check success</h3><span class="pill s-good">adopted</span></div>
+        <p>Success: within 1.0 mm of full depth and 1.5 mm in xy, from sim truth. We report three wrist-force numbers: the max (often a single 17 ms seating spike, up to 25 N), a 50 ms peak, and the max before seating.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ STAGE B PLAN ============ -->
+<section>
+  <h2>Stage B: validation steps</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Step</th><th>What</th><th>Passes when</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="n"><b>B1</b></td><td>SDF contact model alone, offline against Isaac wrist F/T and pose logs (peg and rectangle). Includes a sensitivity test: dimensions ±0.1/0.3/1 mm, yaw ±1–3°</td><td>Predicted contact force matches the wrist within a target set before the run. The sensitivity test tells stage C how accurate the camera's geometry must be</td><td><span class="pill s-run">running</span></td></tr>
+      <tr><td class="n"><b>B2</b></td><td>MPC in an offline smooth plant with a 2 mm camera error</td><td>Beats the plain push in the same plant</td><td><span class="pill s-idle">next</span></td></tr>
+      <tr><td class="n"><b>B3</b></td><td>Isaac: D1 + dev holes</td><td>Beats the stage-A plain push on success, time, true force, smoothness</td><td><span class="pill s-idle">later</span></td></tr>
+      <tr><td class="n"><b>B4</b></td><td>H1–H3 (+ H4 offline), once, design frozen</td><td>Paired gain over the plain push. Only then can it become a default</td><td><span class="pill s-idle">later</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="tag">Geometry order: known primitive dimensions in B1–B4, then the same SDF with parameters fitted from the camera in stage C. The controller doesn't change; only the source of the numbers does.</p>
+</section>
+
+<!-- ============ LAYERS ============ -->
+<section>
+  <h2>What runs underneath every step</h2>
+  <div class="layers">
+    <div class="layer"><div><b>Impedance controller</b><span class="eyebrow">cartesian_impedance_control</span></div>
+      <p>Cartesian spring-damper on the FR3, runs inside Isaac's physics step in sim. Friction compensation lives here. <span class="pill s-good">hybrid = real-robot default</span> <span class="pill s-good">velocity = Isaac default</span></p></div>
+    <div class="layer"><div><b>Force observer</b><span class="eyebrow">external wrench estimate</span></div>
+      <p>In sim it matches true wrist force (−0.06 ± 0.20 N). On the real arm, Franka's estimate reads 0.13–0.37 of a friction-held force as external force. Modeled in sim, per-joint refit pending real logs.</p></div>
+    <div class="layer"><div><b>Full sim pipeline</b><span class="eyebrow">Isaac + ROS 2 control</span></div>
+      <p>The real controller, planner and probing logic, one episode per Isaac instance. This is the benchmark ground truth, with a simulated wrist F/T (log lag 0.235 s, corrected by <code>wrist_csv.py</code>).</p></div>
+    <div class="layer"><div><b>Batched sim</b><span class="eyebrow">256–512 parallel envs</span></div>
+      <p>Fast probe sim for likelihood training data. Matched to the full pipeline at 5.0 N press (agreement 0.66, above the pipeline's 0.47–0.50 with itself).</p></div>
+    <div class="layer"><div><b>Arm scenes</b><span class="eyebrow">friction models</span></div>
+      <p><b>Nominal</b>: about 2× stickier than the real arm. <b>realfric</b> matches the real breakaway and stands in for the real robot.</p></div>
+  </div>
+</section>
+
+<!-- ============ BENCHMARKS ============ -->
+<section>
+  <h2>How we decide: tuning sets vs held-out sets</h2>
+  <p>Parameters are tuned on D1 / R and the dev parts only. H1–H5 are held out, and a change becomes a default only after it helps there.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Set</th><th>What it is</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td class="n"><b>D1, R, R2</b></td><td>8 mm peg (Factory PegInsert); stage A uses camera noise instead of fixed offset grids</td><td><span class="pill s-run">tune here</span></td></tr>
+      <tr><td class="n"><b>dev parts</b></td><td>Chamferless round 4/8/10 mm, square, rect 12×8</td><td><span class="pill s-run">tune here</span></td></tr>
+      <tr><td class="n"><b>H1</b></td><td>Peg under changed conditions</td><td><span class="pill s-good">held out</span></td></tr>
+      <tr><td class="n"><b>H2</b></td><td>Factory gear on shaft</td><td><span class="pill s-good">held out</span></td></tr>
+      <tr><td class="n"><b>H3 / H3-100</b></td><td>AutoMate assemblies. Noise: 7/36 flips with identical code. H3-100 stopped for the restructure, partial log kept</td><td><span class="pill s-good">held out</span></td></tr>
+      <tr><td class="n"><b>H4</b></td><td>Offline plant changes on the planner</td><td><span class="pill s-good">held out</span></td></tr>
+      <tr><td class="n"><b>H5</b></td><td>NIST Task Board #1 parts, no chamfer, 0.05–0.13 mm clearance</td><td><span class="pill s-good">held out</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ RESULTS ============ -->
+<section>
+  <h2>Results that shaped the plan</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Thread</th><th>Result</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><b>Hybrid friction compensation</b><br><span class="mono">0.75 moving / 0.5 at rest</span></td>
+          <td>realfric vs none: H1 4.9 s faster (p 0.015), H2 10/15 vs 6/15, H3 23/36 vs 15/36. Pre-seat force same, seating spike ~16 vs 9 N (accepted).</td>
+          <td><span class="pill s-good">real default</span><br><span class="pill s-warn">Isaac stays velocity (H2 5/15 vs 7/15)</span></td></tr>
+      <tr><td><b>Old C3</b></td><td>No held-out gain, slower. Diagnosed in <code>docs/ci_mpc_design.md</code>.</td><td><span class="pill s-bad">replaced by new CI-MPC</span></td></tr>
+      <tr><td><b>Chamferless search</b></td><td>H5 21/24 vs 15/24. At ≥ 2 mm: 10/12 vs 3/12 (p 0.016).</td><td><span class="pill s-good">frozen</span></td></tr>
+      <tr><td><b>v5 likelihood (batched sim)</b></td><td>Ties v3 once clamped beyond 9 mm, and is robust to the real force-estimate error. Peg only.</td><td><span class="pill s-good">stage A candidate</span></td></tr>
+      <tr><td><b>Push stop tolerance</b></td><td>The push stopped at the 1.0 mm success threshold. Testing 0.3/0.5/0.7 mm.</td><td><span class="pill s-run">running</span></td></tr>
+      <tr><td><b>In-hand slip, grasp tilt</b></td><td>0.2–0.4 mm offset after every grasp; up to 2–3 mm slip over long probe sweeps. Thin 4 mm peg is grasp-limited.</td><td><span class="pill s-idle">stage D</span></td></tr>
+      <tr><td><b>Square holes</b></td><td>The rectangle-aware search model brought no gain.</td><td><span class="pill s-warn">known limit</span></td></tr>
+      <tr><td><b>Sim scene from real joint friction</b></td><td>Still 1.4–2× too sticky; realfric stays.</td><td><span class="pill s-bad">rejected</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ LESSONS ============ -->
+<section>
+  <h2>Corrections that changed the picture</h2>
+  <div class="lessons">
+    <div class="lesson"><span class="pill s-bad">retracted</span><p><b>"Observer over-reads contact by +1.4 N."</b> It was a 0.235 s timestamp lag in the wrist F/T log. Aligned, the observer is accurate.</p></div>
+    <div class="lesson"><span class="pill s-bad">retracted</span><p><b>"C3 has lower force on H1."</b> The seating spike in unpaired medians. Paired, plain and C3 are equal.</p></div>
+    <div class="lesson"><span class="pill s-warn">corrected</span><p><b>Real force estimate reads 0.75× of held friction.</b> Refit on the real logs: 0.13–0.37.</p></div>
+    <div class="lesson"><span class="pill s-warn">dropped</span><p><b>80 % sim-fidelity target.</b> The pipeline agrees with itself on only 47–50 % of probe classes.</p></div>
+  </div>
+</section>
+
+<!-- ============ SESSIONS ============ -->
+<section>
+  <h2>Who is doing what</h2>
+  <div class="sessions">
+    <div class="sess"><div class="card-head"><h3>src-f1</h3><span class="pill s-run">stage B</span></div><span class="eyebrow">CI-MPC</span>
+      <ul><li>B1: SDF contact model vs Isaac wrist logs, plus sensitivity test</li><li>Finishing the push-stop selection</li></ul></div>
+    <div class="sess"><div class="card-head"><h3>src-35</h3><span class="pill s-run">stage A</span></div><span class="eyebrow">baseline · video</span>
+      <ul><li>Flags committed (7f31161): known grasp, 2 mm camera noise, 2 mm prior, smooth approach; smoke test next</li><li>Then the stage-A baseline on D1 + H1–H3 + H5</li><li>First video done; stage-A video next</li></ul></div>
+    <div class="sess"><div class="card-head"><h3>src-54</h3><span class="pill s-idle">waiting</span></div><span class="eyebrow">real FR3</span>
+      <ul><li>Next session: MPC + hold test, first-touch and seating peaks with hybrid, hand slip, 200 Hz torque logs, camera accuracy if possible</li></ul></div>
+    <div class="sess"><div class="card-head"><h3>src-5e</h3><span class="pill s-good">coordinating</span></div><span class="eyebrow">this session</span>
+      <ul><li>Keeps the stages and the held-out rule, avoids duplicate work, relays results</li></ul></div>
+  </div>
+</section>
+
+<footer>Sources: ci_mpc/docs/PROGRESS.md, docs/ci_mpc_design.md, CLAUDE.md "Develop in stages", and the result files in ~/ci_mpc_runs. Numbers are sim seconds and sim wrist force unless marked real FR3.</footer>
+</div>
+</body>
+</html>
