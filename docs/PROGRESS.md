@@ -24,8 +24,8 @@ Read this before starting work (and before re-investigating something "new").
     `scripts/recompute_wrist_peaks.py`, dry run sent to src-f1). v3 / v4 force is fine; their tip labels carry the
     pipeline's in-hand slip (truth: 2.1 mm up / 3.4 mm along the pads over 40 probes).
   - Press calibration done (entry "step 5c"): batched `--sff 5.0` matches the pipeline (force and engagement).
-  - Running since 00:01: `batched_collect.py --envs 256 --seed 0 --sff 5.0` -> `~/ci_mpc_runs/vec/step5/collect_s0_sff50.npz`
-    (saves every 200 steps). Next: train v5 (v4 recipe), check v5 on the 320 step4d probes, D1 / R vs v3.
+  - v5 trained (entry "likelihood v5"): = v3 on held-out pipeline probes. Running: closed-loop D1 v3 vs v5
+    (`~/ci_mpc_runs/vec/v5_d1`). Next: R set, then H sets only if v5 is to become a default (peg-only model).
   - Pipeline test of v5 needs `--force-source wrist` (c270baf, lag-corrected 4694b78; untested in a run).
   - Real-joint-ID scene (`fr3_scene_real1028.usd`, FR3_PARAMS) is opt-in only: 1.4-2x the real Cartesian breakaway.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
@@ -156,6 +156,29 @@ Read this before starting work (and before re-investigating something "new").
   `cd ~/franka_ros2_ws/src/cartesian_impedance_control && git format-patch main..isaac-sim-pinocchio --stdout > ../ci_mpc/patches/cartesian_impedance_control_isaac-sim-pinocchio.patch`
 
 ## Log
+
+### 2026-10-29 03:00: likelihood v5 (trained on batched sim probes only, peg only): equals v3 on held-out pipeline probes
+- Data: `batched_collect.py --envs 256 --sff 5.0 --seed 0` (step 5c calibration), 10165 probes / 256 envs (stopped
+  at 10165 / 10240: 49 envs still finishing; the loop waits for every env), Fz median 4.64 N, engaged by r 0-4 /
+  4-5.5 / 5.5-9 mm 64 / 38 / 38 % (pipeline 74 / 43 / 35). Trained with the v4 recipe on batched only
+  (`merge_probe_datasets.py` + `train_probe_likelihood.py --train-filter batched --val-filter sweeps2 --val 1.0`).
+- **Held-out validation = pipeline sweeps2 w0_e009-e039** (31 runs, 1240 probes; e000-e008 are the sff calibration set,
+  src-5e). v3 never saw sweeps2. New `--eval MODEL` scores a saved model on the same runs. Replay "search" (probes
+  before the first > 1 mm sink), median error / P(within 2 mm), sensor errors x0 / x1 / x2:
+
+  | model | with distance-prior correction | without (fair offline: the replay shares the prior bias, 2026-10-26) |
+  |---|---|---|
+  | hand | 1.79 / 0.47, 2.00 / 0.40, 2.00 / 0.41 | |
+  | v3 (pipeline probes) | 1.83 / 0.33, 1.80 / 0.36, 2.30 / 0.32 | **1.01 / 0.64, 0.90 / 0.66, 0.94 / 0.63** |
+  | v5 (batched probes) | 3.63 / 0.12, 3.08 / 0.13, 3.20 / 0.15 | **1.10 / 0.63, 0.97 / 0.63, 0.91 / 0.63** |
+
+- **v5 = v3 offline** (without the correction both reach ~1 mm, P2mm ~0.63-0.66): the batched sim transfers to the
+  pipeline for the peg. With the correction v5 is worse offline; the correction is for closed loop (the belief chases
+  its own probes; the replay cannot show it). v5's table matches v3's in 0-9 mm (+1.15..-1.12 vs +1.07..-0.99) and is
+  steeper beyond 10 mm (batched has no probes there). Search-phase features match (r, tip, Fz, lateral, lateral
+  direction cos +0.44 vs +0.53 engaged).
+- Saved `ci_mpc_planner/models/probe_likelihood_v5_batched.npz` ("batched, peg only"). **Closed loop running:** D1,
+  plain probe, R2 settings, v3 vs v5 interleaved, 2 repeats, one instance (`~/ci_mpc_runs/vec/v5_d1/queue.sh`).
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
