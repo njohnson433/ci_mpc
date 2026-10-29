@@ -261,7 +261,13 @@ class CiCtrlFactoryEnv(FactoryEnv):
     #   "wrist": M qdd + C dq + J_hand^T W_hand, W_hand = the hand's incoming joint wrench (world-aligned, about the hand
     #     origin), i.e. the link-side torque for everything acting through the hand (fingers, held part: all our
     #     contacts); neglects the hand subtree's inertial force (~0.1 N at our accelerations), forces on links 1-7.
+    #   "franka": the real FR3's O_F_ext_hat_K, which reads joint friction as external force (src-54's real breakaway /
+    #     free-space MPC logs, PROGRESS 2026-10-29 "real-arm force estimate model"): wrist + alpha (tau_cmd - wrist), i.e.
+    #     alpha x the torque the joint friction (and rotor inertia) absorbed; alpha = static at rest, kinetic when the
+    #     joint slides (tanh blend over |dq| 0.01 rad/s). CI_FRANKA_ALPHA "static,kinetic" (default 0.25, 1.0: real
+    #     arm without compensation, static slope 0.13-0.37 per axis, sliding ~ the full kinetic friction).
     ci_tau_source = os.environ.get("CI_TAU_SOURCE", "wrist")
+    ci_franka_alpha = tuple(float(v) for v in os.environ.get("CI_FRANKA_ALPHA", "0.25,1.0").split(","))
 
     def ci_state(self):
         """Inputs of the C++ controller from PhysX: q, dq, M (no armature), C dq, J at the TCP (world-aligned), TCP
@@ -278,6 +284,11 @@ class CiCtrlFactoryEnv(FactoryEnv):
         else:
             tau = (M @ self.ci_qdd.unsqueeze(-1)).squeeze(-1) + cor + (
                 self.ci_hand_jacobian().transpose(1, 2) @ self.ci_hand_wrench().unsqueeze(-1)).squeeze(-1)
+            tau_cmd = getattr(getattr(self, "ctrl", None), "tau_prev", None)
+            if self.ci_tau_source == "franka" and tau_cmd is not None:
+                a_s, a_k = self.ci_franka_alpha
+                alpha = a_s + (a_k - a_s) * torch.tanh(dq.abs() / 0.01)
+                tau = tau + alpha * (tau_cmd - tau)
         return q, dq, M, cor, J, pos, rot, tau
 
     def ci_hand_jacobian(self):

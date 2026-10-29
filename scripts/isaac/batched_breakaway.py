@@ -87,6 +87,8 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
     f_brk = torch.full((N,), float("nan"), device=dev)
     active = torch.ones(N, dtype=torch.bool, device=dev)
     t = 0.0
+    obs0 = (u.ci_force_mean()[:, :3] * d).sum(1)  # observer along the push, tared at the ramp start
+    rec = []  # (ff, observer - tare) per env while static: slope = how much held friction the observer reads
     while active.any() and t * args.rate <= args.max_force:
         t += dt
         c.F_ff[:, :3] = torch.where(active[:, None], args.rate * t * d, torch.zeros_like(d))
@@ -94,15 +96,25 @@ with launch_simulation(env_cfg, args), contextlib.ExitStack() as cleanup:
         s = ((u.ci_state()[5] - xs) * d).sum(1)
         hit = active & (s > args.move / 1000)
         f_brk[hit] = args.rate * t
+        rec.append(torch.where(active, (u.ci_force_mean()[:, :3] * d).sum(1) - obs0, torch.full_like(obs0, float("nan"))))
         active &= ~hit
+    rec = torch.stack(rec).cpu()
+    ffs = torch.arange(1, len(rec) + 1) * dt * args.rate
     out = {"rate": args.rate, "move_mm": args.move, "settle_s": args.settle, "cases": []}
     for i, (n, s) in enumerate(cases):
         f = f_brk[i].item()
+        o = rec[:, i]
+        m = ~torch.isnan(o)
+        slope = float((ffs[m] * o[m]).sum() / (ffs[m] ** 2).sum()) if m.sum() > 5 else None  # through the origin
         out["cases"].append({"dir": n, "scale": s, "f_breakaway": None if f != f else round(f, 3),
-                             "start_err_mm": round(start_err[i].item(), 3)})
+                             "start_err_mm": round(start_err[i].item(), 3),
+                             "obs_slope_static": None if slope is None else round(slope, 3),
+                             "obs_at_breakaway": round(float(o[m][-1]), 3) if m.any() else None})
     for s in scales:
         row = {x["dir"]: x["f_breakaway"] for x in out["cases"] if x["scale"] == s}
         print(f"BREAKAWAY scale {s}: " + ", ".join(f"{k} {v}" for k, v in row.items()), flush=True)
+        sl = {x["dir"]: x["obs_slope_static"] for x in out["cases"] if x["scale"] == s}
+        print(f"OBS_SLOPE scale {s}: " + ", ".join(f"{k} {v}" for k, v in sl.items()), flush=True)
     print("START_ERR_MM max %.3f" % start_err.max().item(), flush=True)
     if args.out:
         json.dump(out, open(args.out, "w"), indent=1)

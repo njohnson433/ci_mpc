@@ -174,6 +174,22 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-29 12:00: real-arm force estimate (O_F_ext_hat_K) reads joint friction: two-regime model (src-54's logs, offline)
+- **Static (breakaway ramps, per-ramp tare, samples until 0.1 mm motion), slope of O vs the friction-held commanded
+  force S = K(p - x) + F_ff:** `probe_1550` (no compensation) x 0.13-0.15, y 0.23-0.29, z 0.37; `probe_1714`
+  (coulomb 0.5 at rest) 0.44-0.94 ("-" ramps higher): the compensation adds commanded joint torque that friction also
+  holds and S does not contain, so O reads a fraction of the total held commanded torque. **Corrects the earlier
+  "~0.75" (global tare, wrong).**
+- **Sliding (free-space MPC `all_1627 / 1709 / 1724`, |v| > 10 mm/s, true external force 0):** O along the velocity
+  median +1.71 / +1.91 / +1.73 N (per axis 1.4-1.9 N), independent of the velocity compensation (0 / 0.75): O reads
+  about the full kinetic friction in motion. Static |O| 0.8-1.2 N median (held residuals).
+- Joint-level fit not possible yet: joint_id logs only the commanded torque, mpc_free only q (asked src-54 for
+  tau_J / tau_d). Consequence for probes on the real arm: the tare at a static hover carries held friction, a press
+  held by stiction reads ~0.1-0.4x the held part, and every lateral move reads ~1.7 N along the motion.
+- **Sim model (opt-in):** `CI_TAU_SOURCE=franka` in factory_fr3: observer torque = wrist + alpha (tau_cmd - wrist),
+  alpha static 0.25 / kinetic 1.0 (`CI_FRANKA_ALPHA`), tanh blend over |dq| 0.01 rad/s. Check running: batched
+  breakaway with the observer slope (`batched_breakaway.py` now records it), wrist vs franka.
+
 ### 2026-10-29 11:30: NIST H5 asset fidelity (item 4) + the systematic -0.3 mm in-hand y offset (`~/ci_mpc_runs/h5/assetcheck`)
 - **Resolution vs clearance:** every NIST plug is 50 mm at SDF 256 (0.195 mm voxels) vs per-side clearance 0.048
   (round 4) - 0.13 mm (round 12); sockets 25 mm at 512 (0.049 mm). Collision meshes: NIST sockets 16 (rect) / 48
