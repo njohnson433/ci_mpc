@@ -214,6 +214,12 @@ Read this before starting work (and before re-investigating something "new").
   30.4 / 51.0 s (v5 115 / 62, v3 17 / 11). **v5's slowdown is mostly its own table, not the network.** Running on R
   (1 repeat each, `queue2.sh`): v5 own table clamped beyond 9 mm (no batched probes there; keeps v5 sim-only) and
   v5 + v3's table.
+- **R set, v5 with its own table held constant beyond 9 mm (`v5_clamp9`, sim-only): 10 / 10, contact median 23.9 /
+  mean 25.3 s vs v3 23.1 / 25.7 s (v5 unclamped 43.8 / 43.7);** paired vs v3 median +0.5 s. **The extrapolated table
+  beyond the batched data was v5's whole closed-loop deficit; clamped, v5 (trained on sim probes only) = v3 on R.**
+  Saved `ci_mpc_planner/models/probe_likelihood_v5_batched_clamp.npz` (peg only, opt-in). Trainer option
+  `--rcorr-clamp` (data-driven: holds the table beyond the p99 training distance, 9.45 mm for this data = one 0.5 mm
+  bin later than the tested model; default off). Not a default: H1-H4 first, and the model is peg-only.
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline

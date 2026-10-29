@@ -37,6 +37,7 @@ p.add_argument("--all-runs", action="store_true", help="also uncalibrated runs (
 p.add_argument("--train-filter", default="", help="train only on runs whose log path contains one of these (comma list)")
 p.add_argument("--val-filter", default="", help="draw validation runs only from runs whose path contains one of these")
 p.add_argument("--no-rcorr", action="store_true", help="do not add the distance-prior correction (rprior_correction.py)")
+p.add_argument("--rcorr-clamp", action="store_true", help="hold the distance-prior table constant beyond the 99th percentile of\n               the training probe-hole distances (no data there: v5 batched, PROGRESS 2026-10-29)")
 p.add_argument("--eval", default="", help="no training: replay-validate this saved model (OUT unused) on the same held-out runs\n               (e.g. v3 vs v5 on --val-filter runs)")
 args = p.parse_args()
 
@@ -138,7 +139,12 @@ if not args.eval:
         p_pos, p_neg = np.histogram(r_pos, edges)[0] + 1.0, np.histogram(r_neg, edges)[0] + 1.0
         rc = np.convolve(np.log((p_pos / p_pos.sum()) / (p_neg / p_neg.sum())), np.ones(3) / 3, mode="same")
         m = dict(np.load(args.out))
-        m["rcorr_edges"], m["rcorr"] = edges, rc - rc[np.searchsorted(edges, 6.0) - 1]
+        rc = rc - rc[np.searchsorted(edges, 6.0) - 1]
+        if args.rcorr_clamp:
+            i = max(np.searchsorted(edges, np.percentile(r_pos, 99)) - 1, 0)
+            rc[i + 1:] = rc[i]
+            print(f"distance-prior table held at {rc[i]:+.2f} beyond {edges[i]:.1f} mm (p99 of the training distances)")
+        m["rcorr_edges"], m["rcorr"] = edges, rc
         np.savez(args.out, **m)
     print(f"saved {args.out}" + ("" if args.no_rcorr else " (with distance-prior correction)"))
 
