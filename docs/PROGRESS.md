@@ -423,6 +423,29 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (15:40): CI-MPC stage B1 v2, pre-registered: 6D wrench test of the primitive SDF on new episodes with the true peg pose
+- **Why v2:** B1 v1 failed (entry below). The axial in-hand offset was missing, and the force-only metric was
+  degenerate.
+- **Data, new and not yet seen:** collect-mode probe episodes (40 holds each, random positions around the true hole,
+  random hold depth / settle), WRIST_FT=1, with `--log-truth`: sim-truth peg pose (6D), TCP pose and hand rotation at
+  20 Hz → `peg_truth.npz`.
+  - Factory peg (D1 geometry, chamfered hole): 2 episodes (seeds 7001, 7002, hole offsets 1.5 / −2 mm).
+  - Dev round 8 (chamferless): 1 episode (seed 7003, offset 1.5 mm).
+  - Same hold selection as v1: ff z −3 N at K_z 500, mean over the last 0.3 s.
+- **Model, unchanged from v1:** asset-spec dimensions only (Factory: `PegHoleGeometry`; dev round 8: peg 8.00 / hole
+  8.10 / depth 15 mm, no hole chamfer), analytic axisymmetric SDF. The peg pose is the logged truth (= the known 6D
+  in-hand pose of stages A / B).
+- **Metrics and targets, fixed now:**
+  - **M1, contact detection:** min gap < 0.2 mm vs |F_true| > 1 N. **Target ≥ 90 %.**
+  - **M2v2, 6D wrench explained:** the measured wrench at the peg tip centre (force; moment = wrist torque moved from
+    the hand frame origin to the tip) is NNLS-fitted on the generators (g, (p_i − tip) × g) of the predicted contacts
+    (gap < 0.2 mm; g = n + μ t over 8 tangent directions). Scaled relative residual
+    ‖[ΔF; Δτ / L]‖ / ‖[F; τ / L]‖, L = 4 mm. **Target median ≤ 0.20, p90 ≤ 0.45.**
+  - **M4, discrimination (a guard against another degenerate metric):** the same M2v2 with a wrong model (hole xy
+    shifted 2 mm) must be clearly worse. **Target: true-model median ≤ 0.5 × wrong-model median.**
+  - **B1 v2 passes if M1, M2v2 and M4 all meet their targets,** on the Factory episodes and on the dev episode
+    separately. Then B1b (dimension and pose sensitivity) runs on the same data.
+
 ### 2026-10-29 (14:40): CI-MPC stage B1, pre-registered: the primitive SDF contact model vs Isaac wrist logs (targets fixed before the run)
 - **What B1 tests.** The contact model alone (`docs/ci_mpc_design.md` §2), no controller. In quasi-static contact the
   force magnitude is set by the impedance (K × deflection), not by the geometry. So B1 tests what the geometry has to
