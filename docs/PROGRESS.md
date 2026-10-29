@@ -358,7 +358,16 @@ Read this before starting work (and before re-investigating something "new").
 - **Verdict:** hybrid friction compensation (0.75 velocity / 0.5 rest) is **the first controller change that is
   positive on every held-out task**: H1 −4.9 s (p 0.015), H2 +2 / −0, H3 +8 net of 36 (64 vs 42 %, p 0.077), with
   contact force not significantly different. Not significant at 0.05 on H3, and the force trend is up by ~2 N. **For
-  the user to decide** whether it becomes the sim (and real-arm) contact default. D1 with hyb05 has not been run.
+  the user to decide** whether it becomes the sim (and real-arm) contact default.
+- **D1 (tuning set) with hyb05** (`~/ci_mpc_runs/d1_hyb05`, realfric, 10 offsets): **10/10, median contact 16.9 s**,
+  against realfric no-comp 30/30 at 16.0 s (`night/real_plain_r1–3`, 10-28). No regression. Force / slip cannot be
+  compared: the 10-28 runs predate the wrist F/T and slip logging; hyb05 itself is at pre-seat 9.1 N, 50 ms 9.5 N,
+  slip 0.35 mm.
+- "base" above = `friction_compensation none` on realfric (the real robot today), **not** the Isaac default
+  (velocity 1.0, nominal scene). Proxy for the latter, hyb0 (velocity-only 0.75, realfric, rep 1): hyb05 vs hyb0 is
+  H1 15/15 both, 6.6 → 4.8 s (p 0.59); H2 3/5 vs 3/5; H3 4/12 → 9/12 (+5 / −0). The real comparison, hyb05 on the
+  nominal scene vs the cross_c3 plain arm (= the Isaac default, same starts), is queued
+  (`~/ci_mpc_runs/heldout_hybnom`, arm `hyb05nom`, header friction values).
 
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
