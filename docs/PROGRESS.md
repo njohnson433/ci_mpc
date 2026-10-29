@@ -487,6 +487,39 @@ Read this before starting work (and before re-investigating something "new").
     shifted 2 mm) must be clearly worse. **Target: true-model median ≤ 0.5 × wrong-model median.**
   - **B1 v2 passes if M1, M2v2 and M4 all meet their targets,** on the Factory episodes and on the dev episode
     separately. Then B1b (dimension and pose sensitivity) runs on the same data.
+- **Result (15:20, `scripts/b1v2_contact_model.py --perturb`; episodes `~/ci_mpc_runs/b1v2/{factory_7001,7002,dev_7003}`):
+  B1 v2 FAILS on its guard M4.**
+
+  | set | M1 | M2v2 median / p90 | M4: wrong-model median, ratio (target ≤ 0.5) | verdict |
+  |---|---|---|---|---|
+  | Factory (82 holds) | **92.7 %** ✓ | 0.000 / 0.083 ✓ | 0.000, ratio 0.97 ✗ | FAIL (M4) |
+  | dev round 8 (39 holds) | **100 %** ✓ | 0.002 / 0.037 ✓ | 0.001, ratio 1.39 ✗ | FAIL (M4) |
+
+  - **The guard worked:** a model with the hole 2 mm off explains the measured 6D wrench just as well. The probe holds
+    are almost all flat-face contacts under the peg bottom, where every model predicts the same contacts. So the
+    wrench fit cannot test the geometry on this data, even with the moment.
+  - **M1 is the discriminating signal (B1b):**
+
+    | perturbation | Factory M1 | dev M1 |
+    |---|---|---|
+    | none | 92.7 % | 100 % |
+    | ±0.1 mm on R, a, c or the hole x | 92.7–93.9 % | 100 % |
+    | R +0.3 mm / +1.0 mm | **59.8** / 46.3 % | 100 / 94.9 % |
+    | a −0.3 mm / −1.0 mm | **59.8** / 45.1 % | 100 / 94.9 % |
+    | c +0.3 / +1.0 mm | 91.5 / 76.8 % | 100 / 94.9 % |
+    | hole x +0.3 / +1.0 mm | 96.3 / 86.6 % | 100 / 97.4 % |
+
+    On the chamfered Factory hole, contact prediction collapses once the clearance-setting dimensions are 0.3 mm too
+    loose, and it is unchanged at 0.1 mm. Tighter-than-true dimensions (R −, a +) do not show in M1 on these holds.
+    The chamferless dev hole is forgiving for M1 (only 1 mm errors show). **For stage C:** the camera's estimate of
+    hole and peg widths needs to be good to ~0.1–0.3 mm for the contact model to stay right on chamfered holes.
+  - **What B1 does and does not establish:** the asset-dimension SDF predicts contact presence well (92.7–100 %) once
+    the full in-hand pose is known, with the sensitivity above. Whether it predicts the force direction in the
+    transitional contacts (chamfer, rim, bore) that the CI-MPC actually acts on is untested. Probe holds do not
+    contain them.
+  - **Proposed B1 v3 (src-5e / user to decide):** the same metrics on push / centering-phase samples (the peg on the
+    chamfer, rim and bore wall), with M4 evaluated only on samples where the wrong model predicts a different contact
+    set. The data exists in these episodes' push phases once the probes end; a few more insertions would be needed.
 
 ### 2026-10-29 (14:08): CI-MPC stage B1, pre-registered: the primitive SDF contact model vs Isaac wrist logs (targets fixed before the run)
 - **What B1 tests.** The contact model alone (`docs/ci_mpc_design.md` §2), no controller. In quasi-static contact the
