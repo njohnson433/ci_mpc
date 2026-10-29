@@ -212,6 +212,9 @@ p.add_argument("--probe", action="store_true", help="after inserting: hold and p
                "(checks the external wrench estimate and the PhysX contact report against each other)")
 p.add_argument("--pos-noise", type=float, default=0.0)
 p.add_argument("--pos-noise-z", type=float, default=-1.0, help="detector z position noise std [m] (default: as --pos-noise)")
+p.add_argument("--prior-sigma", type=float, default=0.0, help="probe: Gaussian prior N(estimate, sigma) [m] on the hole belief\n               (stage A: the camera error, e.g. 0.002); 0 = uniform over the grid as before")
+p.add_argument("--smooth-approach", type=float, default=0.0, help="probe, stage A: first approach from above the hole as a\n               decelerating set-point ramp (speed gap / 0.15 s, capped at this value [m/s], at least 2 mm/s) to the hover\n               height instead of a jump; observer contact (Fz > 1 N) stops it; logs speed at contact and peak jerk")
+p.add_argument("--known-grasp", action="store_true", help="stage A: the controller gets the true in-hand pose of the part after the\n               grasp (sim truth: tip height and xy offset of the part bottom from the TCP) and skips the grasp-height calibration touch")
 p.add_argument("--size-noise", type=float, default=0.0)
 p.add_argument("--yaw-noise-deg", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
@@ -295,6 +298,8 @@ def on_js(msg):
     if all(n in msg.name for n in ARM):
         state["q"] = np.array([msg.position[msg.name.index(n)] for n in ARM])
         state["t"] = msg.header.stamp.sec + 1e-9 * msg.header.stamp.nanosec
+        if state.get("rec") is not None:  # --smooth-approach: joint trajectory for the smoothness metric
+            state["rec"].append((state["t"], state["q"].copy()))
         if "fr3_finger_joint1" in msg.name:
             state["fingers"] = sum(msg.position[msg.name.index(f"fr3_finger_joint{i}")] for i in (1, 2))
 
@@ -494,6 +499,12 @@ tr = truth()
 in_hand = np.array(tr["peg"]["origin"])[:2] - fk(state["q"]).translation[:2]
 print(f"  grasped: fingers {closed * 1000:.1f} mm; peg bottom {np.round(in_hand * 1000, 2)} mm from the TCP in xy "
       f"(truth, unknown to the controller)", flush=True)
+grasp_xy_off = np.zeros(2)  # part bottom - TCP in xy (world), known to the controller only with --known-grasp
+if args.known_grasp:
+    d_ = np.array(tr["peg"]["origin"]) - fk(state["q"]).translation
+    print(f"  known grasp (stage A): tip {-d_[2] * 1000:.2f} mm below the TCP (nominal {tip_below_tcp * 1000:.2f}), "
+          f"xy offset {np.round(d_[:2] * 1000, 2)} mm", flush=True)
+    tip_below_tcp, grasp_xy_off = -d_[2], d_[:2]
 
 
 def peg_in_hand():
@@ -526,7 +537,7 @@ def peg_yaw_hand():
 
 
 c_in_hand0, c_tilt0, c_yaw0 = peg_in_hand(), peg_tilt_hand(), peg_yaw_hand()
-above = np.array([*hole_est[:2], hole_est[2] + tip_below_tcp + 0.010])
+above = np.array([*(hole_est[:2] - grasp_xy_off), hole_est[2] + tip_below_tcp + 0.010])
 segment("B lift -> above the hole", [(np.array([*peg_c[:2], Z_SAFE]), R), (np.array([*hole_est[:2], Z_SAFE]), R), (above, R)])
 spin_sim(0.3)
 
@@ -696,7 +707,8 @@ elif args.strategy == "probe":
     from ci_mpc_planner.peg_hole import PegHoleGeometry
 
     geo = PegHoleGeometry(tip_below_tcp=tip_below_tcp, **GEO)
-    O = np.array([hole_est[0], hole_est[1], hole_tip_z])
+    O = np.array([hole_est[0] - grasp_xy_off[0], hole_est[1] - grasp_xy_off[1], hole_tip_z])  # TCP xy that puts the
+    # part bottom over the estimate (grasp_xy_off = 0 unless --known-grasp)
     # lateral force evidence off: in Isaac the estimate's lateral error while pressing (~1 N) is the size of the
     # chamfer's push; the belief uses the robust part only ("the peg did not drop: the hole is not under the tip")
     # touch tolerance small: ring points over the chamfer must not count as supported (0.4 mm + the 0.3 mm
@@ -823,8 +835,31 @@ elif args.strategy == "probe":
         """Hover, move over target, tare, press until contact (or in the hole); returns (x, F) in light contact."""
         x = measure5()
         zh = z_hover + (0.002 if any(c["tilt"]) else 0.0)  # tilted: the low rim point hangs ~1 mm lower
-        cmd(x[:2], zh)
-        spin_sim(0.4)
+        first = "approach" not in c
+        if first:  # smoothness metric of the first approach + press, with or without --smooth-approach
+            state["rec"], c["approach"] = [], {"t0": state["t"], "smooth": args.smooth_approach > 0}
+        if args.smooth_approach > 0 and first:
+            # stage A: decelerating descent to the hover height (a camera z error can put the surface above it: the
+            # observer, tared in free air at the start, stops the ramp at contact)
+            c["tare"] = force3(0.25, raw=True)
+            t_a, zc, hit = state["t"], x[2], False
+            while zc > zh:
+                zc = max(zh, zc - min(args.smooth_approach, max(0.002, (zc - zh) / 0.15)) * 0.02)
+                cmd(x[:2], zc)
+                spin_sim(0.02)
+                if force3(0.05)[2] > 1.0:
+                    hit = True
+                    c["t_hit"] = state["t"]
+                    cmd(x[:2], measure5()[2])
+                    break
+            c["approach"].update({"t1": state["t"], "contact_in_ramp": hit})
+            print(f"  smooth approach: {state['t'] - t_a:.2f} s"
+                  + (f", contact during the ramp at tip {tip_z(measure5()) * 1000:+.2f} mm" if hit else ""), flush=True)
+        else:
+            cmd(x[:2], zh)
+            spin_sim(0.4)
+            if first:
+                c["approach"]["t1"] = state["t"]
         for _ in range(25):  # lateral move with a stiction feedforward along the remaining offset
             x = measure5()
             d = target - x[:2]
@@ -834,7 +869,8 @@ elif args.strategy == "probe":
             spin_sim(dt)
         cmd(measure5()[:2] if np.linalg.norm(target - measure5()[:2]) > 2e-4 else target, zh)
         spin_sim(0.3)
-        c["tare"] = force3(0.25, raw=True)
+        if not c.get("approach", {}).get("contact_in_ramp") or len(probes) > 0 or "t_hover0" in c:
+            c["tare"] = force3(0.25, raw=True)
         c.setdefault("t_hover0", state["t"])  # first hover, peg in free air: wrist F/T tare window (last 0.25 s)
         x = measure5()
         uz = x[2]
@@ -844,11 +880,31 @@ elif args.strategy == "probe":
             cmd(target, uz, (0.0, 0.0, -args.stiction_ff))
             spin_sim(dt)
             F = force3(0.1)
+            if F[2] > 1.0 and "t_hit" not in c:
+                c["t_hit"] = state["t"]  # first observer contact (stage A smoothness metric)
             if F[2] > 1.0 or tip_z(measure5()) < -args.engage:
                 break
         # light: just keep the contact (collect mode randomizes the hold depth and settle time)
         cmd(target, measure5()[2] - c.get("hold", 0.001), (0.0, 0.0, -args.stiction_ff))
         spin_sim(c.get("settle", 0.3))
+        if state.get("rec") is not None:  # first touch done: smoothness of approach + press (TCP z at joint-state rate)
+            rec, state["rec"] = state["rec"], None
+            ts = np.array([r[0] for r in rec])
+            if len(ts) > 30:
+                zs = np.array([fk(r[1]).translation[2] for r in rec])
+                k_ = 5  # ~20 ms moving average (240 Hz) before each derivative
+                sm_ = lambda v: np.convolve(v, np.ones(k_) / k_, "same")  # noqa: E731
+                vz = np.gradient(sm_(zs), ts)
+                az = np.gradient(sm_(vz), ts)
+                jz = np.gradient(sm_(az), ts)
+                inner = slice(3 * k_, len(ts) - 3 * k_)  # edges of the filters
+                c["approach"].update({"v_peak_mm_s": float(np.abs(vz[inner]).max() * 1000),
+                                      "jerk_peak_m_s3": float(np.abs(jz[inner]).max()),
+                                      "v_contact_mm_s": float(np.abs(np.interp(c.get("t_hit", ts[-1]), ts, vz)) * 1000)
+                                      if "t_hit" in c else None})
+                print(f"  approach smoothness: peak speed {c['approach']['v_peak_mm_s']:.1f} mm/s, at contact "
+                      f"{c['approach']['v_contact_mm_s'] or float('nan'):.1f} mm/s, peak jerk "
+                      f"{c['approach']['jerk_peak_m_s3']:.2f} m/s^3", flush=True)
         return measure5(), force3(0.3)
 
     def slide(target):
@@ -889,6 +945,11 @@ elif args.strategy == "probe":
         return x, F
 
     calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0095)
+    if args.known_grasp:  # stage A: the grasp height is known; the first flat contact still sets the surface height
+        calib_touch = 0.0
+    if args.prior_sigma > 0:  # stage A: camera prior instead of uniform (hypotheses h are relative to the estimate)
+        belief.logw = -(belief.h ** 2).sum(axis=1) / (2.0 * args.prior_sigma ** 2)
+        print(f"  belief prior N(estimate, {args.prior_sigma * 1000:.1f} mm) on {len(belief.h)} hypotheses", flush=True)
     tilting = args.tilt_probe > 0
     lo = low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[:2]  # lowest point relative to the TCP (xy)
     if tilting:
@@ -1323,6 +1384,10 @@ res = {"success": bool(success), "hole_offset_mm": [float(v) for v in offset[:2]
        "total_s": float(state["t"] - t_start), "peg_slip_hand_mm": [float(v) for v in slip_end * 1000],
        "peg_tilt_hand_deg": tilt_end, "peg_tilt_hand_deg_grasp": c_tilt0,
        "peg_yaw_hand_deg": yaw_end, "peg_yaw_hand_deg_grasp": c_yaw0}
+if c.get("approach"):  # --smooth-approach metrics (stage A)
+    res["approach"] = {k: (float(v) if isinstance(v, (float, np.floating)) else v) for k, v in c["approach"].items()
+                       if k not in ("t0", "t1")}
+    res["approach"]["duration_s"] = float(c["approach"].get("t1", c["approach"]["t0"]) - c["approach"]["t0"])
 if c.get("phases"):  # engaged phases with the peak of the observer's force estimate (|F|, untared) in each
     W_ = np.array(wrench_log)
     res["phases"] = [(n, float(a), float(b), float(np.linalg.norm(W_[(W_[:, 0] >= a) & (W_[:, 0] <= b), 1:4], axis=1)
