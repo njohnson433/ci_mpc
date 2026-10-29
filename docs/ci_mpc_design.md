@@ -131,8 +131,8 @@ h so that:
 1. the measured pose has φ ≈ 0 at the touching points;
 2. the measured wrench direction matches −Σ λ_i n_i(h).
 
-The belief handed over by the search (mean and covariance) regularizes it: the contact estimate refines that belief. This is what C3 lacked:
-the goal moves with what the contacts say.
+The belief handed over by the search (mean and covariance) regularizes it: the contact estimate refines that
+belief. This is what C3 lacked: the goal moves with what the contacts say.
 
 **Validation plan (one step at a time, D1 / dev first, H1–H3 once with a frozen design).**
 - B1: the model alone, offline against Isaac logs (wrist F/T + pose; we have hundreds of runs). The predicted
