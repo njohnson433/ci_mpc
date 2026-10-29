@@ -16,8 +16,11 @@ Read this before starting work (and before re-investigating something "new").
   hybrid 0.75 / rest 0.5 vs none: H1 15/15 both, 4.9 s faster (p 0.015, same pre-seat force); H2 3/5 vs 1/5; H3 9/12
   vs 6/12 (within H3 noise; 24 more reps pending); cost ~3x in-hand slip (0.32 vs 0.10 mm), higher seating spike.
   Velocity-only (rest 0) in contact: H1 as fast, H3 +0/-2, so the rest part helps in sim. Real C3 values: no gain,
-  keep C3 out.** Robot plan: velocity-only in contact until the H3 reps confirm; then hybrid rest 0.5 in contact with
-  a force check (seating spike, the 4 N gate); (2b) next robot session, needs a peg + a flat reference: grasp slip under
+  keep C3 out.** H3 reps 2-3: pooled none 15/36 vs hybrid 23/36 (12 gains / 4 losses,
+  sign p 0.077), contact time 40 -> 16 s where both insert, pre-seat force +2.2 N (n.s., trend up); positive on every
+  held-out task; D1 no-regression running; default decision with the user. Robot plan: velocity-only in contact until
+  the user decides; candidate for the next contact session = hybrid 0.75 / rest 0.5 with a contact-force check
+  (seating spike, the 4 N gate); (2b) next robot session, needs a peg + a flat reference: grasp slip under
   ~3 N probe presses (src-35: Isaac slips 2.1 mm up / 3.4 mm along the pads in 40 probes, res.json peg_slip_hand_mm,
   66aa91b): re-touch the reference every N probes, log z (and xy at an edge) drift; no slip on the real hand = sim
   artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
