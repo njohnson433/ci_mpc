@@ -499,6 +499,19 @@ tr = truth()
 in_hand = np.array(tr["peg"]["origin"])[:2] - fk(state["q"]).translation[:2]
 print(f"  grasped: fingers {closed * 1000:.1f} mm; peg bottom {np.round(in_hand * 1000, 2)} mm from the TCP in xy "
       f"(truth, unknown to the controller)", flush=True)
+truth_log = []  # 20 Hz from the grasp on (sim truth, diagnostics / B1): t, TCP xyz + quat (xyzw), part origin xyz + quat (wxyz)
+
+
+def _rec_truth():
+    tp = truth().get("peg")
+    if tp is None or state["q"] is None:
+        return
+    T = fk(state["q"])
+    qt = pin.Quaternion(T.rotation)
+    truth_log.append((state["t"], *T.translation, qt.x, qt.y, qt.z, qt.w, *tp["origin"], *tp.get("quat_wxyz", [1, 0, 0, 0])))
+
+
+node.create_timer(0.05, _rec_truth)
 grasp_xy_off = np.zeros(2)  # part bottom - TCP in xy (world), known to the controller only with --known-grasp
 if args.known_grasp:
     d_ = np.array(tr["peg"]["origin"]) - fk(state["q"]).translation
@@ -1418,6 +1431,8 @@ import shutil
 for fname in ("hole_contact.csv", "wrist_ft.csv"):
     if os.path.exists(sync(fname)):
         shutil.copy(sync(fname), os.path.join(args.log_dir, fname))
+np.savez(os.path.join(args.log_dir, "peg_truth.npz"), log=np.array(truth_log), cols=np.array(
+    "t tcp_x tcp_y tcp_z tcp_qx tcp_qy tcp_qz tcp_qw part_x part_y part_z part_qw part_qx part_qy part_qz".split()))
 np.savez(os.path.join(args.log_dir, "peg_contact.npz"), t=[l[0] for l in c["log"]], x=[l[1] for l in c["log"]],
          p=[l[2] for l in c["log"]], f=[l[3] for l in c["log"]], phase=[l[4] for l in c["log"]])
 node.destroy_node()
