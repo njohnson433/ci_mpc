@@ -115,6 +115,9 @@ p.add_argument("--push-wiggle", type=float, default=0.0,
                help="push to the bottom: once it stalls, cone the commanded peg axis at this angle [deg] (--push-wiggle-hz) "
                     "until the bottom; a tight chamferless hole wedges a peg 0.2-0.4 deg off the hole axis (dev set: 2.2 N "
                     "lateral, 0.27 Nm at the wrist, 3 mm short; the observer reads no torque under the rotational stiction)")
+p.add_argument("--grasp-settle", type=float, default=0.0,
+               help="grasp: wait until the TCP is within this distance [m] of the grasp pose before closing (0 = the "
+                    "segment default 1.5 mm), e.g. 0.0002")
 p.add_argument("--push-step", type=float, default=0.006,
                help="push to the bottom: command this far below the measured pose while the force is below "
                     "--max-contact-force (else 2 mm); smaller = softer push (thin pegs jam in tight holes)")
@@ -465,7 +468,11 @@ print(f"PEG at {np.round(peg_c, 4)}, HOLE opening at {np.round(hole_top, 4)}, pe
       f"below the TCP", flush=True)
 t_start = state["t"]
 gripper(args.open_width, settle=0.5)
-segment("A home -> above peg -> grasp", [(np.array([*grasp_xy, Z_SAFE]), R), (np.array([*grasp_xy, z_grasp_actual]), R)])
+# --grasp-settle: wait until the TCP is this close to the grasp pose before closing (default: the segment's 1.5 mm).
+# The hand arrived ~1.45 mm off in y, the first finger tipped the standing peg ~0.4 deg before the second clamped:
+# a systematic -0.3 mm in-hand y offset of the peg bottom in every scene (src-35, 2026-10-29)
+segment("A home -> above peg -> grasp", [(np.array([*grasp_xy, Z_SAFE]), R), (np.array([*grasp_xy, z_grasp_actual]), R)],
+        **({"tol": args.grasp_settle, "timeout": 20.0} if args.grasp_settle > 0 else {}))
 gripper(0.0, settle=1.0)
 closed = state["fingers"]
 if abs(closed - peg_size[0]) > 0.003:
