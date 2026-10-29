@@ -427,8 +427,8 @@ Read this before starting work (and before re-investigating something "new").
 - **Why v2:** B1 v1 failed (entry below). The axial in-hand offset was missing, and the force-only metric was
   degenerate.
 - **Data, new and not yet seen:** collect-mode probe episodes (40 holds each, random positions around the true hole,
-  random hold depth / settle), WRIST_FT=1, with `--log-truth`: sim-truth peg pose (6D), TCP pose and hand rotation at
-  20 Hz → `peg_truth.npz`.
+  random hold depth / settle), WRIST_FT=1. src-35's always-on recorder (763db3d) logs the sim-truth part pose (6D)
+  and the TCP pose / hand rotation at 20 Hz → `peg_truth.npz`.
   - Factory peg (D1 geometry, chamfered hole): 2 episodes (seeds 7001, 7002, hole offsets 1.5 / −2 mm).
   - Dev round 8 (chamferless): 1 episode (seed 7003, offset 1.5 mm).
   - Same hold selection as v1: ff z −3 N at K_z 500, mean over the last 0.3 s.
