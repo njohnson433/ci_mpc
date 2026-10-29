@@ -83,18 +83,29 @@ Read this before starting work (and before re-investigating something "new").
   artefact; (3) Isaac scene: real joint friction / armature j7 0.046; (4) J^T check of the
   Cartesian breakaway from the joint values; (5) contact fixture (NIST board) for real contact runs.
 
-- **2026-10-29 13:30, src-35: likelihood work PAUSED (user is restructuring the plan: known grasp + camera estimate +
-  smooth approach + plain push as baseline, then CI-MPC with an analytic SDF contact model; likelihood / search only as
-  a later fallback; src-5e).** Nothing of src-35 running. State (entries 2026-10-28 evening .. 2026-10-29):
-  - No pipeline observer over-read (wrist log 0.235 s lag, `scripts/wrist_csv.py`; benchmark peaks redone offline by
-    `scripts/recompute_wrist_peaks.py`, src-f1 decides --write).
-  - Batched sim calibrated to the pipeline at `--sff 5.0` (force + engagement, class agreement 0.66).
-  - Likelihood v5-clamp (batched sim probes only, peg only, `ci_mpc_planner/models/probe_likelihood_v5_batched_clamp.npz`,
-    opt-in) = v3 on D1 / R; robust to the real-arm observer model; R not clean for it (H1 would be).
-  - Real-arm O_F_ext_hat_K: static 0.13-0.37 of held force, sliding ~full kinetic friction; sim model
-    `CI_TAU_SOURCE=franka` (opt-in); per-joint refit waits for src-54's recorder (27700c9).
-  - NIST H5 assets: no change needed; in-hand -0.3 mm y offset = grasp-induced tilt, cause in the closing (open, low).
-  - Likely next (to be confirmed): the analytic SDF contact model for the CI-MPC.
+- **2026-10-29 evening, src-35: STOPPED (computer shut down). Stage A baselines + the approach tare fix.** Nothing
+  running. Agreed plan (src-5e / user), in order:
+  1. **Tare fix as explicit flags** in `scripts/peg_insert_demo.py` (not implemented yet): `--tare-after-mm` (the smooth
+     approach tares only after this much descent; real arm needs >= 10 mm, entry "real-arm approach false trigger")
+     and `--contact-thresh` (observer contact threshold, now 1.0 N hard-coded). Defaults = today's behaviour; stage A
+     values 10 mm / 1.5 N. Add them to `STAGEA=(...)` in `scripts/queue_stage_a.sh` only for the clean run (e.g. an
+     env `TARE_FIX=1`), so the stage D queue keeps the old values.
+  2. **Clean stage A (official baseline B must beat), from scratch** (discard `~/ci_mpc_runs/stageA/clean`, partial D1):
+     `cd ~/franka_ros2_ws/src/ci_mpc; OUT=~/ci_mpc_runs/stageA/clean2; mkdir -p $OUT;
+     LIK=$PWD/ci_mpc_planner/models/probe_likelihood_v3_both.npz SETS="D1 H1 H2 H3 H5" NOISE_NAMES=hole TARE_FIX=1
+     DOMAIN_BASE=76 CORES=16-31 setsid nohup scripts/queue_stage_a.sh $OUT > $OUT/queue.out 2>&1 < /dev/null &`
+  3. **Stage D reference, resume with the OLD values pinned** (no TARE_FIX; keeps finished runs):
+     `cd ~/franka_ros2_ws/src/ci_mpc; OUT=~/ci_mpc_runs/stageA/heldout;
+     LIK=$PWD/ci_mpc_planner/models/probe_likelihood_v3_both.npz SETS="H1 H2 H3 H5" SKIP_DONE=1
+     setsid nohup scripts/queue_stage_a.sh $OUT > $OUT/queue2.out 2>&1 < /dev/null &`
+     (done: H1 friction 0.5 3/3, friction 1.0 2/3, tilt 2 deg 3/3, grasp offset 3/3; D1 = `~/ci_mpc_runs/stageA/d1`).
+  4. Real-robot port item (not sim, not stage C): probe presses after a 1 mm hover false-trigger on the real arm ->
+     lift-and-descend >= 10 mm before each tare, or a sign(last dq) x friction correction of the estimate.
+  - Check `nvidia-smi` / free RAM first (two instances fit: ~6 GB GPU, 38 GB RAM free at the time); no runs during a
+    robot session (src-54 announces start / end).
+  - Earlier state (likelihood work, paused): v5-clamp = v3 on D1 / R; real-arm O_F_ext_hat_K model
+    (`CI_TAU_SOURCE=franka`); NIST assets unchanged; video via `VIDEO=path.mp4`
+    (`~/ci_mpc_runs/video/peg_probe_2_0/peg_probe_2_0.mp4`).
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
   Cartesian breakaway measured at the probe pose (cold): **C3 arm_friction 1.43, 0.80, 1.25 N, 1.56, 0.61 Nm**; offline
   check recommends `--c3-arm-friction 1.43,0.80,1.25,1.56,0.61 --c3-stiction-ff 1.4,1.25` (entries below). Open, in order:
