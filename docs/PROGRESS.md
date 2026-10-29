@@ -850,6 +850,24 @@ Read this before starting work (and before re-investigating something "new").
       **The chamferless design is done** (src-5e). Held-out verdict: at ≥ 2 mm it turns a 0/4 plain result into 3/4,
       and near the hole it is now as fast as plain. Known limits: thin pegs (slide false drops; grasp slip of the order
       of the clearance) and rect / square (no validated model).
+  16b. **H5, 3 reps per arm** (measurement only, flags frozen; reps 2–3 in `~/ci_mpc_runs/h5/reps/{plain,tilt}`, rep 1 =
+      `tilt_final` / H5 round 1 + smoke; contact s per success):
+
+      | start | plain (rep 1 / 2 / 3) | frozen design (rep 1 / 2 / 3) |
+      |---|---|---|
+      | round 4, 0 mm | ✓3 ✓5 ✓5 | ✗ ✓8 ✓20 |
+      | round 4, 2 mm | ✗ ✗ ✗ | ✓18 ✗ ✓50 |
+      | round 8, 0 mm | ✓4 ✓6 ✓5 | ✓8 ✓8 ✓8 |
+      | round 8, 1 mm | ✓6 ✓4 ✓5 | ✓19 ✓21 ✓11 |
+      | round 8, 2 mm | ✗ ✗ ✗ | ✗ ✓27 ✓17 |
+      | round 8, 3 mm | ✗ ✓113 ✓66 | ✓41 ✓40 ✓40 |
+      | round 12, 0 mm | ✓7 ✓3 ✓4 | ✓6 ✓7 ✓7 |
+      | round 12, 2 mm | ✗ ✗ ✓97 | ✓51 ✓41 ✓37 |
+
+      **≥ 2 mm: 10/12 vs 3/12** (paired +7 / −0, sign test p = 0.016; median contact 40 vs 97 s). ≤ 1 mm: 11/12 vs 12/12
+      (+0 / −1; 8.1 vs 5.2 s). All: 21/24 vs 15/24 (p = 0.07). **Held-out verdict:** the chamferless search solves
+      2–3 mm errors on the NIST board where the probe as built mostly fails. It costs ~3 s near the hole and one round
+      4 run (the thin-peg slide false drops).
   17. **D1 no-regression** (`~/ci_mpc_runs/d1_noreg`, plain D1 arm, defaults, 10 offsets, 2026-10-29 05:00): **10/10**,
       median contact 30.7 s (10-28 plain batches: 10/10 at 27.3 s and 10/10 at 30.3 s). The default path is unchanged
       (all chamferless flags off; it only gained diagnostics). H1–H3 run the same default path; their 10-28 numbers
