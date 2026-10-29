@@ -169,6 +169,10 @@ p.add_argument("--tilt-upright-spiral", type=float, default=0.0,
                help="--tilt-probe: after the tilted search, upright probes on a sunflower spiral around the estimate, "
                     "r = PITCH sqrt(k) (spacing ~1.8 PITCH; e.g. 0.00017 = 0.3 mm), instead of next_probe (1.5 mm "
                     "spacing: a thin peg's capture is its ~0.5 mm end chamfer; dev round 4, 2026-10-29)")
+p.add_argument("--tilt-slide", type=float, default=0.0,
+               help="--tilt-probe: move between tilted probes in light contact at this speed [m/s] (e.g. 0.003), the "
+                    "belief updated along the way, instead of lift / move / press (thin pegs: the drop area is ~8x "
+                    "smaller than an 8 mm peg's, discrete presses rarely hit it)")
 p.add_argument("--tilt-std", type=float, default=0.0004, help="--tilt-probe: go upright below this belief std [m]")
 p.add_argument("--tilt-max-probes", type=int, default=12, help="--tilt-probe: go upright after this many tilted probes")
 p.add_argument("--tilt-clearance", type=float, default=0.0001,
@@ -814,6 +818,31 @@ elif args.strategy == "probe":
         spin_sim(c.get("settle", 0.3))
         return measure5(), force3(0.3)
 
+    def slide(target):
+        """--tilt-slide: from light contact, move to target (TCP xy) without lifting, pressing lightly; every 3rd
+        0.1 s sample updates the belief (a line of probes per move). Stops early when the low point drops > 0.3 mm
+        (the hole under it) or the peg snags (lateral force > 4 N). Returns the last (x, F) for the caller's update."""
+        n_up = 0
+        for i in range(int(0.012 / (args.tilt_slide * dt)) + 1):
+            x = measure5()
+            d = target - x[:2]
+            if np.linalg.norm(d) < 2e-4:
+                break
+            step = min(args.tilt_slide * dt, np.linalg.norm(d)) * d / np.linalg.norm(d)
+            cmd(x[:2] + step, x[2] - 0.001, (0.0, 0.0, -args.stiction_ff))
+            spin_sim(dt)
+            x, F = measure5(), force3(0.1)
+            if i % 3 == 2 and F[2] > 1.0:
+                belief.update(x, F)
+                n_up += 1
+            if low_point(x)[2] < -3e-4 or np.linalg.norm(F[:2]) > 4.0:
+                break
+        spin_sim(0.3)
+        x, F = measure5(), force3(0.3)
+        print(f"    slide: {n_up} samples, stopped at low point {np.round(low_point(x)[:2] * 1000, 2)} mm, height "
+              f"{low_point(x)[2] * 1000:+.2f} mm, lateral {np.linalg.norm(F[:2]):.1f} N", flush=True)
+        return x, F
+
     calib_touch = args.calib_touch if args.calib_touch is not None else (0.0 if args.geo else 0.0095)
     tilting = args.tilt_probe > 0
     lo = low_point(np.array([0.0, 0.0, tip_below_tcp, *c["tilt"]]))[:2]  # lowest point relative to the TCP (xy)
@@ -851,7 +880,12 @@ elif args.strategy == "probe":
     for k in range(args.max_probes):
         if state["t"] - c["t0"] > args.timeout_contact:
             break
-        x, F = touch(target - lo if tilting else target)
+        if tilting and args.tilt_slide > 0 and c.get("in_contact"):
+            x, F = slide(target - lo)
+        else:
+            x, F = touch(target - lo if tilting else target)
+        # sliding continues from light contact on the flat face; after a drop (or upright) lift and press again
+        c["in_contact"] = tilting and F[2] > 1.0 and low_point(x)[2] > -3e-4
         if not tilting and k == 0 and c["z_bias"] == 0.0 and F[2] > 1.0 and np.linalg.norm(F[:2]) < 1.5 and abs(tip_z(x)) < 0.0015:
             # first contact on the flat top face (no lateral push): its tip height is the grasp offset (Isaac:
             # +0.55 mm; uncorrected, every hypothesis showed a gap and the belief never moved)
