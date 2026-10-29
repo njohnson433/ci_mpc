@@ -744,6 +744,24 @@ Read this before starting work (and before re-investigating something "new").
       then jams on insertion, and the slip in a 4 mm grasp is the same order as the clearance. Three starts per arm is
       too few to rank the arms. Next ideas: a sliding tilted scan (continuous contact covers area much faster than
       discrete presses), and a compliant / lower-force push for thin pegs. H5 round 4 stays a known failure.
+  14. **Thin-peg levers, one at a time** (src-5e: at most two, ≥ 3 starts each, adopt only if better than 1–2/3
+      without slowing round 8 / 10; base = tilt 20 + upright spiral):
+      - `--push-step 0.002` (softer push): **0/3**. One start got no information; one push crept to 4.8 mm short in its
+        21 s budget (peg straight: 0.29°); one stalled at −3.1 mm with the peg 1.4 mm along the pads. Not adopted.
+      - `--tilt-slide 0.003` (sliding tilted scan, belief updated every 0.3 s along the move). The first version never
+        moved the pressed peg: each step commanded 0.3 mm past the measured pose, ~0.45 N, below the sliding friction.
+        Fixed with its own advancing setpoint + 2.5 N lateral feedforward; that run set is in `thin_t20s_slide_bug`.
+        Fixed: **3/3** (36, 9, 58 s), but the slide only worked in one of them ((2, 1): drops −0.82 / −0.40 mm,
+        localized in 7 probes); the other two hit early.
+      - **No-slowdown check of the whole thin set on round 8 / 10** (`sweep3_thinpkg`, 4 sweep starts each): **5/8 vs
+        8/8** with upright-first alone on the same starts. All three failures localized (std 0.24–0.35 mm) and then
+        wedged on the push at −4 to −12 mm. The 20° presses turn a wider peg 0.36–0.67° in the fingers (0.1–0.3° at
+        10°; in one run it also moved 2.4 mm along the pads).
+      - **Decision: the thin set, gated by size** (`--tilt-thin-auto 0.003`: peg half width < 3 mm → tilt 20, spiral,
+        slide). Round 8 / 10 are unchanged by construction; the thin evidence is weak (n = 3).
+  15. **Design frozen** for the final H5 pass: `--tilt-probe 10 --tilt-axis x --push-wiggle 0.5 --tilt-engage 0.0005
+      --tilt-first-upright --tilt-thin-auto 0.003`. Rect / square (`--tilt-rect`, model only, not validated on the dev
+      square) stays out.
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
