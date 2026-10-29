@@ -32,8 +32,9 @@ Read this before starting work (and before re-investigating something "new").
     `scripts/recompute_wrist_peaks.py`, dry run sent to src-f1). v3 / v4 force is fine; their tip labels carry the
     pipeline's in-hand slip (truth: 2.1 mm up / 3.4 mm along the pads over 40 probes).
   - Press calibration done (entry "step 5c"): batched `--sff 5.0` matches the pipeline (force and engagement).
-  - v5 trained (entry "likelihood v5"): = v3 on held-out pipeline probes. Running: closed-loop D1 v3 vs v5
-    (`~/ci_mpc_runs/vec/v5_d1`). Next: R set, then H sets only if v5 is to become a default (peg-only model).
+  - v5 trained (entry "likelihood v5"): = v3 on held-out pipeline probes and on closed-loop D1 (20/20 each, contact
+    within noise). Running: R set v3 vs v5 + D1 table-swap arm (`~/ci_mpc_runs/vec/v5_r`). H sets only if v5 is to
+    become a default (peg-only model).
   - Pipeline test of v5 needs `--force-source wrist` (c270baf, lag-corrected 4694b78; untested in a run).
   - Real-joint-ID scene (`fr3_scene_real1028.usd`, FR3_PARAMS) is opt-in only: 1.4-2x the real Cartesian breakaway.
 - **2026-10-27 evening (real FR3, continue tomorrow):** robot 192.168.1.200 connected, read-only checks pass, hold +
@@ -187,6 +188,19 @@ Read this before starting work (and before re-investigating something "new").
   direction cos +0.44 vs +0.53 engaged).
 - Saved `ci_mpc_planner/models/probe_likelihood_v5_batched.npz` ("batched, peg only"). **Closed loop running:** D1,
   plain probe, R2 settings, v3 vs v5 interleaved, 2 repeats, one instance (`~/ci_mpc_runs/vec/v5_d1/queue.sh`).
+- **Closed-loop D1 (peg; plain probe, R2 settings; distance-prior correction ON, each model its own table):**
+
+  | model | inserted | contact median / mean | per-repeat median |
+  |---|---|---|---|
+  | v3 | 20 / 20 | 30.2 / 37.3 s | 31.5 / 28.9 s |
+  | v5 | 20 / 20 | 33.7 / 46.7 s | 38.2 / 30.5 s |
+
+  Paired by offset: v5 faster on 5 / 10, median diff -4.3 s, mean +9.4 s; repeat noise is large (v3 at 5,0: 95 vs
+  12 s). Consistent in both repeats: v5 slower at 3,3 (115 / 62 vs 17 / 11 s) and -3,0 (102 / 62 vs 29 / 27 s),
+  faster at 5,0 / 0,4 / -5,0. **Verdict: v5 = v3 on D1 within noise (no regression, no gain).** v5's table beyond
+  10 mm is extrapolation (no batched probes there) and the belief grid (+-6 mm) reaches it.
+- Queued (`~/ci_mpc_runs/vec/v5_r/queue.sh`): held-out R set v3 vs v5 (1 repeat each), then the table-swap arm (v5
+  network + v3's table) at 3,3 and -3,0, 2 repeats.
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
