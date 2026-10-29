@@ -197,8 +197,14 @@ Read this before starting work (and before re-investigating something "new").
   the next robot session on. Consequence for probes on the real arm: the tare at a static hover carries held friction, a press
   held by stiction reads ~0.1-0.4x the held part, and every lateral move reads ~1.7 N along the motion.
 - **Sim model (opt-in):** `CI_TAU_SOURCE=franka` in factory_fr3: observer torque = wrist + alpha (tau_cmd - wrist),
-  alpha static 0.25 / kinetic 1.0 (`CI_FRANKA_ALPHA`), tanh blend over |dq| 0.01 rad/s. Check running: batched
-  breakaway with the observer slope (`batched_breakaway.py` now records it), wrist vs franka.
+  alpha static 0.25 / kinetic 1.0 (`CI_FRANKA_ALPHA`), tanh blend over |dq| 0.01 rad/s.
+- **Check (batched breakaway, observer slope vs feedforward while static, friction scale 1.0):** wrist +x 0.01 / -x
+  -0.01 / +y 0.04 / -y -0.04 / +z 0.00 / -z 0.02 (reads no held friction); **franka +0.05 / +0.44 / 0.26 / 0.22 / 0.29 /
+  0.25** vs real (no compensation) x 0.13-0.15, y 0.23-0.29, z 0.37: y matches, z a bit low, x asymmetric. Breakaway
+  forces differ between the two runs by up to 0.8 N (y 1.27 vs 2.04) although the observer does not enter the control
+  law: run-to-run variation of the stiction state. Sliding regime not checked in sim yet.
+- **Running:** `batched_collect.py --envs 256 --seed 1 --sff 5.0` with `CI_TAU_SOURCE=franka` (one lever vs v5's
+  data) -> a "real-arm observer" likelihood candidate; only real-arm data can validate it.
 
 ### 2026-10-29 11:30: NIST H5 asset fidelity (item 4) + the systematic -0.3 mm in-hand y offset (`~/ci_mpc_runs/h5/assetcheck`)
 - **Resolution vs clearance:** every NIST plug is 50 mm at SDF 256 (0.195 mm voxels) vs per-side clearance 0.048
