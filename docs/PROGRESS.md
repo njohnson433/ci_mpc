@@ -423,6 +423,27 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (16:30): push stop tolerance (`--push-stop`) selected on D1 + dev: no effect there, frozen at 0.5 mm for H1–H3
+- **Why:** the push stopped once the estimated remaining depth was < 1.0 mm, the same as the 1.0 mm success
+  threshold, so a run passed only if the part settled the last mm by itself (H2 near-misses 1.03 / 1.09 mm,
+  `peg_insert_demo.py` push loop). New flag `--push-stop` (default 1 mm, unchanged), src-5e plan: 0.5 mm, then ±1 step,
+  D1 + dev first.
+
+  | push-stop | D1 (10, nominal, defaults) | D1 contact median | D1 wrist max / 50 ms / pre-seat (median) |
+  |---|---|---|---|
+  | 1.0 mm (d1_noreg) | 10/10 | 30.7 s | 14.0 / 9.2 / 11.3 N |
+  | 0.7 mm | 10/10 | 27.0 s | 16.9 / 11.4 / 8.7 N |
+  | 0.5 mm | 9/10 (the failure is a search failure: probing failed at (−3, −2), no push) | 29.0 s | 18.6 / 10.5 / 9.2 N |
+  | 0.3 mm | 10/10 | 18.6 s | 14.4 / 8.7 / 8.6 N |
+
+  Dev round 8 / 10 with the frozen chamferless flags at 0.5 mm: 8/8 (contact median 34.0 s; the 1.0 mm sweep had
+  12/12 at 34.5 s, on different starts).
+- **No measurable effect on D1 / dev.** The peg already settles to ~0.02 mm (depth error medians 0.018–0.025 mm at
+  every value), so the near-miss mechanism does not occur there. The force differences are within run-to-run noise
+  at n = 10. **Frozen at 0.5 mm**, the a-priori choice (halfway between seated and the threshold; the 0.3 mm speed
+  edge is likely noise). Next: H1–H3 once, paired, velocity default (1.0 vs 0.5), plus realfric hybrid if slots allow.
+  H2 is where it can matter.
+
 ### 2026-10-29 (15:40): CI-MPC stage B1 v2, pre-registered: 6D wrench test of the primitive SDF on new episodes with the true peg pose
 - **Why v2:** B1 v1 failed (entry below). The axial in-hand offset was missing, and the force-only metric was
   degenerate.
