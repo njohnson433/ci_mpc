@@ -5,6 +5,14 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-29 16:30, PAUSED for a robot session (src-54), CI-MPC stage B (src-f1).** Everything stopped by PID.
+  Resume after "robot session ended":
+  1. B2a v3 (pre-registered, PROGRESS "B2a v3"): rerun the implicit-step development check on the old B2a episodes
+     (`b2a2_predict.py --implicit 1 --fit b1v2/factory_700? --score b2a/*`; flat-face SDF error must be ≤ no-contact).
+     Then finish the fresh logging (`scratchpad b2a3_log.sh`; factory_1–3 done, it skips them) and score once.
+  2. H1–H3 push-stop (velocity, 1.0 vs 0.5 mm; `ARMS="velnom velnom_ps05" PAR=1 DOM0=180
+     scripts/queue_heldout_realarm.sh ~/ci_mpc_runs/heldout_pushstop`, resumable): partway into the 0.5 mm arm.
+
 - **Next real FR3 session, re-planned around stages A / B (2026-10-29, src-5e for the user).** Announce it to
   src-f1 / src-35 / src-5e first; all sim jobs stop, check the PC is quiet. Every session records robot_state.npz
   (200 Hz). Order:
