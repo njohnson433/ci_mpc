@@ -161,14 +161,37 @@ for kind in ("factory", "dev"):
                 x6, i6 = simulate(E, i, H, Fs, b, **kw)
                 F6 = contact(E, x6, peg_geom(E, i), kw.get("dxh", 0.0))[0] if kw.get("contacts", True) else np.zeros(3)
                 r[name] = (np.linalg.norm(x1 - E["x"][i1]) * 1000, np.linalg.norm(x6 - E["x"][i6]) * 1000, np.linalg.norm(F6 - wrist_F(E, i6)))
+                r[name + "_dx6"] = x6 - E["x"][i]   # predicted 6-step displacement (decision metrics)
+            r["log_dx6"] = E["x"][i6] - E["x"][i]
             rows[cls].append(r)
     for cls, rs in rows.items():
         if not rs:
             continue
-        med = {k: np.nanmedian([r[k] for r in rs], 0) for k in rs[0]}
+        names = [k for k in rs[0] if not k.endswith("_dx6")]
+        med = {k: np.nanmedian([r[k] for r in rs], 0) for k in names}
         print(f"{kind} {cls} (n {len(rs)}): " + " | ".join(f"{k}: 1-step {v_[0]:.3f} mm, 6-step {v_[1]:.3f} mm, F6 {v_[2]:.2f} N" for k, v_ in med.items()))
+        # decision metrics: DM1 deeper (tip sinks > 0.1 mm over 6 steps) vs stall, balanced accuracy; DM2 lateral sign
+        # agreement where the logged lateral displacement > 0.05 mm
+        log = np.array([r["log_dx6"] for r in rs])
+        deep = log[:, 2] < -1e-4
+        lat = np.linalg.norm(log[:, :2], axis=1) > 5e-5
+        dm = {}
+        for k in names:
+            pr = np.array([r[k + "_dx6"] for r in rs])
+            pd = pr[:, 2] < -1e-4
+            tpr = np.mean(pd[deep]) if deep.any() else np.nan
+            tnr = np.mean(~pd[~deep]) if (~deep).any() else np.nan
+            agree = np.mean(np.sum(pr[lat, :2] * log[lat, :2], 1) > 0) if lat.any() else np.nan
+            dm[k] = (np.nanmean([tpr, tnr]), agree)
+        print(f"   decision (deeper {deep.sum()} / stall {(~deep).sum()}, lateral n {lat.sum()}): " +
+              " | ".join(f"{k}: DM1 {v_[0]:.2f}, DM2 {v_[1]:.2f}" for k, v_ in dm.items()))
         if cls == "trans":
             s_, a_, w_ = med["sdf"], med["nocontact"], med["wrong05"]
+            w2 = med["wrong2"]
+            dms, dma = dm["sdf"], dm["nocontact"]
+            print(f"   DM targets: DM1 {'PASS' if dms[0] >= 0.75 and dms[0] >= dma[0] + 0.10 else 'FAIL'}, DM2 "
+                  f"{'PASS' if dms[1] >= 0.75 and dms[1] >= dma[1] + 0.10 else 'FAIL'} | proceed parts: vs no-contact "
+                  f"{s_[0] <= 0.7 * a_[0] and s_[1] <= 0.7 * a_[1]}, vs wrong 2 mm {s_[0] <= 0.7 * w2[0] and s_[1] <= 0.7 * w2[1]}")
             ok = (len(rs) >= 50 and s_[0] <= 0.7 * a_[0] and s_[0] <= 0.7 * w_[0] and s_[1] <= 0.7 * a_[1]
                   and s_[1] <= 0.7 * w_[1] and s_[2] <= 0.7 * w_[2])
             print(f"   -> B2a v2 {kind}: {'PASS' if ok else ('UNTESTABLE' if len(rs) < 50 else 'FAIL')} (vs no-contact "
