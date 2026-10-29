@@ -435,6 +435,21 @@ Read this before starting work (and before re-investigating something "new").
   and equal on H1 / H3 success. The H2 loss is one gear run, likely within noise but a strict loss under the rule.
   Force in H3 is ~3–4 N higher with hybrid. The real-robot default (src-54) rests on the realfric data (H3 23/36 vs
   15/36 there) and is a separate decision. If wanted: H2 reps (2 × 5 per arm) would resolve the gear task.
+- **H2 reps 2–3 (velocity vs hybrid, nominal scene; rule set before the data by src-5e: switch if pooled hybrid ≥
+  velocity − 1 of 15)** (`~/ci_mpc_runs/heldout_h2nom_rep{2,3}`, arms `velnom` = the frozen velocity config
+  `isaac_pick_place_velocity.yaml` and `hyb05nom`):
+
+  | H2 rep | velocity | hybrid |
+  |---|---|---|
+  | 1 | 2/5 | 1/5 |
+  | 2 | 2/5 | 2/5 |
+  | 3 | 3/5 | 2/5 |
+  | **pooled** | **7/15** | **5/15** (+1 / −3) |
+
+  When they insert, hybrid is much faster (median contact 3.1 vs 27.2 s) at a similar pre-seat force (12.0 vs
+  11.5 N; 50 ms 12.8 vs 8.6 N). **The rule fails (5 < 6): the Isaac default stays velocity.** No config changed; all
+  H numbers stay on velocity. On the gear the rest-part compensation seems to cost meshing in the nominal scene.
+  On realfric hyb05 was +2 / −0 on H2 rep 1, so the real-arm and nominal-scene results differ on this task.
 
 ### 2026-10-28 (19:50): CAUTION: wrist F/T force numbers are clock-shifted (src-35), recompute pending
 - `wrist_ft.csv` is stamped 0.23 s behind the joint-state time. `peak_force_wrist_engaged_N` slices it with joint-state
