@@ -762,6 +762,32 @@ Read this before starting work (and before re-investigating something "new").
   15. **Design frozen** for the final H5 pass: `--tilt-probe 10 --tilt-axis x --push-wiggle 0.5 --tilt-engage 0.0005
       --tilt-first-upright --tilt-thin-auto 0.003`. Rect / square (`--tilt-rect`, model only, not validated on the dev
       square) stays out.
+  16. **Final H5 pass (held out, once, frozen design)** (`~/ci_mpc_runs/h5/tilt_final`, same 8 starts):
+
+      | start | plain | H5 round 1 (iteration 11) | final |
+      |---|---|---|---|
+      | round 4, 0 mm | ✓ 11.4 s | ✓ 53.7 s | ✗ |
+      | round 4, 2 mm | ✗ | ✗ | **✓ 17.7 s** |
+      | round 8, 0 mm | ✓ 12.6 s | ✓ 42.3 s | ✓ **8.0 s** |
+      | round 8, 1 mm | ✓ 14.0 s | ✓ 17.0 s | ✓ 19.2 s |
+      | round 8, 2 mm | ✗ ✗ | ✓ 22.9 s | ✗ (1.09 mm short, threshold 1.0) |
+      | round 8, 3 mm | ✗ | ✓ 24.2 s | ✓ 40.7 s |
+      | round 12, 0 mm | ✓ 15.8 s | ✓ 32.1 s | ✓ **6.5 s** |
+      | round 12, 2 mm | ✗ | ✓ 92.9 s | ✓ 50.6 s |
+
+      **6/8 (round 1: 7/8, plain: 4/8); at ≥ 2 mm 3/4 in both passes.** Upright-first transferred: 0 mm on round 8 / 12
+      takes 6.5–8 s (round 1: 32–42 s). The thin set solved the round 4 start nothing else did, and lost round 4 at
+      0 mm. Two mechanisms there:
+      - the upright first probe landed 0.9 mm off its target (the lateral move from the calibration spot had not
+        settled; a thin peg captures within ~0.5 mm);
+      - the slide read false drops (−0.16 to −0.30 mm, 4–5 mm from a 2 mm-radius hole). Sliding friction pushes the
+        peg up in the fingers (−0.34 mm by the handover), and the flat reference only updates on presses, so the
+        belief localized confidently 5 mm off.
+      The round 8 2 mm failure is a marginal push (0.09 mm past the threshold). One run per start: 6/8 vs 7/8 is within
+      the noise.
+      **The chamferless design is done** (src-5e). Held-out verdict: at ≥ 2 mm it turns a 0/4 plain result into 3/4,
+      and near the hole it is now as fast as plain. Known limits: thin pegs (slide false drops; grasp slip of the order
+      of the clearance) and rect / square (no validated model).
 - **Resume here:** (1) D1 / H1–H3 no-regression: every new flag is off by default, and the default path only gained
   diagnostics (slip, tare time) and `c["tilt"]` reset after the push (a no-op without tilt). One D1 batch to confirm
   when capacity allows. (2) H5 round 4 / 8 / 12 with these flags, once only (held out), when capacity allows
