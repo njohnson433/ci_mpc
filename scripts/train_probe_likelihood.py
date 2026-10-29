@@ -37,6 +37,7 @@ p.add_argument("--all-runs", action="store_true", help="also uncalibrated runs (
 p.add_argument("--train-filter", default="", help="train only on runs whose log path contains one of these (comma list)")
 p.add_argument("--val-filter", default="", help="draw validation runs only from runs whose path contains one of these")
 p.add_argument("--no-rcorr", action="store_true", help="do not add the distance-prior correction (rprior_correction.py)")
+p.add_argument("--eval", default="", help="no training: replay-validate this saved model (OUT unused) on the same held-out runs\n               (e.g. v3 vs v5 on --val-filter runs)")
 args = p.parse_args()
 
 SPREAD = 6.0  # mm, the belief grid half width (HoleBelief default)
@@ -94,55 +95,56 @@ def pairs(idx, scale):
     return X.astype(np.float32), y.astype(np.float32)
 
 
-tr_idx, va_idx = np.flatnonzero(tr), np.flatnonzero(is_val)
-X0, _ = pairs(tr_idx, 0.0)
-mu, sd = X0.mean(0), X0.std(0) + 1e-6
-net = nn.Sequential(nn.Linear(5, args.hidden), nn.SiLU(), nn.Linear(args.hidden, args.hidden), nn.SiLU(),
-                    nn.Linear(args.hidden, 1))
-opt = torch.optim.Adam(net.parameters(), lr=args.lr)
-sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs)
-loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(float(args.neg)))  # balanced classes: logit = log ratio + c
-mu_t, sd_t = torch.tensor(mu), torch.tensor(sd)
-rand_scale = 0.0 if args.no_rand else args.rand_scale
-for ep in range(args.epochs):
-    net.train()
-    X, y = pairs(tr_idx, rand_scale)
-    X, y = (torch.tensor(X) - mu_t) / sd_t, torch.tensor(y)
-    perm = torch.randperm(len(X))
-    tot = 0.0
-    for b in range(0, len(X), 4096):
-        i = perm[b:b + 4096]
-        opt.zero_grad(set_to_none=True)
-        loss = loss_fn(net(X[i])[:, 0], y[i])
-        loss.backward()
-        opt.step()
-        tot += loss.item() * len(i)
-    sched.step()
-    if ep % 20 == 19 or ep == args.epochs - 1:
-        net.eval()
-        with torch.no_grad():
-            Xv, yv = pairs(va_idx, rand_scale)
-            lv = loss_fn(net((torch.tensor(Xv) - mu_t) / sd_t)[:, 0], torch.tensor(yv)).item()
-        print(f"epoch {ep + 1}: train {tot / len(X):.4f}  val {lv:.4f}")
+if not args.eval:
+    tr_idx, va_idx = np.flatnonzero(tr), np.flatnonzero(is_val)
+    X0, _ = pairs(tr_idx, 0.0)
+    mu, sd = X0.mean(0), X0.std(0) + 1e-6
+    net = nn.Sequential(nn.Linear(5, args.hidden), nn.SiLU(), nn.Linear(args.hidden, args.hidden), nn.SiLU(),
+                        nn.Linear(args.hidden, 1))
+    opt = torch.optim.Adam(net.parameters(), lr=args.lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs)
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(float(args.neg)))  # balanced classes: logit = log ratio + c
+    mu_t, sd_t = torch.tensor(mu), torch.tensor(sd)
+    rand_scale = 0.0 if args.no_rand else args.rand_scale
+    for ep in range(args.epochs):
+        net.train()
+        X, y = pairs(tr_idx, rand_scale)
+        X, y = (torch.tensor(X) - mu_t) / sd_t, torch.tensor(y)
+        perm = torch.randperm(len(X))
+        tot = 0.0
+        for b in range(0, len(X), 4096):
+            i = perm[b:b + 4096]
+            opt.zero_grad(set_to_none=True)
+            loss = loss_fn(net(X[i])[:, 0], y[i])
+            loss.backward()
+            opt.step()
+            tot += loss.item() * len(i)
+        sched.step()
+        if ep % 20 == 19 or ep == args.epochs - 1:
+            net.eval()
+            with torch.no_grad():
+                Xv, yv = pairs(va_idx, rand_scale)
+                lv = loss_fn(net((torch.tensor(Xv) - mu_t) / sd_t)[:, 0], torch.tensor(yv)).item()
+            print(f"epoch {ep + 1}: train {tot / len(X):.4f}  val {lv:.4f}")
 
-lin = [m for m in net if isinstance(m, nn.Linear)]
-np.savez(args.out, mu=mu, sd=sd, **{f"W{i}": m.weight.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
-         **{f"b{i}": m.bias.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
-         err=np.array([ERR[k] for k in ERR]), rand_scale=rand_scale)
-if not args.no_rcorr:  # distance-prior correction from the training positives vs the grid negatives (as rprior_correction.py)
-    r_pos = np.linalg.norm(hole[tr_idx] - tcp[tr_idx], axis=1)
-    r_neg = np.linalg.norm(rng.uniform(-SPREAD, SPREAD, (len(tr_idx), 16, 2)) - tcp[tr_idx][:, None], axis=2).ravel()
-    edges = np.arange(0.0, 15.01, 0.5)
-    p_pos, p_neg = np.histogram(r_pos, edges)[0] + 1.0, np.histogram(r_neg, edges)[0] + 1.0
-    rc = np.convolve(np.log((p_pos / p_pos.sum()) / (p_neg / p_neg.sum())), np.ones(3) / 3, mode="same")
-    m = dict(np.load(args.out))
-    m["rcorr_edges"], m["rcorr"] = edges, rc - rc[np.searchsorted(edges, 6.0) - 1]
-    np.savez(args.out, **m)
-print(f"saved {args.out}" + ("" if args.no_rcorr else " (with distance-prior correction)"))
+    lin = [m for m in net if isinstance(m, nn.Linear)]
+    np.savez(args.out, mu=mu, sd=sd, **{f"W{i}": m.weight.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
+             **{f"b{i}": m.bias.detach().numpy().astype(np.float64) for i, m in enumerate(lin)},
+             err=np.array([ERR[k] for k in ERR]), rand_scale=rand_scale)
+    if not args.no_rcorr:  # distance-prior correction from the training positives vs the grid negatives (as rprior_correction.py)
+        r_pos = np.linalg.norm(hole[tr_idx] - tcp[tr_idx], axis=1)
+        r_neg = np.linalg.norm(rng.uniform(-SPREAD, SPREAD, (len(tr_idx), 16, 2)) - tcp[tr_idx][:, None], axis=2).ravel()
+        edges = np.arange(0.0, 15.01, 0.5)
+        p_pos, p_neg = np.histogram(r_pos, edges)[0] + 1.0, np.histogram(r_neg, edges)[0] + 1.0
+        rc = np.convolve(np.log((p_pos / p_pos.sum()) / (p_neg / p_neg.sum())), np.ones(3) / 3, mode="same")
+        m = dict(np.load(args.out))
+        m["rcorr_edges"], m["rcorr"] = edges, rc - rc[np.searchsorted(edges, 6.0) - 1]
+        np.savez(args.out, **m)
+    print(f"saved {args.out}" + ("" if args.no_rcorr else " (with distance-prior correction)"))
 
 # replay: every held-out run's logged probes through the grid belief, learned vs hand model, injected sensor errors.
 # "search": only probes before the tip sank > 1 mm (a probe in the hole localizes it trivially).
-lik = ProbeLikelihood(args.out)
+lik = ProbeLikelihood(args.eval or args.out)
 TIP_BELOW = 0.040
 k_all = np.asarray(d["k"])[keep]
 for scale in (0.0, 1.0, 2.0):
