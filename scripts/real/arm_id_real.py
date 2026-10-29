@@ -22,6 +22,7 @@
 # faster than --abort-speed or more than --abort-dev from the command, or leaves home by more than --box. Abort =
 # stop publishing: after 50 ms the controller holds the pose it is at (mpc_timeout), so Ctrl-C is also safe.
 import argparse
+import gc
 import json
 import os
 import signal
@@ -227,8 +228,9 @@ def offset(d6):
     return P_HOME + d6[:3], pin.exp3(np.asarray(d6[3:], dtype=float)) @ R_HOME
 
 
-def hold(T, name="hold"):
-    run(name, T, lambda t: (P_HOME, R_HOME, np.zeros(3), np.zeros(3)))
+def hold(T, name="hold", pos=None):
+    pos = P_HOME if pos is None else pos
+    run(name, T, lambda t: (pos, R_HOME, np.zeros(3), np.zeros(3)))
 
 
 def smooth_step(name, ax, size, T=2.5, t_rise=0.0):
@@ -263,6 +265,9 @@ def sine(name, ax, amp, freq):
 
 
 # --- start
+# no cyclic garbage here; the collector's full passes over the growing logs stalled the sender 23 -> 151 ms every ~37 s
+# (armid_1639, 2026-10-29), and the controller holds after 50 ms without a command
+gc.disable()
 t_end = time.monotonic() + 10
 while (state["q"] is None or state["mode"] is None) and time.monotonic() < t_end:
     rclpy.spin_once(node, timeout_sec=0.05)
@@ -334,7 +339,7 @@ for cap in caps:
 
         T = args.depth / cap + 1.5
         run(f"descent_{cap:g}_{rep}", T, descend, cap=cap, rep=rep)
-        hold(1.0, f"bottom_{cap:g}_{rep}")
+        hold(1.0, f"bottom_{cap:g}_{rep}", pos=np.array([P_HOME[0], P_HOME[1], z_bot]))  # (was P_HOME: a 4 cm jump)
         # back up at the cap speed (a smooth ramp; the detector is only evaluated on the way down)
         t_up = args.depth / cap
 
