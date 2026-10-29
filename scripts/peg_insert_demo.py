@@ -118,6 +118,10 @@ p.add_argument("--push-wiggle", type=float, default=0.0,
 p.add_argument("--grasp-settle", type=float, default=0.0,
                help="grasp: wait until the TCP is within this distance [m] of the grasp pose before closing (0 = the "
                     "segment default 1.5 mm), e.g. 0.0002")
+p.add_argument("--push-stop", type=float, default=0.001,
+               help="push to the bottom: stop when the estimated tip is this close to the seated depth [m]. The default "
+                    "1 mm equals the 1 mm success threshold, so a run passes only if the part settles the last mm by itself "
+                    "(H2 near-misses 1.03 / 1.09 mm short, 2026-10-29)")
 p.add_argument("--push-step", type=float, default=0.006,
                help="push to the bottom: command this far below the measured pose while the force is below "
                     "--max-contact-force (else 2 mm); smaller = softer push (thin pegs jam in tight holes)")
@@ -1109,7 +1113,7 @@ elif args.strategy == "probe":
                     xy_c = (xy_push0 if anchor is None else anchor) + args.push_dither * np.array([np.cos(ph), np.sin(ph)])
                 cmd(xy_c, uz, (0.0, 0.0, -args.stiction_ff))
                 spin_sim(dt)
-                if geo.depth - (-tip_z(measure5())) < 0.001:
+                if geo.depth - (-tip_z(measure5())) < args.push_stop:
                     break
                 depth_hist.append(tip_z(measure5()))
                 F_lat = force3(1.0)[:2]
