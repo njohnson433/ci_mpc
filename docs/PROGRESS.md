@@ -220,6 +220,8 @@ Read this before starting work (and before re-investigating something "new").
   Saved `ci_mpc_planner/models/probe_likelihood_v5_batched_clamp.npz` (peg only, opt-in). Trainer option
   `--rcorr-clamp` (data-driven: holds the table beyond the p99 training distance, 9.45 mm for this data = one 0.5 mm
   bin later than the tested model; default off). Not a default: H1-H4 first, and the model is peg-only.
+  **R is no longer clean for v5-clamp** (the 9 mm clamp was chosen after seeing v5's unclamped R result); a peg-only
+  held-out read for it would be H1. The v5 + v3-table R arm was skipped (the clamp answers it; src-5e).
 
 ### 2026-10-29 00:00: vectorized step 5c: press calibration: batched sff 5.0 matches the pipeline (peg only, `~/ci_mpc_runs/vec/step6`)
 - Batched replay of the 320 step4d probes at press / hold feedforward 3.0 / 3.5 / 5.0 N (one lever) vs the pipeline
