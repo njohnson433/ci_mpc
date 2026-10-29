@@ -212,6 +212,12 @@ Read this before starting work (and before re-investigating something "new").
   put the grasp 3.9 mm off-centre in x; three probes sat 2.6-3.0 mm deep in the chamfer ~1 mm off the axis and the
   push stalled (mechanism open; a 3.5 mm grasp offset at seed 8 inserted). Camera noise on the peg detection gives
   grasp offsets up to ~4 mm along the pads (known to the controller with --known-grasp).
+- **The stage-A detector noise also hits the peg grasp (not intended: stage A = camera error on the hole; peg-grasp
+  noise belongs to stage D, src-5e).** Over the D1 seeds (19 parsed): in-hand xy offset median 1.52 mm, > 1 mm 12 /
+  19, **> 2 mm 7 / 19 (37 %)**, > 3 mm 3 / 19; along the pads x -3.93..+3.52 mm, across y -0.45..-0.26 (the grasp
+  tilt); axial tip height -0.85..+1.38 mm vs nominal. The running held-out queue keeps it (B compares on the same
+  seeds, paired). For later stage runs: detector / demo `--noise-names hole` (e78865a) puts the error on the hole only
+  (draws kept, so seed N gives the same hole error with or without peg noise).
 - **Running:** `queue_stage_a.sh` -> `~/ci_mpc_runs/stageA/heldout` (H1 15, H2 5, H3 12, H5 10 runs; one instance).
 - Video: `headless_impedance_sim.py --record-video` (`VIDEO=path.mp4`), first run
   `~/ci_mpc_runs/video/peg_probe_2_0/peg_probe_2_0.mp4` (current pipeline, 2 mm offset, inserted).
