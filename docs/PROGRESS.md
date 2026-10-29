@@ -458,6 +458,24 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
+### 2026-10-29 (16:45): CI-MPC stage B2a v2, pre-registered: the same forward-prediction test with the dynamic arm model, on fresh insertions
+- **Changes vs B2a**, development on the b1v2 fit episodes and the B2a episodes (now development data):
+  - **Arm:** coupled Cartesian dynamics with the operational-space inertia Λ(q) from pinocchio (with the scene's
+    armature), the controller's own damping 2√K √Λ_ctrl, its reconstructed integrator, its velocity-mode friction
+    compensation (known, from the joint velocities), the desired twist and the ±18 N clamp. Fitted: only F_s and b
+    per axis, on free space. Free-space one-step RMS on a held-out episode: 0.139 / 0.106 / 0.188 mm (B2a
+    quasi-static: 0.6 mm).
+  - **SDF:** rim rounding ρ 20 µm (was 0.2 mm, wider than the dev hole's 0.025 mm radial clearance).
+  - `scripts/b2a2_predict.py` (sub-stepped at the 240 Hz trace rate, 0.1 s and 0.6 s horizons).
+- **Data:** fit episodes unchanged (b1v2 factory_7001 / 7002, free space only). **Scored: 6 fresh insertions**
+  (`~/ci_mpc_runs/b2a2/`): D1 offsets (0.71, −0.71), (−1.77, −1.77), (2.5, 1.0), (−1, 2.8) mm, plain probe defaults;
+  dev round 8 (2, 0.5), (−1, −2) mm, frozen chamferless flags; with bags (6D trace) and the truth pose.
+- **Targets unchanged from B2a** (transitional set, medians, n ≥ 50 per set):
+  - SDF plant one-step and 6-step position error ≤ 0.7 × no-contact and ≤ 0.7 × wrong geometry 0.5 mm;
+  - 6-step contact force error ≤ 0.7 × wrong geometry 0.5 mm.
+  - Pass per set (D1, dev). If it fails because the arm model's error swamps the geometry: the 7-DOF replica, timed
+    against the MPC's 10 ms budget before committing to it (src-5e).
+
 ### 2026-10-29 (16:10): CI-MPC stage B2a, pre-registered: forward prediction of the SDF plant vs Isaac, against two baselines
 - **B1 record (src-5e):** contact presence PASS (M1 92.7–100 %); force direction untestable by inverse fit (v1–v3:
   friction-cone combinations span almost any wrench); dimension sensitivity 0.1–0.3 mm (chamfered holes).
