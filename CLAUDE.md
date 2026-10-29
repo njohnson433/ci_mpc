@@ -28,6 +28,15 @@ Contact-implicit MPC on a Franka FR3, Isaac Sim first, then the real robot. See 
 - Peg-only components (e.g. the v3/v4 learned likelihood, the vectorized Factory PegInsert sim) must be labeled
   peg-only in results, and claims must not go beyond what they cover.
 
+## Develop in stages (user rule, 2026-10-29)
+- Switch on one part of the pipeline at a time; the earlier stages stay simplified.
+- **A (baseline)**: known in-hand pose (no grasp-height calibration touch), camera hole estimate with 2 mm error,
+  free-space MPC, smooth approach with observer contact detection, plain push.
+- **B (current focus)**: CI-MPC from first contact, contact model = analytic SDF of primitives (cylinder / box from
+  dimensions), smoothed complementarity, Gauss-Newton / LM, warm start. Must beat A on D1 + H1–H3 + H5.
+- **C** perception realism, **D** unknown grasp / slip, **E** probe search + learned likelihood (parked fallback).
+- Perception must not rely on given CAD models (generalization); it is not the focus yet.
+
 ## Facts that bite
 - Isaac: articulation root `/fr3/Geometry/base/fr3_link0`; robot gravity off; effort mode; the controller
   must run inside Isaac's physics step (`isaacsim.ros2.control`), not via ROS topics.
