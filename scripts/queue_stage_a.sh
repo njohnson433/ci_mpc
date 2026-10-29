@@ -5,7 +5,8 @@
 # learned likelihood LIK), H2 gear (5, seeds 1201-1205), H3 AutoMate (12 assemblies, seeds 1301-1312), H5 NIST (5 tasks
 # x 2, seeds 1501-1510); non-peg tasks use the hand belief (--geo, as queue_cross_task.sh). Wrist F/T on (true force).
 # This is the number the CI-MPC (stage B) must beat.
-#   LIK=ci_mpc_planner/models/probe_likelihood_v3_both.npz SETS="H1 H2 H3 H5" setsid nohup scripts/queue_stage_a.sh OUT &
+#   LIK=ci_mpc_planner/models/probe_likelihood_v3_both.npz SETS="D1 H1 H2 H3 H5" NOISE_NAMES=hole DOMAIN_BASE=76 \
+#     setsid nohup scripts/queue_stage_a.sh OUT &
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1
 mkdir -p "$OUT"
@@ -13,6 +14,9 @@ LIK=${LIK:-$HERE/../ci_mpc_planner/models/probe_likelihood_v3_both.npz}
 SETS=${SETS:-"H1 H2 H3 H5"}
 DOM=${DOMAIN_BASE:-66}
 STAGEA=(--known-grasp --pos-noise 0.002 --pos-noise-z 0.0005 --prior-sigma 0.002 --smooth-approach 0.02)
+# NOISE_NAMES=hole: the camera error on the hole only (the user's stage A; without it the peg detection noise also moves
+# the grasp, >2 mm in 37 % of seeds = the stage D condition)
+[ -n "$NOISE_NAMES" ] && STAGEA+=(--noise-names "$NOISE_NAMES")
 COMMON=(--timeout-contact 150 --max-probes 25 --track-height 5 --centering-bound 0.008 --stuck-dither 0.0008)
 log() { echo "$(date '+%F %T') $*" >> "$OUT/queue.log"; }
 bench() {  # bench OUT SEEDS env... -- options...
@@ -23,6 +27,10 @@ bench() {  # bench OUT SEEDS env... -- options...
 }
 for set in $SETS; do
   case $set in
+    D1)
+      log "D1 start"; mkdir -p "$OUT/D1"
+      bench "$OUT/D1/peg" "$(seq -s ' ' 1 20)" -- --belief-model "$LIK" > "$OUT/D1/peg.txt" 2>&1
+      log "D1 done: $(grep -h inserted "$OUT/D1/peg.txt")" ;;
     H1)
       s=1101
       for cond in "friction_0.5 PEG_FRICTION=0.5 --" "friction_1.0 PEG_FRICTION=1.0 --" \
