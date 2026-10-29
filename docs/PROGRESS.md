@@ -172,6 +172,24 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Log
 
+### 2026-10-29 11:30: NIST H5 asset fidelity (item 4) + the systematic -0.3 mm in-hand y offset (`~/ci_mpc_runs/h5/assetcheck`)
+- **Resolution vs clearance:** every NIST plug is 50 mm at SDF 256 (0.195 mm voxels) vs per-side clearance 0.048
+  (round 4) - 0.13 mm (round 12); sockets 25 mm at 512 (0.049 mm). Collision meshes: NIST sockets 16 (rect) / 48
+  (round) vertices, dev sockets 1024. Single-lever variants (`scripts/isaac/nist_asset_variants.py` ->
+  `~/ci_mpc_assets/nist_var/{base,plug1024,plughull,densesock}`), insertion check at offset 0 with the H5 round-1
+  plain command (asset check, not an H5 result).
+- **rect 12 at 0 inserts with every variant:** base 15.7 s (depth err 0.08 mm), plug1024 6.2 s, plughull 9.5 s
+  (densesock, round 4: see below). H5 r1's failure at 0 was the search path, not the asset: in both runs the peg sits
+  ~0.3 mm off the TCP in hand y (> rect 12's 0.078 / 0.113 mm per side), probe 0 lands on the rim; r1's next probes
+  went 1.6-4.3 mm away (belief std stuck 5.1 mm), the base check's went 0.15 mm off and dropped in.
+- **The -0.21..-0.38 mm in-hand y offset (all scenes, src-f1) is a grasp-induced tilt, realistic:** static geometry is
+  symmetric (finger joints j1 = j2 to 0.001 mm; finger collision boxes mirrored in hand y, pads parallel; TCP on the
+  centre line). Live truth through a grasp (`object.json`): as the fingers close on the standing peg it tilts
+  -0.43 deg in the finger plane about its base on the table; 40 mm (grasp to bottom) x tan 0.43 deg = 0.30 mm. Inferred
+  cause: the hand is slightly off the peg centre at grasp, the first finger tips the top until the second clamps.
+  Kept as part of the task (a real arm grasping a standing peg does the same); a grasp-strategy lever is src-f1's.
+- Pre-grasp the standing pegs also rest tilted (one 1.47 deg about world y at spawn): not investigated.
+
 ### 2026-10-29 03:00: likelihood v5 (trained on batched sim probes only, peg only): equals v3 on held-out pipeline probes
 - Data: `batched_collect.py --envs 256 --sff 5.0 --seed 0` (step 5c calibration), 10165 probes / 256 envs (stopped
   at 10165 / 10240: 49 envs still finishing; the loop waits for every env), Fz median 4.64 N, engaged by r 0-4 /
