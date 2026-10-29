@@ -183,8 +183,13 @@ Read this before starting work (and before re-investigating something "new").
 - **Sliding (free-space MPC `all_1627 / 1709 / 1724`, |v| > 10 mm/s, true external force 0):** O along the velocity
   median +1.71 / +1.91 / +1.73 N (per axis 1.4-1.9 N), independent of the velocity compensation (0 / 0.75): O reads
   about the full kinetic friction in motion. Static |O| 0.8-1.2 N median (held residuals).
-- Joint-level fit not possible yet: joint_id logs only the commanded torque, mpc_free only q (asked src-54 for
-  tau_J / tau_d). Consequence for probes on the real arm: the tare at a static hover carries held friction, a press
+- **Joint level, sliding (17 real move_to_start logs `<session>/move_*.npz`, measured tau_J and tau_J_d at 1 kHz):**
+  tau_J - tau_J_d along sign(dq) while moving, median: j1 -0.73 / j3 -0.77 / j4 -0.75 Nm vs identified Coulomb
+  0.82 / 0.77 / 0.88; wrist j5 -0.30 / j6 -0.20 / j7 -0.22 vs 1.16 / 0.71 / 0.40 (j2 gravity-confounded, -3.9). The
+  torque sensors sit after the friction (tau_J = tau_d - friction): an estimate from tau_J vs the command reads the
+  full kinetic friction on j1 / j3 / j4, ~0.25-0.55 of it on the wrist. Static per-joint alpha needs src-54's new
+  recorder (27700c9: `<session>/robot_state.npz`, 200 Hz, tau_J, tau_J_d, tau_ext_hat_filtered, O_F_ext_hat_K) from
+  the next robot session on. Consequence for probes on the real arm: the tare at a static hover carries held friction, a press
   held by stiction reads ~0.1-0.4x the held part, and every lateral move reads ~1.7 N along the motion.
 - **Sim model (opt-in):** `CI_TAU_SOURCE=franka` in factory_fr3: observer torque = wrist + alpha (tau_cmd - wrist),
   alpha static 0.25 / kinetic 1.0 (`CI_FRANKA_ALPHA`), tanh blend over |dq| 0.01 rad/s. Check running: batched
