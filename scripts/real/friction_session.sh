@@ -22,7 +22,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 BASE=~/franka_ros2_ws/src/cartesian_impedance_control/config/real_robot_controllers.yaml
 P=$(mktemp --suffix=.yaml /tmp/friction_XXXX)
 {
-  cat "$BASE"
+  # the base file carries the default compensation (hybrid since 2026-10-29): drop its friction keys, append ours
+  grep -vE '^    (friction_(compensation|scale|scale_rest|coulomb|viscous)|joint_torque_offset):' "$BASE"
   echo "    friction_compensation: $MODE"
   echo "    friction_scale: $SCALE"
   echo "    friction_scale_rest: ${REST:-0.5}"

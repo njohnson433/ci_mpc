@@ -5,6 +5,12 @@ Read this before starting work (and before re-investigating something "new").
 
 ## Where to resume
 
+- **2026-10-29: real-robot default = hybrid friction compensation** (user decision; controller 6bcebfa,
+  `real_robot_controllers.yaml`: hybrid, 0.75 / rest 0.5, identified Coulomb / viscous, joint torque offsets; Isaac
+  default unchanged). Never run on the robot yet: next session starts with `mpc_free_space_session.sh test` + a
+  hold nudge test (the default now applies to every real session), then the first contact runs check the 4 N gate
+  and in-hand slip (sim: +2 N pre-seat, ~3x slip); over the gate -> friction_scale_rest 0 and report.
+
 - **2026-10-28 evening (real FR3 session done, entry "2026-10-28 (afternoon)"):** free-space MPC works on the robot
   (mpc_real.yaml: K 2500 x3 / 130/130/45, half rotational damping, integral on; steps <= 0.4 mm, circle 1.9 mm;
   with velocity 0.75 friction compensation circle 0.52-0.62 mm). Joint friction identified at 3 poses
