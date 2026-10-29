@@ -19,6 +19,8 @@ parser.add_argument("--object-yaw", type=float, default=0.0, help="pick-place ob
 parser.add_argument("--boxes", default="", help="pick-place: more boxes 'x,y,yaw;x,y,yaw' (same size)")
 parser.add_argument("--wrist-ft", action="store_true", help="log the simulated wrist F/T sensor (wrist_ft.csv)")
 parser.add_argument("--camera", action="store_true", help="add the simulated Gemini 305 wrist camera")
+parser.add_argument("--record-video", default="", help="mp4 path: off-screen scene camera video of the run "
+                    "(scene_video.py, 30 fps of sim time)")
 parser.add_argument("--peg", action="store_true", help="add the Factory 8 mm peg-in-hole (SDF collision)")
 parser.add_argument("--peg-hole-xy", default="0.5,0.1", help="peg: hole x,y [m]")
 parser.add_argument("--peg-drop-test", action="store_true", help="peg: also drop free pegs into the hole")
@@ -39,7 +41,8 @@ from isaacsim import SimulationApp  # noqa: E402
 # camera: real-time ray tracing without DLSS (the default path tracer + DLSS at 640x400 ran out of RTX
 # resource descriptors and hung the renderer)
 app = SimulationApp({"headless": not args.gui,
-                     **({"renderer": "RaytracedLighting", "anti_aliasing": 0} if args.camera else {})})
+                     **({"renderer": "RaytracedLighting", "anti_aliasing": 0}
+                        if args.camera or args.record_video else {})})
 
 import omni.kit.app  # noqa: E402
 import omni.timeline  # noqa: E402
@@ -58,6 +61,7 @@ peg_lib = runpy.run_path(os.path.join(here, "peg_scene.py"), run_name="lib") if 
 gear_lib = runpy.run_path(os.path.join(here, "gear_scene.py"), run_name="lib") if args.gear else None
 asm_lib = runpy.run_path(os.path.join(here, "automate_scene.py"), run_name="lib") if args.automate else None
 cam_lib = runpy.run_path(os.path.join(here, "wrist_camera.py"), run_name="lib") if args.camera else None
+video_lib = runpy.run_path(os.path.join(here, "scene_video.py"), run_name="lib") if args.record_video else None
 
 omni.usd.get_context().open_stage(args.scene)
 for _ in range(20):
@@ -74,6 +78,7 @@ if pick_lib:
     pick_lib["add_objects"](stage, [float(x) for x in args.object_size.split(",")], args.object_yaw, boxes)
 if cam_lib:
     cam_lib["add_camera"](stage)
+video = video_lib["SceneVideo"](stage, args.record_video) if video_lib else None
 if asm_lib:
     asm_lib["add_objects"](stage, args.automate)
 if gear_lib:
@@ -100,6 +105,8 @@ if not graph_lib["setup_controller_manager"](app.update, config=args.config or g
     os._exit(1)
 if cam_lib:
     cam_lib["add_camera_graph"]()
+if video:
+    video.attach()
 for _ in range(5):
     app.update()
 # External wrench on the hand, requested by the ROS side through <sync_dir>/wrench.json:
@@ -171,6 +178,8 @@ while not os.path.exists(done) and time.time() - t0_wall < args.timeout:
     if wrist_ft:
         wrist_ft.poll()
     app.update()
+    if video:
+        video.poll(timeline.get_current_time())
     now = time.time()
     if now - last > 5.0:
         sim = timeline.get_current_time() - t0_sim
@@ -179,6 +188,8 @@ while not os.path.exists(done) and time.time() - t0_wall < args.timeout:
 
 sim = timeline.get_current_time() - t0_sim
 print(f"[sim] finished: sim {sim:.1f} s in {time.time() - t0_wall:.1f} s wall", flush=True)
+if video:
+    video.close()
 from isaacsim.ros2.control import Ros2ControlManager  # noqa: E402
 
 Ros2ControlManager.teardown_all()
