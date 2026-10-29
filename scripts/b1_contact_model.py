@@ -1,4 +1,4 @@
-"""CI-MPC stage B1 (pre-registered in PROGRESS 2026-10-29 14:40): the primitive SDF contact model alone vs Isaac
+"""CI-MPC stage B1 (pre-registered in PROGRESS 2026-10-29 14:08): the primitive SDF contact model alone vs Isaac
 wrist logs. Per probe hold of src-35's pipeline episodes (vec/step4d/w0_e*): TCP pose (bag trace) + hand orientation
 (wrist_ft.csv) + the grasp-time in-hand peg offset -> peg surface points; analytic axisymmetric hole SDF from asset
 dimensions (PegHoleGeometry, profile_sdf) -> gaps and normals; measured contact force = wrist F/T (lag-corrected,

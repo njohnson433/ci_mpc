@@ -423,7 +423,7 @@ Read this before starting work (and before re-investigating something "new").
   over-read is already in Isaac's effort state, not in the observer math. Most of it goes with joint friction (posture
   differs without friction: null-space drift, a confound). Batched (wrist source) is unaffected.
 
-### 2026-10-29 (16:40): H3-100 stopped (project restructure), partial results: C3 = plain over 77 assemblies; slip does not predict failure (`~/ci_mpc_runs/h3_100`)
+### 2026-10-29 (14:50): H3-100 stopped (project restructure), partial results: C3 = plain over 77 assemblies; slip does not predict failure (`~/ci_mpc_runs/h3_100`)
 - Stopped by PID at 14:00 (src-5e / user restructure: CI-MPC focus). Stage 1 (plain) is complete, stage 2 (c3) has 87
   of ~90 assemblies, stage 3 repeat 2 covers 29 assemblies; rep 3 was not run. Old pipeline (velocity default, C3
   old formulation, probe as of 10-28). `scripts/h3_100_classify.py`.
@@ -444,7 +444,7 @@ Read this before starting work (and before re-investigating something "new").
 - Asset errors (7): the plug mesh has no vertices within 5 mm of the grasp height, so `automate_scene.info()` finds no
   grasp band. Timeouts (4): the 1800 s wall clock on the loaded machine.
 
-### 2026-10-29 (16:30): push stop tolerance (`--push-stop`) selected on D1 + dev: no effect there, frozen at 0.5 mm for H1–H3
+### 2026-10-29 (14:49): push stop tolerance (`--push-stop`) selected on D1 + dev: no effect there, frozen at 0.5 mm for H1–H3
 - **Why:** the push stopped once the estimated remaining depth was < 1.0 mm, the same as the 1.0 mm success
   threshold, so a run passed only if the part settled the last mm by itself (H2 near-misses 1.03 / 1.09 mm,
   `peg_insert_demo.py` push loop). New flag `--push-stop` (default 1 mm, unchanged), src-5e plan: 0.5 mm, then ±1 step,
@@ -465,7 +465,7 @@ Read this before starting work (and before re-investigating something "new").
   edge is likely noise). Next: H1–H3 once, paired, velocity default (1.0 vs 0.5), plus realfric hybrid if slots allow.
   H2 is where it can matter.
 
-### 2026-10-29 (15:40): CI-MPC stage B1 v2, pre-registered: 6D wrench test of the primitive SDF on new episodes with the true peg pose
+### 2026-10-29 (14:10): CI-MPC stage B1 v2, pre-registered: 6D wrench test of the primitive SDF on new episodes with the true peg pose
 - **Why v2:** B1 v1 failed (entry below). The axial in-hand offset was missing, and the force-only metric was
   degenerate.
 - **Data, new and not yet seen:** collect-mode probe episodes (40 holds each, random positions around the true hole,
@@ -488,7 +488,7 @@ Read this before starting work (and before re-investigating something "new").
   - **B1 v2 passes if M1, M2v2 and M4 all meet their targets,** on the Factory episodes and on the dev episode
     separately. Then B1b (dimension and pose sensitivity) runs on the same data.
 
-### 2026-10-29 (14:40): CI-MPC stage B1, pre-registered: the primitive SDF contact model vs Isaac wrist logs (targets fixed before the run)
+### 2026-10-29 (14:08): CI-MPC stage B1, pre-registered: the primitive SDF contact model vs Isaac wrist logs (targets fixed before the run)
 - **What B1 tests.** The contact model alone (`docs/ci_mpc_design.md` §2), no controller. In quasi-static contact the
   force magnitude is set by the impedance (K × deflection), not by the geometry. So B1 tests what the geometry has to
   get right: where the contacts are, and which wrench directions they can carry.
@@ -514,7 +514,7 @@ Read this before starting work (and before re-investigating something "new").
 - **B1b, dimension sensitivity (user):** perturb R, a, c and the hole xy by ±0.1 / 0.3 / 1 mm, one at a time, and report
   M1–M3 per perturbation. Yaw (±1–3°) only applies to rect parts: deferred to a rect dataset (the dev rect logs have
   probe poses but no bag trace).
-- **Result (15:10, `scripts/b1_contact_model.py`): B1 FAILS as registered.**
+- **Result (14:10, `scripts/b1_contact_model.py`): B1 FAILS as registered.**
 
   | run | M1 contact agreement | M2 median / p90 | M3 median | verdict |
   |---|---|---|---|---|

@@ -1,4 +1,4 @@
-"""CI-MPC stage B1 v2 (pre-registered in PROGRESS 2026-10-29 15:40): the primitive SDF contact model vs the wrist F/T
+"""CI-MPC stage B1 v2 (pre-registered in PROGRESS 2026-10-29 14:10): the primitive SDF contact model vs the wrist F/T
 on new collect-mode episodes with the sim-truth peg pose (peg_truth.npz, src-35's recorder).
 Per probe hold (trace.npz: ff z -3 N at K_z 500, mean over the last 0.3 s, tared over the 0.25 s before):
   peg pose = truth part origin (bottom centre) + body z up the peg; hole = asset-spec dimensions (analytic SDF);
