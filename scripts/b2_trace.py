@@ -1,7 +1,7 @@
 """CI-MPC B2: full 6D trace from a rosbag2 of /joint_states, the MPC commands and the external wrench (as
 scripts/isaac/bag_trace.py, which keeps only the translational part). Per joint-state stamp (sim time): TCP position +
-rotation (FK), the commanded pose (position + quaternion xyzw), feedforward wrench (force + torque), stiffness (6),
-damping (6), integral flag (zero-order hold), the observer wrench (force + torque). Run in the ROS environment.
+rotation (FK), the commanded pose (position + quaternion xyzw), desired twist (6), feedforward wrench (force + torque),
+stiffness (6), damping (6), integral flag (zero-order hold), the observer wrench (force + torque). Run in the ROS environment.
     python3 scripts/b2_trace.py BAG_DIR out.npz
 """
 import sys
@@ -36,8 +36,9 @@ while r.has_next():
             js.append((t, m.header.stamp.sec + 1e-9 * m.header.stamp.nanosec, *T.translation, qt.x, qt.y, qt.z, qt.w))
     elif topic.endswith("mpc_command"):
         p, o, f, tq = m.pose.position, m.pose.orientation, m.wrench.force, m.wrench.torque
+        tl, ta = m.twist.linear, m.twist.angular
         cmd.append((t, p.x, p.y, p.z, o.x, o.y, o.z, o.w, f.x, f.y, f.z, tq.x, tq.y, tq.z, *m.stiffness, *m.damping,
-                    float(m.integral_enabled)))
+                    float(m.integral_enabled), tl.x, tl.y, tl.z, ta.x, ta.y, ta.z))
     else:
         f, tq = m.wrench.force, m.wrench.torque
         wr.append((t, f.x, f.y, f.z, tq.x, tq.y, tq.z))
@@ -49,6 +50,6 @@ ic = np.clip(np.searchsorted(cmd[:, 0], js[:, 0], side="right") - 1, 0, None)
 iw = np.clip(np.searchsorted(wr[:, 0], js[:, 0], side="right") - 1, 0, None)
 np.savez(out, t0=js[0, 0], t=js[:, 0] - js[0, 0], x=js[:, 1:4], q_xyzw=js[:, 4:8],
          cmd=cmd[ic, 1:4], cmd_q_xyzw=cmd[ic, 4:8], ff=cmd[ic, 8:11], ff_torque=cmd[ic, 11:14],
-         K=cmd[ic, 14:20], D=cmd[ic, 20:26], integral=cmd[ic, 26], cmd_age=js[:, 0] - cmd[ic, 0],
+         K=cmd[ic, 14:20], D=cmd[ic, 20:26], integral=cmd[ic, 26], twist_d=cmd[ic, 27:33], cmd_age=js[:, 0] - cmd[ic, 0],
          wrench=wr[iw, 1:4], wrench_torque=wr[iw, 4:7], n_cmd=len(cmd), cmd_t=cmd[:, 0] - js[0, 0])
 print(f"joint states {len(js)} ({len(js) / (js[-1, 0] - js[0, 0]):.0f} Hz), commands {len(cmd)}, wrench {len(wr)}")
